@@ -27,6 +27,18 @@ export async function getAllUsersWithDailyEnabled(): Promise<UserRow[]> {
   return db.query.users.findMany({ where: eq(users.dailyEnabled, true) });
 }
 
+export async function getAllUsers(): Promise<UserRow[]> {
+  return db.query.users.findMany();
+}
+
+export async function markPrefetchDone(userId: number, dateStr: string): Promise<void> {
+  await db.update(users).set({ lastPrefetchDate: dateStr }).where(eq(users.id, userId));
+}
+
+export async function markDailyDelivered(userId: number, dateStr: string): Promise<void> {
+  await db.update(users).set({ lastDailyDeliveredDate: dateStr }).where(eq(users.id, userId));
+}
+
 export async function findUserByTgId(tgUserId: number): Promise<UserRow | undefined> {
   return db.query.users.findFirst({ where: eq(users.tgUserId, tgUserId) });
 }

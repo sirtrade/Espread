@@ -15,6 +15,8 @@ export const users = sqliteTable("users", {
   dailyEnabled: integer("daily_enabled", { mode: "boolean" }).notNull().default(false),
   dailyTime: text("daily_time").notNull().default("08:00"),
   onboardedAt: integer("onboarded_at"),
+  lastDailyDeliveredDate: text("last_daily_delivered_date"),
+  lastPrefetchDate: text("last_prefetch_date"),
   createdAt: integer("created_at")
     .notNull()
     .default(sql`(unixepoch('now') * 1000)`),

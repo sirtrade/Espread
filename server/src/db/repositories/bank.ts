@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { bankItems } from "../schema.js";
 import type { BankItemRecord, BankStatus } from "../../domain/bank.js";
@@ -70,6 +70,12 @@ export async function upsertBankState(userId: number, state: ReadonlyMap<string,
         })
         .run();
     }
+  });
+}
+
+export async function getLearnedSince(userId: number, sinceMs: number): Promise<BankItemRow[]> {
+  return db.query.bankItems.findMany({
+    where: and(eq(bankItems.userId, userId), eq(bankItems.status, "learned"), gte(bankItems.updatedAt, sinceMs)),
   });
 }
 

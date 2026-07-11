@@ -1,7 +1,11 @@
 import { Hono } from "hono";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { ZodError } from "zod";
 import { ApiError } from "./errors.js";
 import { logger } from "../lib/logger.js";
+import { config } from "../lib/config.js";
 import { authRoutes } from "./routes/auth.js";
 import { meRoutes } from "./routes/me.js";
 import { articlesRoutes } from "./routes/articles.js";
@@ -26,6 +30,18 @@ export function createApp() {
   api.route("/admin", adminRoutes);
   app.route("/api", api);
 
+  // Serves the built Mini App in production (single-container deploy). In
+  // local dev the webapp runs under its own Vite dev server instead.
+  if (config.STATIC_DIR) {
+    const dir = config.STATIC_DIR;
+    app.use("/*", serveStatic({ root: dir }));
+    app.get("*", (c) => {
+      const indexPath = join(dir, "index.html");
+      if (!existsSync(indexPath)) return c.notFound();
+      return c.html(readFileSync(indexPath, "utf-8"));
+    });
+  }
+
   app.onError((err, c) => {
     if (err instanceof ApiError) {
       return c.json(err.toBody(), err.status as never);
@@ -34,7 +50,7 @@ export function createApp() {
       return c.json({ error: { code: "bad_request", message: err.issues[0]?.message ?? "Datos inválidos" } }, 400);
     }
     logger.error({ err }, "Unhandled API error");
-    return c.json({ error: { code: "internal_error", message: "Внутренняя ошибка сервера" } }, 500);
+    return c.json({ error: { code: "internal_error", message: "Error interno del servidor" } }, 500);
   });
 
   app.notFound((c) => c.json({ error: { code: "not_found", message: "Ruta no encontrada" } }, 404));

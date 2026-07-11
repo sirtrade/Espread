@@ -22,6 +22,7 @@ const envSchema = z.object({
         .map(Number),
     ),
   WEBAPP_URL: z.string().url().optional(),
+  STATIC_DIR: z.string().optional(),
   LOG_LEVEL: z.string().default("info"),
 });
 
