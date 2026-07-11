@@ -1,4 +1,13 @@
 .env
+.env.local
+node_modules/
+dist/
+build/
+*.log
+data/
+*.db
+*.db-shm
+*.db-wal
 __pycache__/
 *.pyc
 venv/
