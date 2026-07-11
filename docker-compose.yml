@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: ${PORT:-3000}
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - lector-data:/data
+
+volumes:
+  lector-data:
