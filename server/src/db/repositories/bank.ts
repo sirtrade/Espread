@@ -40,37 +40,14 @@ export async function getActiveItemsForSelection(
   return rows;
 }
 
-/** Upserts the full post-review bank state for a user (insert new terms, update existing). */
-export async function upsertBankState(userId: number, state: ReadonlyMap<string, BankItemRecord>): Promise<void> {
-  const now = Date.now();
-  db.transaction((trx) => {
-    for (const item of state.values()) {
-      trx
-        .insert(bankItems)
-        .values({
-          userId,
-          term: item.term,
-          isPhrase: item.isPhrase,
-          status: item.status,
-          exposures: item.exposures,
-          cleanStreak: item.cleanStreak,
-          translation: item.translation,
-          firstContext: item.firstContext,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [bankItems.userId, bankItems.term],
-          set: {
-            status: item.status,
-            exposures: item.exposures,
-            cleanStreak: item.cleanStreak,
-            translation: item.translation,
-            updatedAt: now,
-          },
-        })
-        .run();
-    }
-  });
+export async function setBankItemStatus(userId: number, itemId: number, status: BankStatus): Promise<BankItemRow | undefined> {
+  const [row] = await db
+    .update(bankItems)
+    // A manual status change is a fresh start for the learning counter.
+    .set({ status, cleanStreak: 0, updatedAt: Date.now() })
+    .where(and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)))
+    .returning();
+  return row;
 }
 
 export async function getLearnedSince(userId: number, sinceMs: number): Promise<BankItemRow[]> {

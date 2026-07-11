@@ -14,11 +14,11 @@ export interface SessionPayload {
  * the client can silently re-auth when the JWT expires without extra friction.
  */
 export function signSession(payload: SessionPayload): string {
-  return jwt.sign(payload, config.JWT_SECRET, { expiresIn: config.JWT_TTL_SECONDS });
+  return jwt.sign(payload, config.JWT_SECRET, { expiresIn: config.JWT_TTL_SECONDS, algorithm: "HS256" });
 }
 
 export function verifySession(token: string): SessionPayload {
-  const decoded = jwt.verify(token, config.JWT_SECRET);
+  const decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: ["HS256"] });
   if (typeof decoded === "string") throw new Error("Invalid token payload");
   const { userId, tgUserId } = decoded as Record<string, unknown>;
   if (typeof userId !== "number" || typeof tgUserId !== "number") {

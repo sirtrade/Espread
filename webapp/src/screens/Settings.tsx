@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client.js";
+import { api, deviceTimezone } from "../api/client.js";
 import { useAuth } from "../state/AuthContext.js";
 import { Button } from "../components/Button.js";
 import type { ExplainLang, Level } from "../api/types.js";
@@ -42,7 +42,14 @@ export function Settings() {
     setError(null);
     setMessage(null);
     try {
-      const updated = await api.patchMe({ level, explainLang, topics, dailyEnabled, dailyTime });
+      const updated = await api.patchMe({
+        level,
+        explainLang,
+        topics,
+        dailyEnabled,
+        dailyTime,
+        timezone: deviceTimezone(),
+      });
       setProfile(updated);
       setMessage("Guardado");
     } catch (err) {

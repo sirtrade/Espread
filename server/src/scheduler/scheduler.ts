@@ -21,8 +21,17 @@ async function runDailyDelivery(now: Date): Promise<void> {
   const users = await getAllUsersWithDailyEnabled();
 
   for (const user of users) {
-    const today = localDateStr(now, user.timezone);
-    const hhmm = localHHMM(now, user.timezone);
+    // Everything per-user is inside try/catch: one bad row (e.g. a timezone
+    // Intl rejects) must not abort delivery for every user after it.
+    let today: string;
+    let hhmm: string;
+    try {
+      today = localDateStr(now, user.timezone);
+      hhmm = localHHMM(now, user.timezone);
+    } catch (err) {
+      logger.error({ err, userId: user.id, timezone: user.timezone }, "Invalid user timezone, skipping delivery");
+      continue;
+    }
     const pregenAt = subtractMinutes(user.dailyTime, PREGEN_LEAD_MINUTES);
 
     if (hhmm === pregenAt && user.lastPrefetchDate !== today) {
@@ -59,11 +68,20 @@ async function runLearnedDigest(now: Date): Promise<void> {
   const users = await getAllUsers();
 
   for (const user of users) {
-    if (localHHMM(now, user.timezone) !== DIGEST_LOCAL_HOUR) continue;
+    let hhmm: string;
+    let todayLocal: string;
+    try {
+      hhmm = localHHMM(now, user.timezone);
+      todayLocal = localDateStr(now, user.timezone);
+    } catch (err) {
+      logger.error({ err, userId: user.id, timezone: user.timezone }, "Invalid user timezone, skipping digest");
+      continue;
+    }
+    if (hhmm !== DIGEST_LOCAL_HOUR) continue;
 
     const stats = await getUserStats(user.id);
-    const since = stats?.lastLearnedDigestAt ?? 0;
-    const todayLocal = localDateStr(now, user.timezone);
+    // First digest ever: look back one day, not over the whole history.
+    const since = stats?.lastLearnedDigestAt ?? now.getTime() - 24 * 60 * 60 * 1000;
     if (stats?.lastLearnedDigestAt && localDateStr(new Date(stats.lastLearnedDigestAt), user.timezone) === todayLocal) {
       continue; // already sent today
     }
