@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth.js";
 import { getUserById, updateUser, type UserPatch } from "../../db/repositories/users.js";
 import { getUserTopics, setUserTopics } from "../../db/repositories/topics.js";
+import { resetUserProgress } from "../../db/repositories/reset.js";
 import { Errors } from "../errors.js";
 import { serializeProfile } from "../serializers.js";
 import { patchMeSchema } from "../validation.js";
@@ -39,4 +40,10 @@ meRoutes.patch("/", async (c) => {
   if (!user) throw Errors.notFound("Usuario");
   const currentTopics = await getUserTopics(userId);
   return c.json(serializeProfile(user, currentTopics));
+});
+
+meRoutes.delete("/progress", async (c) => {
+  const { userId } = c.get("session");
+  await resetUserProgress(userId);
+  return c.json({ ok: true });
 });

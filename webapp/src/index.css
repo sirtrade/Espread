@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --tg-bg: var(--tg-theme-bg-color, #faf6ef);
+  --tg-surface: var(--tg-theme-secondary-bg-color, #ffffff);
+  --tg-text: var(--tg-theme-text-color, #2a241d);
+  --tg-subtext: var(--tg-theme-hint-color, #8a8074);
+  --tg-accent: var(--tg-theme-button-color, #b5651d);
+  --tg-amber: #c68a2e;
+  --tg-teal: #3e8f83;
+}
+
+:root.dark {
+  --tg-bg: var(--tg-theme-bg-color, #201c18);
+  --tg-surface: var(--tg-theme-secondary-bg-color, #2b2622);
+  --tg-text: var(--tg-theme-text-color, #ece5d8);
+  --tg-subtext: var(--tg-theme-hint-color, #a89f92);
+  --tg-accent: var(--tg-theme-button-color, #d99a52);
+  --tg-amber: #caa156;
+  --tg-teal: #5fb3a9;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--tg-bg);
+  color: var(--tg-text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.article-text {
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 1.125rem;
+  line-height: 1.85;
+}
+
+.word-marked {
+  background-color: color-mix(in srgb, var(--tg-amber) 35%, transparent);
+  border-radius: 0.25rem;
+  box-decoration-break: clone;
+}
+
+.sent-marked {
+  background-color: color-mix(in srgb, var(--tg-teal) 25%, transparent);
+  border-radius: 0.25rem;
+  box-decoration-break: clone;
+}
+
+.banner-success {
+  background-color: color-mix(in srgb, var(--tg-teal) 15%, transparent);
+}
+
+.badge-amber {
+  background-color: color-mix(in srgb, var(--tg-amber) 30%, transparent);
+}
+
+.badge-teal {
+  background-color: color-mix(in srgb, var(--tg-teal) 30%, transparent);
+}
+
+.border-subtle {
+  border-color: color-mix(in srgb, var(--tg-subtext) 20%, transparent);
+}
+
+.border-subtle-light {
+  border-color: color-mix(in srgb, var(--tg-subtext) 10%, transparent);
+}
+
+.bg-subtle {
+  background-color: color-mix(in srgb, var(--tg-subtext) 15%, transparent);
+}
+
+.dot-empty {
+  background-color: color-mix(in srgb, var(--tg-subtext) 25%, transparent);
+}
