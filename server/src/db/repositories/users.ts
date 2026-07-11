@@ -4,6 +4,29 @@ import { userStats, users } from "../schema.js";
 
 export type UserRow = typeof users.$inferSelect;
 
+export type UserPatch = Partial<{
+  level: "A2" | "B1" | "B2" | "C1";
+  explainLang: "ru" | "en" | "es";
+  timezone: string;
+  dailyEnabled: boolean;
+  dailyTime: string;
+  onboardedAt: number;
+}>;
+
+export async function updateUser(userId: number, patch: UserPatch): Promise<UserRow> {
+  const [row] = await db.update(users).set(patch).where(eq(users.id, userId)).returning();
+  if (!row) throw new Error("User not found");
+  return row;
+}
+
+export async function getUserById(userId: number): Promise<UserRow | undefined> {
+  return db.query.users.findFirst({ where: eq(users.id, userId) });
+}
+
+export async function getAllUsersWithDailyEnabled(): Promise<UserRow[]> {
+  return db.query.users.findMany({ where: eq(users.dailyEnabled, true) });
+}
+
 export async function findUserByTgId(tgUserId: number): Promise<UserRow | undefined> {
   return db.query.users.findFirst({ where: eq(users.tgUserId, tgUserId) });
 }
