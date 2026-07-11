@@ -1,0 +1,113 @@
+import type Anthropic from "@anthropic-ai/sdk";
+import { callJsonLLM } from "./callJson.js";
+import { articleStepSchema, searchStepSchema, type ArticleStepResult } from "./schemas.js";
+import { logger } from "../lib/logger.js";
+import { config } from "../lib/config.js";
+
+const WEB_SEARCH_TOOL: Anthropic.WebSearchTool20250305 = {
+  type: "web_search_20250305",
+  name: "web_search",
+  max_uses: 3,
+};
+
+export interface GenerateArticleParams {
+  userId: number;
+  level: "A2" | "B1" | "B2" | "C1";
+  topic: string;
+  targetTerms: string[];
+}
+
+export interface GeneratedArticle extends ArticleStepResult {
+  sourceName: string | null;
+  sourceUrl: string | null;
+}
+
+async function runSearchStep(userId: number, topic: string) {
+  const system =
+    "Eres un periodista que investiga noticias reales y recientes para lectores que aprenden español. " +
+    "Usa la herramienta de búsqueda web para encontrar UNA noticia real, verificable y reciente sobre el tema dado. " +
+    "Resume los hechos con tus propias palabras (5-7 frases), en español neutro. " +
+    "PROHIBIDO copiar o parafrasear muy de cerca las frases del artículo original: usa tus propias palabras. " +
+    "Responde ÚNICAMENTE con JSON: {\"facts\": string, \"source_name\": string, \"source_url\": string}.";
+
+  return callJsonLLM({
+    system,
+    messages: [{ role: "user", content: `Tema: ${topic}` }],
+    schema: searchStepSchema,
+    kind: "search",
+    userId,
+    model: config.MODEL,
+    maxTokens: 1024,
+    tools: [WEB_SEARCH_TOOL],
+  });
+}
+
+async function runWriteStep(params: {
+  userId: number;
+  level: string;
+  topic: string;
+  targetTerms: string[];
+  facts: { facts: string; sourceName: string } | null;
+}): Promise<ArticleStepResult> {
+  const targetTermsBlock =
+    params.targetTerms.length > 0
+      ? `Incorpora de forma NATURAL y sin marcarlas ni destacarlas estas palabras/frases españolas donde tenga sentido ` +
+        `(no fuerces todas si no encajan bien): ${params.targetTerms.join(", ")}.`
+      : "";
+
+  const factsBlock = params.facts
+    ? `Basa el artículo estrictamente en estos hechos (no inventes datos adicionales, cifras exactas ni citas que no estén aquí):\n${params.facts.facts}\nFuente: ${params.facts.sourceName}`
+    : "No tienes una fuente verificada disponible. Escribe un artículo periodístico plausible y genérico sobre el tema, " +
+      "evitando por completo cifras exactas, estadísticas precisas y citas textuales inventadas.";
+
+  const system =
+    `Eres un redactor que escribe artículos originales en español latinoamericano neutro, estilo revista, ` +
+    `para un estudiante de nivel ${params.level} (Marco Común Europeo). ` +
+    `El artículo debe tener entre 250 y 320 palabras, párrafos cortos, vocabulario y gramática apropiados para el nivel ${params.level}. ` +
+    `${targetTermsBlock}\n` +
+    `Responde ÚNICAMENTE con JSON: {"title": string, "body": string}.`;
+
+  return callJsonLLM({
+    system,
+    messages: [{ role: "user", content: factsBlock }],
+    schema: articleStepSchema,
+    kind: "generate",
+    userId: params.userId,
+    model: config.MODEL,
+    maxTokens: 2048,
+  });
+}
+
+/**
+ * Two-step article generation (TZ 4.2.1): a web-search-grounded facts step,
+ * then a no-search writing step. If the search step fails twice, falls back
+ * to a sourceless article with a strict no-fabrication instruction.
+ */
+export async function generateArticle(params: GenerateArticleParams): Promise<GeneratedArticle> {
+  let search: Awaited<ReturnType<typeof runSearchStep>> | null = null;
+  try {
+    search = await runSearchStep(params.userId, params.topic);
+  } catch (err) {
+    logger.warn({ err, topic: params.topic }, "Article search step failed, retrying once");
+    try {
+      search = await runSearchStep(params.userId, params.topic);
+    } catch (err2) {
+      logger.warn({ err: err2, topic: params.topic }, "Article search step failed twice, using fallback (no source)");
+      search = null;
+    }
+  }
+
+  const article = await runWriteStep({
+    userId: params.userId,
+    level: params.level,
+    topic: params.topic,
+    targetTerms: params.targetTerms,
+    facts: search ? { facts: search.facts, sourceName: search.source_name } : null,
+  });
+
+  return {
+    ...article,
+    sourceName: search?.source_name ?? null,
+    sourceUrl: search?.source_url ?? null,
+  };
+}

@@ -1,0 +1,19 @@
+import type { BankItem } from "../api/types.js";
+
+export function BankChip({ item }: { item: BankItem }) {
+  const dotColor = item.isPhrase ? "bg-teal" : "bg-amber";
+  return (
+    <div className="flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-sm text-text shadow-sm">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor}`} />
+      <span className="max-w-[9rem] truncate">{item.term}</span>
+      <span className="flex gap-0.5" title={`${item.cleanStreak}/3 encuentros limpios`}>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className={`h-1.5 w-1.5 rounded-full ${i < item.cleanStreak ? dotColor : "dot-empty"}`}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}

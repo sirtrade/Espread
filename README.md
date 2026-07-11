@@ -1,18 +1,145 @@
-# Telegram Echo Bot
+# Lector
 
-Простой echo-бот для Telegram: отвечает тем же текстом, что прислал пользователь.
+Telegram Mini App для экстенсивного чтения на испанском с адаптивной
+рециркуляцией лексики: пользователь читает короткие сгенерированные
+статьи своего уровня, помечает непонятные слова и фразы, а система
+незаметно вплетает их в следующие статьи, пока они не усвоятся (3
+«чистые» встречи подряд подряд без пометки → `learned`).
 
-## Запуск
+## Структура репозитория
 
-1. Установите зависимости:
+```
+server/   Node.js/TypeScript: REST API (Hono), Telegram-бот (grammY),
+          планировщик (node-cron), SQLite/Drizzle, интеграция с Anthropic API
+webapp/   React/Vite/TypeScript Mini App (Tailwind, @telegram-apps/sdk-react)
+Dockerfile, docker-compose.yml   единый контейнер: API + бот + планировщик
+```
+
+В проде сервер отдаёт собранный `webapp/dist` сам (см. `STATIC_DIR`),
+так что деплоится один контейнер на одном порту.
+
+## Локальный запуск (разработка)
+
+Требуется Node.js 22+.
+
+1. Установите зависимости в обеих частях:
    ```
-   pip install -r requirements.txt
+   cd server && npm install
+   cd ../webapp && npm install
    ```
-2. Задайте токен бота (получить у [@BotFather](https://t.me/BotFather)):
+2. Скопируйте `.env.example` в `server/.env` (или экспортируйте переменные
+   в окружение) и заполните `BOT_TOKEN`, `ANTHROPIC_API_KEY`, `JWT_SECRET`.
+   Для локальной разработки `DB_PATH` можно указать на файл в репозитории,
+   например `./dev.db`.
+3. Примените миграции и запустите API/бота/планировщик:
    ```
-   export TELEGRAM_BOT_TOKEN=<your_token>
+   cd server
+   npm run db:migrate   # либо main.ts применяет их автоматически при старте
+   npm run dev
    ```
-3. Запустите бота:
+4. В отдельном терминале запустите Mini App (Vite dev-сервер проксирует
+   `/api` на бэкенд, см. `VITE_API_PROXY_TARGET` в `webapp/vite.config.ts`,
+   по умолчанию `http://localhost:3000`):
    ```
-   python bot.py
+   cd webapp
+   npm run dev
    ```
+   Открыть Mini App вне Telegram напрямую нельзя — она ожидает `initData`
+   от Telegram-клиента (см. «Настройка бота у BotFather» ниже про способ
+   тестирования через реальный бот с `ngrok`/публичным URL).
+
+### Тесты
+
+```
+cd server
+npm test         # unit-тесты доменной логики банка + интеграционный
+                  # smoke-тест generate → review → complete с замоканным LLM
+npm run typecheck
+```
+
+## Деплой через Docker Compose
+
+1. Скопируйте `.env.example` в `.env` в корне репозитория и заполните
+   значения (обязательно `BOT_TOKEN`, `ANTHROPIC_API_KEY`, `JWT_SECRET`,
+   `WEBAPP_URL` — публичный HTTPS-адрес, под которым Telegram будет
+   открывать Mini App).
+2. Соберите и запустите:
+   ```
+   docker compose up -d --build
+   ```
+   Приложение слушает `PORT` (по умолчанию 3000) внутри контейнера;
+   снаружи должен стоять reverse proxy (Traefik/nginx) с TLS-терминацией
+   на `WEBAPP_URL` — сам контейнер HTTPS не обслуживает.
+3. Миграции применяются автоматически при старте (`main.ts` вызывает
+   `drizzle-orm`'s `migrate()` до поднятия HTTP-сервера).
+4. Файл SQLite лежит в volume `lector-data`, смонтированном на `/data`
+   (`DB_PATH=/data/lector.db` задаётся в образе).
+
+### Бэкап БД
+
+`server/scripts/backup-db.sh` делает `sqlite3 .backup` — безопасный
+снимок даже при активной записи в WAL-режиме:
+
+```
+docker compose exec app sh -c 'DB_PATH=/data/lector.db /app/scripts/backup-db.sh /data/backups'
+```
+
+Рекомендуется добавить это в cron на хосте.
+
+## Настройка бота у BotFather
+
+1. `/newbot` — получить `BOT_TOKEN`.
+2. `/mybots` → выбрать бота → **Bot Settings → Menu Button** → указать
+   URL Mini App (тот же `WEBAPP_URL`, что и в `.env`) — так пользователи
+   смогут открыть приложение из меню чата.
+3. `/mybots` → **Bot Settings → Configure Mini App** (или `/newapp` в
+   @BotFather) — включить Mini App и указать тот же HTTPS-URL.
+4. Команды бота (`/setcommands`):
+   ```
+   start - Comenzar / abrir Lector
+   read - Nueva lectura
+   ```
+5. Для локальной проверки веб-хуков/кнопок без деплоя можно прокинуть
+   `webapp`/`server` наружу через `ngrok` и временно указать этот URL в
+   BotFather и в `WEBAPP_URL`.
+
+## Переменные окружения
+
+Полный список — в `.env.example`. Кратко:
+
+| Переменная | Назначение |
+|---|---|
+| `BOT_TOKEN` | Токен бота от BotFather |
+| `ANTHROPIC_API_KEY` | Ключ Anthropic API |
+| `MODEL` | Модель для генерации/разбора (default `claude-sonnet-4-6`) |
+| `DB_PATH` | Путь к файлу SQLite |
+| `JWT_SECRET`, `JWT_TTL_SECONDS` | Подпись и время жизни сессионного JWT |
+| `DAILY_ARTICLE_LIMIT`, `DAILY_REVIEW_LIMIT` | Лимиты LLM-вызовов на пользователя в сутки |
+| `ADMIN_TG_IDS` | tg_user_id через запятую с доступом к `/api/admin/usage` |
+| `WEBAPP_URL` | Публичный HTTPS-адрес Mini App (кнопки бота) |
+| `PORT`, `LOG_LEVEL`, `NODE_ENV` | Общие настройки сервера |
+
+## Архитектурные заметки
+
+- **Аутентификация**: `initData` валидируется один раз в `POST
+  /auth/telegram` (HMAC-SHA256 по официальному алгоритму Telegram), после
+  чего выдаётся короткоживущий JWT. Дальнейшие запросы несут только JWT —
+  это дешевле, чем перевалидировать `initData` на каждый запрос, а
+  Telegram сам обновляет `initData` при каждом открытии Mini App, так что
+  повторный вход по истечении JWT не создаёт трения для пользователя.
+- **Планировщик**: `node-cron`, не BullMQ — приложение однопроцессное,
+  очередь без внешних воркеров и без Redis не нужна; минутный тик
+  проверяет локальное время каждого пользователя по его таймзоне.
+- **Стоимость LLM**: каждый вызов пишется в `llm_calls` (токены + цена в
+  микро-USD, `server/src/llm/pricing.ts` — тарифы нужно сверять с
+  актуальной страницей цен Anthropic перед продакшен-использованием).
+
+## Известные ограничения
+
+- Docker-образ не был собран/запущен в этой среде разработки (нет
+  доступа к Docker-демону) — перед первым деплоем стоит прогнать
+  `docker compose up -d --build` и убедиться, что всё поднимается штатно.
+- Полный пользовательский путь Mini App (онбординг → чтение → разбор)
+  проверялся вручную только через прямые вызовы REST API и юнит/
+  интеграционные тесты с замоканным LLM; сквозной прогон внутри реального
+  Telegram-клиента не выполнялся.
