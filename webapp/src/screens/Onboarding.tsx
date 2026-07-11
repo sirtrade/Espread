@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api } from "../api/client.js";
+import { api, deviceTimezone } from "../api/client.js";
 import { useAuth } from "../state/AuthContext.js";
 import { Button } from "../components/Button.js";
 import type { ExplainLang, Level } from "../api/types.js";
@@ -40,7 +40,15 @@ export function Onboarding() {
     setSaving(true);
     setError(null);
     try {
-      const profile = await api.patchMe({ level, explainLang, topics, dailyEnabled, dailyTime, markOnboarded: true });
+      const profile = await api.patchMe({
+        level,
+        explainLang,
+        topics,
+        dailyEnabled,
+        dailyTime,
+        timezone: deviceTimezone(),
+        markOnboarded: true,
+      });
       setProfile(profile);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar tu perfil");

@@ -44,6 +44,7 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
   let setUserTopics: typeof import("../src/db/repositories/topics.js").setUserTopics;
   let updateSessionMarks: typeof import("../src/db/repositories/sessions.js").updateSessionMarks;
   let getBankItems: typeof import("../src/db/repositories/bank.js").getBankItems;
+  let setBankItemStatus: typeof import("../src/db/repositories/bank.js").setBankItemStatus;
 
   beforeAll(async () => {
     ({ migrate } = await import("drizzle-orm/better-sqlite3/migrator"));
@@ -55,7 +56,7 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     ({ findOrCreateUser } = await import("../src/db/repositories/users.js"));
     ({ setUserTopics } = await import("../src/db/repositories/topics.js"));
     ({ updateSessionMarks } = await import("../src/db/repositories/sessions.js"));
-    ({ getBankItems } = await import("../src/db/repositories/bank.js"));
+    ({ getBankItems, setBankItemStatus } = await import("../src/db/repositories/bank.js"));
 
     const user = await findOrCreateUser(999001, "smoketest");
     userId = user.id;
@@ -165,5 +166,24 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     expect(activeAfterLearning).toHaveLength(0);
     const learned = await getBankItems(userId, "learned");
     expect(learned.map((i) => i.term).sort()).toEqual(["durante meses", "hallazgo"]);
+  });
+
+  it("stored the translation and the sentence containing the term as firstContext", async () => {
+    const learned = await getBankItems(userId, "learned");
+    const hallazgo = learned.find((i) => i.term === "hallazgo");
+    expect(hallazgo?.translation).toBe("discovery");
+    expect(hallazgo?.firstContext).toBe("Los científicos anunciaron un hallazgo relevante.");
+  });
+
+  it("lets the owner (and only the owner) change a bank item's status manually", async () => {
+    const learned = await getBankItems(userId, "learned");
+    const item = learned.find((i) => i.term === "hallazgo")!;
+
+    const foreign = await setBankItemStatus(userId + 1, item.id, "ignored");
+    expect(foreign).toBeUndefined();
+
+    const updated = await setBankItemStatus(userId, item.id, "active");
+    expect(updated?.status).toBe("active");
+    expect(updated?.cleanStreak).toBe(0);
   });
 });

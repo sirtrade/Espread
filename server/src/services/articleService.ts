@@ -2,6 +2,7 @@ import { pickTopic } from "../domain/topicRotation.js";
 import { selectTargetTerms } from "../domain/bank.js";
 import { generateArticle } from "../llm/articleGeneration.js";
 import { config } from "../lib/config.js";
+import { withUserLock } from "../lib/locks.js";
 import { Errors } from "../api/errors.js";
 import { getUserById } from "../db/repositories/users.js";
 import { getUserTopics } from "../db/repositories/topics.js";
@@ -50,6 +51,12 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
  * unconsumed pre-generated article, then a fresh (rate-limited) generation.
  */
 export async function startReading(userId: number): Promise<{ article: ArticleRow; session: SessionRow }> {
+  // Same lock key as review/complete: a double-tap on "Nueva lectura" must
+  // not generate (and pay for) two articles racing for the one active session.
+  return withUserLock(`session:${userId}`, () => startReadingLocked(userId));
+}
+
+async function startReadingLocked(userId: number): Promise<{ article: ArticleRow; session: SessionRow }> {
   const active = await getActiveSession(userId);
   if (active) {
     const article = await getArticleById(active.articleId);

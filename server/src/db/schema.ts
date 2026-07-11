@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -104,19 +104,27 @@ export const readingSessions = sqliteTable(
   }),
 );
 
-export const llmCalls = sqliteTable("llm_calls", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-  kind: text("kind", { enum: ["search", "generate", "review"] }).notNull(),
-  model: text("model").notNull(),
-  inputTokens: integer("input_tokens").notNull().default(0),
-  outputTokens: integer("output_tokens").notNull().default(0),
-  costUsd: integer("cost_usd_micros").notNull().default(0),
-  ok: integer("ok", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at")
-    .notNull()
-    .default(sql`(unixepoch('now') * 1000)`),
-});
+export const llmCalls = sqliteTable(
+  "llm_calls",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    kind: text("kind", { enum: ["search", "generate", "review"] }).notNull(),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    costUsd: integer("cost_usd_micros").notNull().default(0),
+    ok: integer("ok", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+  },
+  (t) => ({
+    // The per-user daily rate-limit check runs before every generation/review;
+    // without this it's a full scan of an ever-growing table.
+    userKindCreatedIdx: index("llm_calls_user_kind_created_idx").on(t.userId, t.kind, t.createdAt),
+  }),
+);
 
 export const userStats = sqliteTable("user_stats", {
   userId: integer("user_id")

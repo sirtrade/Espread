@@ -7,7 +7,9 @@ services:
     environment:
       PORT: ${PORT:-3000}
     ports:
-      - "${PORT:-3000}:3000"
+      # Bind to loopback only: TLS terminates at the reverse proxy on this
+      # host, so the app must not be reachable directly over plain HTTP.
+      - "127.0.0.1:${PORT:-3000}:3000"
     volumes:
       - lector-data:/data
 

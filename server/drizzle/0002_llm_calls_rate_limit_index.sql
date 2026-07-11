@@ -1,0 +1,1 @@
+CREATE INDEX `llm_calls_user_kind_created_idx` ON `llm_calls` (`user_id`,`kind`,`created_at`);

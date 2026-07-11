@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +22,15 @@ export function createApp() {
   app.get("/health", (c) => c.json({ ok: true }));
 
   const api = new Hono<AppEnv>();
+  // Largest legitimate payload is PUT /session marks (~120 KB worst case);
+  // anything bigger is garbage and shouldn't reach JSON.parse.
+  api.use(
+    "*",
+    bodyLimit({
+      maxSize: 256 * 1024,
+      onError: (c) => c.json({ error: { code: "payload_too_large", message: "Cuerpo de la petición demasiado grande" } }, 413),
+    }),
+  );
   api.route("/auth", authRoutes);
   api.route("/me", meRoutes);
   api.route("/articles", articlesRoutes);

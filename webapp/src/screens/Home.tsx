@@ -83,7 +83,12 @@ export function Home() {
       )}
 
       <div className="mb-6">
-        <p className="mb-2 text-sm font-medium text-subtext">Tu banco activo</p>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-medium text-subtext">Tu banco activo</p>
+          <button onClick={() => navigate("/bank")} className="text-xs text-subtext underline">
+            Ver todo →
+          </button>
+        </div>
         {bank.length === 0 ? (
           <p className="text-sm text-subtext">Aún no marcaste palabras. ¡Empieza a leer!</p>
         ) : (

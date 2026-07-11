@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidTimezone } from "../lib/timezone.js";
 
 export const authTelegramSchema = z.object({
   initData: z.string().min(1),
@@ -7,7 +8,12 @@ export const authTelegramSchema = z.object({
 export const patchMeSchema = z.object({
   level: z.enum(["A2", "B1", "B2", "C1"]).optional(),
   explainLang: z.enum(["ru", "en", "es"]).optional(),
-  timezone: z.string().min(1).max(64).optional(),
+  timezone: z
+    .string()
+    .min(1)
+    .max(64)
+    .refine(isValidTimezone, "Zona horaria inválida (se espera un identificador IANA, p. ej. Europe/Madrid)")
+    .optional(),
   topics: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
   dailyEnabled: z.boolean().optional(),
   dailyTime: z
@@ -24,4 +30,8 @@ export const putSessionSchema = z.object({
 
 export const bankQuerySchema = z.object({
   status: z.enum(["active", "learned", "ignored"]).optional(),
+});
+
+export const patchBankItemSchema = z.object({
+  status: z.enum(["active", "learned", "ignored"]),
 });

@@ -3,7 +3,12 @@ import { z } from "zod";
 export const searchStepSchema = z.object({
   facts: z.string().min(20),
   source_name: z.string().min(1),
-  source_url: z.string().url(),
+  // http(s) only: this URL is rendered as a link in the webapp, so a
+  // javascript:/data: scheme coming out of the LLM must never reach an href.
+  source_url: z
+    .string()
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), "source_url must be http(s)"),
 });
 export type SearchStepResult = z.infer<typeof searchStepSchema>;
 
