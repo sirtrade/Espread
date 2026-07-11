@@ -37,7 +37,12 @@ export function Review() {
     try {
       const { newlyLearned } = await api.completeSession();
       if (newlyLearned.length > 0) hapticSuccess();
-      navigate("/", { state: { newlyLearned } });
+      // Reinforce right away: a quick recall quiz over the words just marked.
+      if (result && result.words.length > 0) {
+        navigate("/quiz", { state: { words: result.words, newlyLearned } });
+      } else {
+        navigate("/", { state: { newlyLearned } });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar tu progreso");
       setContinuing(false);

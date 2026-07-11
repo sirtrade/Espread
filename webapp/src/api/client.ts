@@ -1,5 +1,18 @@
 import { retrieveRawInitData } from "@telegram-apps/sdk-react";
-import type { Article, BankItem, BankStatus, CompleteResult, Profile, ReviewResult, Session, Stats } from "./types.js";
+import type {
+  Article,
+  BankItem,
+  BankStatus,
+  CompleteResult,
+  HistoryItem,
+  PracticeCard,
+  Profile,
+  ReadArticle,
+  SentenceCheckResult,
+  ReviewResult,
+  Session,
+  Stats,
+} from "./types.js";
 
 const TOKEN_KEY = "lector_token";
 
@@ -109,6 +122,14 @@ export const api = {
   patchBankItem: (id: number, status: BankStatus) =>
     request<{ item: BankItem }>(`/bank/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   getStats: () => request<Stats>("/stats"),
+  getHistory: (limit = 20, offset = 0) =>
+    request<{ items: HistoryItem[]; total: number }>(`/articles?limit=${limit}&offset=${offset}`),
+  getReadArticle: (id: number) => request<{ article: ReadArticle }>(`/articles/${id}`),
+  getPracticeQueue: (limit = 10) => request<{ cards: PracticeCard[]; due: number }>(`/practice/queue?limit=${limit}`),
+  postPracticeAnswer: (itemId: number, correct: boolean) =>
+    request<{ ok: true }>("/practice/answer", { method: "POST", body: JSON.stringify({ itemId, correct }) }),
+  checkPracticeSentence: (itemId: number, sentence: string) =>
+    request<SentenceCheckResult>("/practice/sentence", { method: "POST", body: JSON.stringify({ itemId, sentence }) }),
 };
 
 /** The device's IANA timezone, sent with the profile so daily delivery fires at local time. */

@@ -22,6 +22,55 @@
   --tg-teal: #5fb3a9;
 }
 
+/* Explicit reading themes chosen by the user (data-theme on <html>). Fixed
+   palettes — they intentionally ignore Telegram's theme colors, because the
+   stock dark scheme (near-white on near-black) is harsh for long reading.
+   These blocks come after :root.dark so they win at equal specificity. */
+
+/* Día: warm paper, the default light look. */
+:root[data-theme="claro"] {
+  --tg-bg: #faf6ef;
+  --tg-surface: #ffffff;
+  --tg-text: #2a241d;
+  --tg-subtext: #8a8074;
+  --tg-accent: #b5651d;
+  --tg-amber: #c68a2e;
+  --tg-teal: #3e8f83;
+}
+
+/* Noche 1 — Sepia: warm parchment, dimmer than "claro". */
+:root[data-theme="sepia"] {
+  --tg-bg: #ecdfc6;
+  --tg-surface: #f5ecd9;
+  --tg-text: #43351f;
+  --tg-subtext: #8a7757;
+  --tg-accent: #a05e1c;
+  --tg-amber: #b8862e;
+  --tg-teal: #3e8073;
+}
+
+/* Noche 2 — Oscuro suave: warm dark gray with lowered-contrast off-white text. */
+:root[data-theme="oscuro"] {
+  --tg-bg: #262220;
+  --tg-surface: #322d29;
+  --tg-text: #d9d0c1;
+  --tg-subtext: #9c9284;
+  --tg-accent: #d99a52;
+  --tg-amber: #caa156;
+  --tg-teal: #5fb3a9;
+}
+
+/* Noche 3 — Ámbar nocturno: amber text on near-dark, minimal blue light. */
+:root[data-theme="ambar"] {
+  --tg-bg: #1c1712;
+  --tg-surface: #27201a;
+  --tg-text: #d8b98c;
+  --tg-subtext: #937f61;
+  --tg-accent: #e0a35c;
+  --tg-amber: #caa156;
+  --tg-teal: #7aa79b;
+}
+
 html,
 body,
 #root {
@@ -38,6 +87,20 @@ body {
   font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   font-size: 1.125rem;
   line-height: 1.85;
+}
+
+/* Reader font size, chosen by the user (data-fontsize on <html>).
+   Values must stay in sync with FONT_SIZES in src/lib/fontSize.ts. */
+:root[data-fontsize="sm"] .article-text {
+  font-size: 1rem;
+}
+:root[data-fontsize="lg"] .article-text {
+  font-size: 1.3rem;
+  line-height: 1.8;
+}
+:root[data-fontsize="xl"] .article-text {
+  font-size: 1.5rem;
+  line-height: 1.75;
 }
 
 .word-marked {

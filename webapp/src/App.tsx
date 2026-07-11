@@ -8,6 +8,10 @@ import { Reading } from "./screens/Reading.js";
 import { Review } from "./screens/Review.js";
 import { Settings } from "./screens/Settings.js";
 import { Bank } from "./screens/Bank.js";
+import { History } from "./screens/History.js";
+import { HistoryArticle } from "./screens/HistoryArticle.js";
+import { Quiz } from "./screens/Quiz.js";
+import { Practice } from "./screens/Practice.js";
 
 function Gate() {
   const { profile, loading, error, retry } = useAuth();
@@ -24,6 +28,10 @@ function Gate() {
       <Route path="/review" element={<Review />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/bank" element={<Bank />} />
+      <Route path="/history" element={<History />} />
+      <Route path="/history/:id" element={<HistoryArticle />} />
+      <Route path="/quiz" element={<Quiz />} />
+      <Route path="/practice" element={<Practice />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

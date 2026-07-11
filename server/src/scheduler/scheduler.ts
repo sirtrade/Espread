@@ -7,7 +7,9 @@ import {
   getAllUsersWithDailyEnabled,
   markDailyDelivered,
   markPrefetchDone,
+  setLastBotQuizAt,
 } from "../db/repositories/users.js";
+import { sendBotQuiz } from "../bot/quiz.js";
 import { generateFreshArticle } from "../services/articleService.js";
 import { getUnconsumedPrefetchedArticle } from "../db/repositories/articles.js";
 import { getLearnedSince } from "../db/repositories/bank.js";
@@ -99,6 +101,44 @@ async function runLearnedDigest(now: Date): Promise<void> {
   }
 }
 
+/** In-chat quizzes are only sent during waking hours (user's local time). */
+const QUIZ_WINDOW_START = "09:00";
+const QUIZ_WINDOW_END = "21:00";
+const QUIZ_WINDOW_HOURS = 12;
+
+async function runBotQuizzes(now: Date): Promise<void> {
+  const users = await getAllUsers();
+
+  for (const user of users) {
+    if (user.botQuizzesPerDay <= 0) continue;
+
+    let hhmm: string;
+    try {
+      hhmm = localHHMM(now, user.timezone);
+    } catch (err) {
+      logger.error({ err, userId: user.id, timezone: user.timezone }, "Invalid user timezone, skipping quiz");
+      continue;
+    }
+    if (hhmm < QUIZ_WINDOW_START || hhmm >= QUIZ_WINDOW_END) continue;
+
+    // N quizzes spread evenly across the window: send whenever at least
+    // window/N has passed since the previous quiz. Self-corrects after
+    // downtime without needing a per-day sent counter.
+    const intervalMs = (QUIZ_WINDOW_HOURS * 60 * 60 * 1000) / user.botQuizzesPerDay;
+    if (user.lastBotQuizAt && now.getTime() - user.lastBotQuizAt < intervalMs) continue;
+
+    try {
+      const sent = await sendBotQuiz(bot, user);
+      if (sent) {
+        await setLastBotQuizAt(user.id, now.getTime());
+        logger.info({ userId: user.id }, "Sent bot quiz");
+      }
+    } catch (err) {
+      logger.error({ err, userId: user.id }, "Bot quiz send failed");
+    }
+  }
+}
+
 /**
  * node-cron over BullMQ: this is a single-process, single-container app with
  * no existing Redis dependency and modest scale (per-user daily jobs, not a
@@ -110,6 +150,7 @@ export function startScheduler(): void {
     const now = new Date();
     runDailyDelivery(now).catch((err) => logger.error({ err }, "Daily delivery tick failed"));
     runLearnedDigest(now).catch((err) => logger.error({ err }, "Learned digest tick failed"));
+    runBotQuizzes(now).catch((err) => logger.error({ err }, "Bot quiz tick failed"));
   });
-  logger.info("Scheduler started: daily delivery + pre-generation + learned digest, checked every minute");
+  logger.info("Scheduler started: daily delivery + pre-generation + learned digest + bot quizzes, checked every minute");
 }

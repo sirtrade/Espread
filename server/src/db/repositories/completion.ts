@@ -1,16 +1,21 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { bankItems, readingSessions, userStats } from "../schema.js";
+import { articles, bankItems, readingSessions, userStats } from "../schema.js";
 import type { BankItemRecord } from "../../domain/bank.js";
 
 /**
  * Applies a finished reading session in a single transaction: bank upserts,
- * stats counters, and the session delete land together or not at all, so a
- * crash mid-way can't double-apply the review (exposures/streaks) on retry.
+ * stats counters, session archive onto the article row, and the session
+ * delete land together or not at all, so a crash mid-way can't double-apply
+ * the review (exposures/streaks) on retry.
  */
 export async function applyCompletion(params: {
   userId: number;
   sessionId: number;
+  articleId: number;
+  markedWords: string;
+  markedSents: string;
+  reviewResult: string;
   changedItems: readonly BankItemRecord[];
   newlyLearnedCount: number;
 }): Promise<void> {
@@ -50,6 +55,17 @@ export async function applyCompletion(params: {
         itemsLearned: sql`${userStats.itemsLearned} + ${params.newlyLearnedCount}`,
       })
       .where(eq(userStats.userId, params.userId))
+      .run();
+
+    trx
+      .update(articles)
+      .set({
+        markedWords: params.markedWords,
+        markedSents: params.markedSents,
+        reviewResult: params.reviewResult,
+        readAt: now,
+      })
+      .where(eq(articles.id, params.articleId))
       .run();
 
     trx.delete(readingSessions).where(eq(readingSessions.id, params.sessionId)).run();

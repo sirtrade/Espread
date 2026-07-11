@@ -1,7 +1,8 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { bankItems } from "../schema.js";
 import type { BankItemRecord, BankStatus } from "../../domain/bank.js";
+import { nextPracticeState } from "../../domain/practice.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -54,6 +55,72 @@ export async function getLearnedSince(userId: number, sinceMs: number): Promise<
   return db.query.bankItems.findMany({
     where: and(eq(bankItems.userId, userId), eq(bankItems.status, "learned"), gte(bankItems.updatedAt, sinceMs)),
   });
+}
+
+function dueForPracticeWhere(userId: number, now: number) {
+  return and(
+    eq(bankItems.userId, userId),
+    eq(bankItems.status, "active"),
+    or(isNull(bankItems.nextPracticeAt), lte(bankItems.nextPracticeAt, now)),
+  );
+}
+
+/** Active items whose spaced-repetition timer has expired (or never started). */
+export async function getDueForPractice(userId: number, now: number, limit: number): Promise<BankItemRow[]> {
+  return db.query.bankItems.findMany({
+    where: dueForPracticeWhere(userId, now),
+    // Nulls (never practiced) sort first in SQLite ASC — new words come first.
+    orderBy: [asc(bankItems.nextPracticeAt)],
+    limit,
+  });
+}
+
+export async function countDueForPractice(userId: number, now: number): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(bankItems)
+    .where(dueForPracticeWhere(userId, now));
+  return row?.count ?? 0;
+}
+
+/** Applies a practice answer to the SRS state. Never touches status/cleanStreak. */
+export async function applyPracticeAnswer(
+  userId: number,
+  itemId: number,
+  correct: boolean,
+  now = Date.now(),
+): Promise<BankItemRow | undefined> {
+  const item = await db.query.bankItems.findFirst({
+    where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)),
+  });
+  if (!item) return undefined;
+
+  const next = nextPracticeState(item.practiceStage, correct, now);
+  const [row] = await db.update(bankItems).set(next).where(eq(bankItems.id, itemId)).returning();
+  return row;
+}
+
+export async function getBankItemById(userId: number, itemId: number): Promise<BankItemRow | undefined> {
+  return db.query.bankItems.findFirst({ where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)) });
+}
+
+/** Random terms from the user's other bank items, used as quiz distractors. */
+export async function getDistractorPool(userId: number, excludeItemId: number, limit = 12): Promise<BankItemRow[]> {
+  return db.query.bankItems.findMany({
+    where: and(eq(bankItems.userId, userId), ne(bankItems.id, excludeItemId)),
+    orderBy: sql`random()`,
+    limit,
+  });
+}
+
+/** A random due item plus distractors, for the in-chat bot quiz. */
+export async function getRandomDueItem(userId: number, now: number): Promise<BankItemRow | undefined> {
+  const [row] = await db.query.bankItems.findMany({
+    where: dueForPracticeWhere(userId, now),
+    orderBy: sql`random()`,
+    limit: 1,
+  });
+  return row;
 }
 
 export async function countBankByStatus(userId: number, status: BankStatus): Promise<number> {

@@ -7,6 +7,7 @@ import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { tokenizeArticle } from "../lib/tokenize.js";
 import { hapticSelect } from "../telegram/telegram.js";
+import { ThemePicker } from "../components/ThemePicker.js";
 
 type Mode = "words" | "sentences";
 
@@ -118,23 +119,31 @@ export function Reading() {
         </p>
       )}
 
-      <div className="mb-4 flex gap-2">
-        <button
-          onClick={() => setMode("words")}
-          className={`rounded-full px-4 py-1.5 text-xs font-medium ${
-            mode === "words" ? "bg-accent text-white" : "bg-surface text-subtext"
-          }`}
-        >
-          Palabras
-        </button>
-        <button
-          onClick={() => setMode("sentences")}
-          className={`rounded-full px-4 py-1.5 text-xs font-medium ${
-            mode === "sentences" ? "bg-accent text-white" : "bg-surface text-subtext"
-          }`}
-        >
-          Frases
-        </button>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setMode("words")}
+            className={`rounded-full px-4 py-1.5 text-xs font-medium ${
+              mode === "words" ? "bg-accent text-white" : "bg-surface text-subtext"
+            }`}
+          >
+            Palabras
+          </button>
+          <button
+            onClick={() => setMode("sentences")}
+            className={`rounded-full px-4 py-1.5 text-xs font-medium ${
+              mode === "sentences" ? "bg-accent text-white" : "bg-surface text-subtext"
+            }`}
+          >
+            Frases
+          </button>
+        </div>
+        <div className="flex items-center gap-3">
+          <ThemePicker />
+          <button onClick={() => navigate("/settings")} className="text-lg text-subtext" aria-label="Ajustes">
+            ⚙
+          </button>
+        </div>
       </div>
 
       <article className="article-text space-y-4">

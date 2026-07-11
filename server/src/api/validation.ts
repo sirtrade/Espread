@@ -21,6 +21,17 @@ export const patchMeSchema = z.object({
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato de hora inválido, usa HH:MM")
     .optional(),
   markOnboarded: z.boolean().optional(),
+  botQuizzesPerDay: z.number().int().min(0).max(12).optional(),
+});
+
+export const practiceAnswerSchema = z.object({
+  itemId: z.number().int().positive(),
+  correct: z.boolean(),
+});
+
+export const practiceSentenceSchema = z.object({
+  itemId: z.number().int().positive(),
+  sentence: z.string().trim().min(3).max(500),
 });
 
 export const putSessionSchema = z.object({

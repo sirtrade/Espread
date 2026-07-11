@@ -17,6 +17,7 @@ export function Home() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [practiceDue, setPracticeDue] = useState(0);
 
   async function load() {
     setLoading(true);
@@ -27,9 +28,10 @@ export function Home() {
         navigate("/read", { replace: true });
         return;
       }
-      const [s, b] = await Promise.all([api.getStats(), api.getBank("active")]);
+      const [s, b, p] = await Promise.all([api.getStats(), api.getBank("active"), api.getPracticeQueue(1)]);
       setStats(s);
       setBank(b.items);
+      setPracticeDue(p.due);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudieron cargar tus datos");
     } finally {
@@ -63,9 +65,14 @@ export function Home() {
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Lector</h1>
-        <button onClick={() => navigate("/settings")} className="text-sm text-subtext" aria-label="Ajustes">
-          ⚙ Ajustes
-        </button>
+        <div className="flex items-center gap-4">
+          <button onClick={() => navigate("/history")} className="text-sm text-subtext" aria-label="Historial">
+            🕘 Historial
+          </button>
+          <button onClick={() => navigate("/settings")} className="text-sm text-subtext" aria-label="Ajustes">
+            ⚙ Ajustes
+          </button>
+        </div>
       </div>
 
       {location.state?.newlyLearned && location.state.newlyLearned.length > 0 && (
@@ -102,7 +109,12 @@ export function Home() {
 
       {startError && <p className="mb-3 text-sm text-red-500">{startError}</p>}
 
-      <div className="mt-auto pt-6">
+      <div className="mt-auto flex flex-col gap-2 pt-6">
+        {practiceDue > 0 && (
+          <Button variant="secondary" className="w-full" onClick={() => navigate("/practice")}>
+            🧠 Practicar ({practiceDue})
+          </Button>
+        )}
         <Button className="w-full" onClick={startReading} disabled={starting}>
           {starting ? "Generando..." : "Nueva lectura"}
         </Button>

@@ -11,6 +11,7 @@ const envSchema = z.object({
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
   DAILY_ARTICLE_LIMIT: z.coerce.number().int().positive().default(10),
   DAILY_REVIEW_LIMIT: z.coerce.number().int().positive().default(20),
+  DAILY_PRACTICE_LLM_LIMIT: z.coerce.number().int().positive().default(30),
   ADMIN_TG_IDS: z
     .string()
     .default("")

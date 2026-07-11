@@ -14,6 +14,9 @@ export const users = sqliteTable("users", {
   timezone: text("timezone").notNull().default("UTC"),
   dailyEnabled: integer("daily_enabled", { mode: "boolean" }).notNull().default(false),
   dailyTime: text("daily_time").notNull().default("08:00"),
+  // In-chat vocabulary quizzes: how many per day the user wants (0 = off).
+  botQuizzesPerDay: integer("bot_quizzes_per_day").notNull().default(0),
+  lastBotQuizAt: integer("last_bot_quiz_at"),
   onboardedAt: integer("onboarded_at"),
   lastDailyDeliveredDate: text("last_daily_delivered_date"),
   lastPrefetchDate: text("last_prefetch_date"),
@@ -49,6 +52,11 @@ export const bankItems = sqliteTable(
     cleanStreak: integer("clean_streak").notNull().default(0),
     translation: text("translation"),
     firstContext: text("first_context"),
+    // Spaced-repetition state for the practice mode. Deliberately separate
+    // from status/cleanStreak: practice reinforces memory but only clean
+    // reading exposures can promote an item to "learned".
+    practiceStage: integer("practice_stage").notNull().default(0),
+    nextPracticeAt: integer("next_practice_at"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch('now') * 1000)`),
@@ -61,23 +69,36 @@ export const bankItems = sqliteTable(
   }),
 );
 
-export const articles = sqliteTable("articles", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  body: text("body").notNull(),
-  topic: text("topic").notNull(),
-  sourceName: text("source_name"),
-  sourceUrl: text("source_url"),
-  targetTerms: text("target_terms").notNull().default("[]"),
-  prefetched: integer("prefetched", { mode: "boolean" }).notNull().default(false),
-  consumed: integer("consumed", { mode: "boolean" }).notNull().default(false),
-  createdAt: integer("created_at")
-    .notNull()
-    .default(sql`(unixepoch('now') * 1000)`),
-});
+export const articles = sqliteTable(
+  "articles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    topic: text("topic").notNull(),
+    sourceName: text("source_name"),
+    sourceUrl: text("source_url"),
+    targetTerms: text("target_terms").notNull().default("[]"),
+    prefetched: integer("prefetched", { mode: "boolean" }).notNull().default(false),
+    consumed: integer("consumed", { mode: "boolean" }).notNull().default(false),
+    // Reading history: when the session completes, its marks and LLM review
+    // are archived here (an article is read at most once) so past readings
+    // can be reopened with the words the user didn't know at the time.
+    markedWords: text("marked_words").notNull().default("[]"),
+    markedSents: text("marked_sents").notNull().default("[]"),
+    reviewResult: text("review_result"),
+    readAt: integer("read_at"),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+  },
+  (t) => ({
+    userReadIdx: index("articles_user_read_idx").on(t.userId, t.readAt),
+  }),
+);
 
 export const readingSessions = sqliteTable(
   "reading_sessions",
@@ -109,7 +130,7 @@ export const llmCalls = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-    kind: text("kind", { enum: ["search", "generate", "review"] }).notNull(),
+    kind: text("kind", { enum: ["search", "generate", "review", "practice"] }).notNull(),
     model: text("model").notNull(),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),

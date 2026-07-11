@@ -5,7 +5,7 @@ import { computeCostMicros } from "../../llm/pricing.js";
 
 export async function recordLlmCall(params: {
   userId: number | null;
-  kind: "search" | "generate" | "review";
+  kind: "search" | "generate" | "review" | "practice";
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -23,7 +23,7 @@ export async function recordLlmCall(params: {
 }
 
 /** Counts a user's LLM calls of a given kind in the last 24h, for rate limiting. */
-export async function countRecentCalls(userId: number, kind: "generate" | "review"): Promise<number> {
+export async function countRecentCalls(userId: number, kind: "generate" | "review" | "practice"): Promise<number> {
   const since = Date.now() - 24 * 60 * 60 * 1000;
   const [row] = await db
     .select({ count: sql<number>`count(*)` })

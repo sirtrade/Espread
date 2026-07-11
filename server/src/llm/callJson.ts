@@ -15,7 +15,7 @@ export interface CallJsonParams<T> {
   system: string;
   messages: Anthropic.MessageParam[];
   schema: z.ZodType<T>;
-  kind: "search" | "generate" | "review";
+  kind: "search" | "generate" | "review" | "practice";
   userId: number | null;
   model: string;
   maxTokens: number;

@@ -1,5 +1,5 @@
 import type { UserRow } from "../db/repositories/users.js";
-import type { ArticleRow } from "../db/repositories/articles.js";
+import type { ArticleRow, ReadArticleSummary } from "../db/repositories/articles.js";
 import type { SessionRow } from "../db/repositories/sessions.js";
 import type { BankItemRow } from "../db/repositories/bank.js";
 
@@ -14,6 +14,7 @@ export function serializeProfile(user: UserRow, topics: string[]) {
     topics,
     dailyEnabled: user.dailyEnabled,
     dailyTime: user.dailyTime,
+    botQuizzesPerDay: user.botQuizzesPerDay,
     onboarded: user.onboardedAt !== null,
   };
 }
@@ -27,6 +28,27 @@ export function serializeArticle(article: ArticleRow) {
     sourceName: article.sourceName,
     sourceUrl: article.sourceUrl,
     createdAt: article.createdAt,
+  };
+}
+
+export function serializeHistoryItem(row: ReadArticleSummary) {
+  return {
+    id: row.id,
+    title: row.title,
+    topic: row.topic,
+    readAt: row.readAt,
+    markedWordsCount: (JSON.parse(row.markedWords) as string[]).length,
+    markedSentsCount: (JSON.parse(row.markedSents) as string[]).length,
+  };
+}
+
+export function serializeReadArticle(article: ArticleRow) {
+  return {
+    ...serializeArticle(article),
+    readAt: article.readAt,
+    markedWords: JSON.parse(article.markedWords) as string[],
+    markedSents: JSON.parse(article.markedSents) as string[],
+    reviewResult: article.reviewResult ? (JSON.parse(article.reviewResult) as unknown) : null,
   };
 }
 

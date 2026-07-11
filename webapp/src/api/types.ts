@@ -12,6 +12,7 @@ export interface Profile {
   topics: string[];
   dailyEnabled: boolean;
   dailyTime: string;
+  botQuizzesPerDay: number;
   onboarded: boolean;
 }
 
@@ -68,8 +69,40 @@ export interface BankItem {
   updatedAt: number;
 }
 
+export interface HistoryItem {
+  id: number;
+  title: string;
+  topic: string;
+  readAt: number;
+  markedWordsCount: number;
+  markedSentsCount: number;
+}
+
+export interface ReadArticle extends Article {
+  readAt: number;
+  markedWords: string[];
+  markedSents: string[];
+  reviewResult: ReviewResult | null;
+}
+
 export interface Stats {
   articlesRead: number;
   itemsInProgress: number;
   itemsLearned: number;
+}
+
+export interface PracticeCard {
+  itemId: number;
+  term: string;
+  isPhrase: boolean;
+  translation: string | null;
+  type: "cloze" | "recall";
+  prompt: string;
+  options: string[];
+}
+
+export interface SentenceCheckResult {
+  ok: boolean;
+  feedback: string;
+  corrected: string | null;
 }

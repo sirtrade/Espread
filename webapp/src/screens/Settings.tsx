@@ -5,6 +5,8 @@ import { useAuth } from "../state/AuthContext.js";
 import { Button } from "../components/Button.js";
 import type { ExplainLang, Level } from "../api/types.js";
 import { confirmDialog } from "../telegram/telegram.js";
+import { ThemePicker } from "../components/ThemePicker.js";
+import { FontSizePicker } from "../components/FontSizePicker.js";
 
 const LEVELS: Level[] = ["A2", "B1", "B2", "C1"];
 const LANGS: { value: ExplainLang; label: string }[] = [
@@ -22,6 +24,7 @@ export function Settings() {
   const [customTopic, setCustomTopic] = useState("");
   const [dailyEnabled, setDailyEnabled] = useState(profile!.dailyEnabled);
   const [dailyTime, setDailyTime] = useState(profile!.dailyTime);
+  const [botQuizzesPerDay, setBotQuizzesPerDay] = useState(profile!.botQuizzesPerDay);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -48,6 +51,7 @@ export function Settings() {
         topics,
         dailyEnabled,
         dailyTime,
+        botQuizzesPerDay,
         timezone: deviceTimezone(),
       });
       setProfile(updated);
@@ -87,6 +91,20 @@ export function Settings() {
       </div>
 
       <div className="flex flex-col gap-6">
+        <div>
+          <p className="mb-2 text-sm font-medium">Tema de lectura</p>
+          <div className="rounded-xl bg-surface px-4 py-3">
+            <ThemePicker withLabels />
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-medium">Tamaño del texto</p>
+          <div className="rounded-xl bg-surface px-4 py-3">
+            <FontSizePicker />
+          </div>
+        </div>
+
         <div>
           <p className="mb-2 text-sm font-medium">Nivel</p>
           <div className="grid grid-cols-4 gap-2">
@@ -169,6 +187,37 @@ export function Settings() {
               />
             </label>
           )}
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-medium">Quiz de vocabulario en el chat</p>
+          <div className="rounded-xl bg-surface px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Quizzes por día</span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setBotQuizzesPerDay((n) => Math.max(0, n - 1))}
+                  className="bg-subtle h-8 w-8 rounded-full text-lg leading-none"
+                  aria-label="Menos"
+                >
+                  −
+                </button>
+                <span className="w-6 text-center text-sm font-semibold">{botQuizzesPerDay}</span>
+                <button
+                  onClick={() => setBotQuizzesPerDay((n) => Math.min(12, n + 1))}
+                  className="bg-subtle h-8 w-8 rounded-full text-lg leading-none"
+                  aria-label="Más"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-subtext">
+              {botQuizzesPerDay === 0
+                ? "Desactivado. El bot no enviará quizzes."
+                : `El bot te enviará ${botQuizzesPerDay} quiz(zes) entre las 09:00 y las 21:00.`}
+            </p>
+          </div>
         </div>
 
         {message && <p className="text-sm text-teal">{message}</p>}

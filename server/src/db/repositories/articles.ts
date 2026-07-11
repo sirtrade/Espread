@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { articles } from "../schema.js";
 
@@ -54,4 +54,33 @@ export async function markArticleConsumed(articleId: number): Promise<void> {
 
 export async function getArticleById(articleId: number): Promise<ArticleRow | undefined> {
   return db.query.articles.findFirst({ where: eq(articles.id, articleId) });
+}
+
+export interface ReadArticleSummary {
+  id: number;
+  title: string;
+  topic: string;
+  readAt: number | null;
+  markedWords: string;
+  markedSents: string;
+}
+
+/** Completed readings, newest first, for the history screen. */
+export async function listReadArticles(
+  userId: number,
+  limit: number,
+  offset: number,
+): Promise<{ items: ReadArticleSummary[]; total: number }> {
+  const where = and(eq(articles.userId, userId), isNotNull(articles.readAt));
+  const [items, [count]] = await Promise.all([
+    db.query.articles.findMany({
+      where,
+      orderBy: [desc(articles.readAt)],
+      limit,
+      offset,
+      columns: { id: true, title: true, topic: true, readAt: true, markedWords: true, markedSents: true },
+    }),
+    db.select({ total: sql<number>`count(*)` }).from(articles).where(where),
+  ]);
+  return { items, total: count?.total ?? 0 };
 }

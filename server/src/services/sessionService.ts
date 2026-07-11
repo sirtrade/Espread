@@ -119,6 +119,10 @@ export async function completeSession(userId: number): Promise<CompleteResult> {
     await applyCompletion({
       userId,
       sessionId: session.id,
+      articleId: article.id,
+      markedWords: session.markedWords,
+      markedSents: session.markedSents,
+      reviewResult: session.reviewResult,
       changedItems,
       newlyLearnedCount: newlyLearned.length,
     });

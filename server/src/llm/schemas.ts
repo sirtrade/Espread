@@ -18,6 +18,13 @@ export const articleStepSchema = z.object({
 });
 export type ArticleStepResult = z.infer<typeof articleStepSchema>;
 
+export const sentenceCheckSchema = z.object({
+  ok: z.boolean(),
+  feedback: z.string().min(1),
+  corrected: z.string().nullable(),
+});
+export type SentenceCheckResult = z.infer<typeof sentenceCheckSchema>;
+
 export const reviewSchema = z.object({
   words: z.array(
     z.object({

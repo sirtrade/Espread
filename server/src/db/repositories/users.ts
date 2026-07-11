@@ -10,6 +10,7 @@ export type UserPatch = Partial<{
   timezone: string;
   dailyEnabled: boolean;
   dailyTime: string;
+  botQuizzesPerDay: number;
   onboardedAt: number;
 }>;
 
@@ -33,6 +34,10 @@ export async function getAllUsers(): Promise<UserRow[]> {
 
 export async function markPrefetchDone(userId: number, dateStr: string): Promise<void> {
   await db.update(users).set({ lastPrefetchDate: dateStr }).where(eq(users.id, userId));
+}
+
+export async function setLastBotQuizAt(userId: number, ts: number): Promise<void> {
+  await db.update(users).set({ lastBotQuizAt: ts }).where(eq(users.id, userId));
 }
 
 export async function markDailyDelivered(userId: number, dateStr: string): Promise<void> {

@@ -2,8 +2,11 @@ import { Bot, InlineKeyboard } from "grammy";
 import { config } from "../lib/config.js";
 import { logger } from "../lib/logger.js";
 import { findOrCreateUser } from "../db/repositories/users.js";
+import { registerQuizHandlers } from "./quiz.js";
 
 export const bot = new Bot(config.BOT_TOKEN);
+
+registerQuizHandlers(bot);
 
 function openAppKeyboard(text: string): InlineKeyboard {
   const kb = new InlineKeyboard();

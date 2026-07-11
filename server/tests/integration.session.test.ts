@@ -45,6 +45,8 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
   let updateSessionMarks: typeof import("../src/db/repositories/sessions.js").updateSessionMarks;
   let getBankItems: typeof import("../src/db/repositories/bank.js").getBankItems;
   let setBankItemStatus: typeof import("../src/db/repositories/bank.js").setBankItemStatus;
+  let getArticleById: typeof import("../src/db/repositories/articles.js").getArticleById;
+  let listReadArticles: typeof import("../src/db/repositories/articles.js").listReadArticles;
 
   beforeAll(async () => {
     ({ migrate } = await import("drizzle-orm/better-sqlite3/migrator"));
@@ -57,6 +59,7 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     ({ setUserTopics } = await import("../src/db/repositories/topics.js"));
     ({ updateSessionMarks } = await import("../src/db/repositories/sessions.js"));
     ({ getBankItems, setBankItemStatus } = await import("../src/db/repositories/bank.js"));
+    ({ getArticleById, listReadArticles } = await import("../src/db/repositories/articles.js"));
 
     const user = await findOrCreateUser(999001, "smoketest");
     userId = user.id;
@@ -105,6 +108,19 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     const activeAfterCycle1 = await getBankItems(userId, "active");
     const terms = activeAfterCycle1.map((i) => i.term).sort();
     expect(terms).toEqual(["durante meses", "hallazgo"]);
+
+    // Completion archives the session's marks and review onto the article
+    // (reading history), even though the session row itself is deleted.
+    const archived = await getArticleById(article1.id);
+    expect(archived?.readAt).not.toBeNull();
+    expect(JSON.parse(archived!.markedWords)).toEqual(["hallazgo"]);
+    expect(JSON.parse(archived!.markedSents)).toEqual(["trabajó durante meses"]);
+    expect(archived!.reviewResult).not.toBeNull();
+
+    const history1 = await listReadArticles(userId, 10, 0);
+    expect(history1.total).toBe(1);
+    expect(history1.items[0]?.id).toBe(article1.id);
+    expect(history1.items[0]?.title).toBe("Un descubrimiento importante");
 
     // --- Cycle 2: the next generation prompt must include the marked word (recirculation) ---
     createMock
