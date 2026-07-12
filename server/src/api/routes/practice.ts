@@ -11,7 +11,7 @@ import {
 } from "../../db/repositories/bank.js";
 import { getUserById } from "../../db/repositories/users.js";
 import { countRecentCalls } from "../../db/repositories/llmCalls.js";
-import { buildCloze, buildOptions } from "../../domain/practice.js";
+import { buildClozeCard, buildOptions, parseStoredDistractors } from "../../domain/practice.js";
 import { checkPracticeSentence } from "../../llm/sentenceCheck.js";
 import { practiceAnswerSchema, practiceSentenceSchema } from "../validation.js";
 import type { AppEnv } from "../context.js";
@@ -22,12 +22,14 @@ practiceRoutes.use("*", requireAuth);
 
 export interface PracticeCard {
   itemId: number;
-  term: string;
+  lemma: string;
   isPhrase: boolean;
   translation: string | null;
-  /** "cloze": fill the blank in the original context; "recall": pick the term for a translation. */
+  /** "cloze": fill the blank in the original context; "recall": pick the word for a translation. */
   type: "cloze" | "recall";
   prompt: string;
+  /** the option that is correct: the blanked surface form for cloze, the lemma for recall */
+  answer: string;
   options: string[];
 }
 
@@ -40,31 +42,37 @@ practiceRoutes.get("/queue", async (c) => {
 
   const cards: PracticeCard[] = [];
   for (const item of dueItems) {
-    // Options are always Spanish terms (recall direction), so distractors
-    // work regardless of the user's explanation language.
-    const pool = (await getDistractorPool(userId, item.id)).map((d) => d.term);
-    const options = buildOptions(item.term, pool);
+    // Options are always Spanish words (recall direction), so distractors
+    // work regardless of the user's explanation language. Same-POS
+    // distractors stored on the item come first; the user's other bank
+    // lemmas pad the list when they're missing.
+    const pool = [
+      ...parseStoredDistractors(item.distractors),
+      ...(await getDistractorPool(userId, item.id)).map((d) => d.lemma),
+    ];
 
-    const cloze = item.firstContext ? buildCloze(item.firstContext, item.term) : null;
+    const cloze = buildClozeCard(item.firstContext, item.lemma, item.surfaceForm);
     if (cloze) {
       cards.push({
         itemId: item.id,
-        term: item.term,
+        lemma: item.lemma,
         isPhrase: item.isPhrase,
         translation: item.translation,
         type: "cloze",
-        prompt: cloze,
-        options,
+        prompt: cloze.prompt,
+        answer: cloze.answer,
+        options: buildOptions(cloze.answer, pool),
       });
     } else if (item.translation) {
       cards.push({
         itemId: item.id,
-        term: item.term,
+        lemma: item.lemma,
         isPhrase: item.isPhrase,
         translation: item.translation,
         type: "recall",
         prompt: item.translation,
-        options,
+        answer: item.lemma,
+        options: buildOptions(item.lemma, pool),
       });
     }
     // Items with neither a usable context nor a translation are skipped —
@@ -105,7 +113,7 @@ practiceRoutes.post("/sentence", async (c) => {
     userId,
     level: user.level,
     explainLang: user.explainLang,
-    term: item.term,
+    term: item.lemma,
     translation: item.translation,
     sentence: body.data.sentence,
   });

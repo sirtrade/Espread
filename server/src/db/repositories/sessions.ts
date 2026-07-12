@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../client.js";
 import { readingSessions } from "../schema.js";
+import type { Mark } from "../../domain/marks.js";
 
 export type SessionRow = typeof readingSessions.$inferSelect;
 
@@ -11,20 +12,16 @@ export async function getActiveSession(userId: number): Promise<SessionRow | und
 export async function createSession(userId: number, articleId: number): Promise<SessionRow> {
   const [row] = await db
     .insert(readingSessions)
-    .values({ userId, articleId, markedWords: "[]", markedSents: "[]", state: "reading" })
+    .values({ userId, articleId, marks: "[]", state: "reading" })
     .returning();
   if (!row) throw new Error("Failed to create session");
   return row;
 }
 
-export async function updateSessionMarks(
-  sessionId: number,
-  markedWords: string[],
-  markedSents: string[],
-): Promise<void> {
+export async function updateSessionMarks(sessionId: number, marks: Mark[]): Promise<void> {
   await db
     .update(readingSessions)
-    .set({ markedWords: JSON.stringify(markedWords), markedSents: JSON.stringify(markedSents), updatedAt: Date.now() })
+    .set({ marks: JSON.stringify(marks), updatedAt: Date.now() })
     .where(eq(readingSessions.id, sessionId));
 }
 

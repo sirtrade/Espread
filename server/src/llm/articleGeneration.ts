@@ -17,6 +17,25 @@ export interface GenerateArticleParams {
   targetTerms: string[];
 }
 
+/** How deep into the Spanish frequency list the article vocabulary may go. */
+export const LEVEL_FREQ_CAP: Record<GenerateArticleParams["level"], number> = {
+  A2: 1500,
+  B1: 2500,
+  B2: 3500,
+  C1: 5000,
+};
+
+/** Frequency framing for the write step; exported for tests. */
+export function frequencyInstruction(level: GenerateArticleParams["level"]): string {
+  const cap = LEVEL_FREQ_CAP[level];
+  return (
+    `Usa casi exclusivamente vocabulario dentro de las ~${cap} palabras más frecuentes del español. ` +
+    `Palabras raras o muy especializadas: solo si son imprescindibles para la noticia, máximo 2-3 por artículo; ` +
+    `si existe un sinónimo común, usa el sinónimo. ` +
+    `Los nombres propios y las palabras del vocabulario del estudiante indicadas aparte quedan fuera de esta restricción.`
+  );
+}
+
 export interface GeneratedArticle extends ArticleStepResult {
   sourceName: string | null;
   sourceUrl: string | null;
@@ -44,15 +63,17 @@ async function runSearchStep(userId: number, topic: string) {
 
 async function runWriteStep(params: {
   userId: number;
-  level: string;
+  level: GenerateArticleParams["level"];
   topic: string;
   targetTerms: string[];
   facts: { facts: string; sourceName: string } | null;
 }): Promise<ArticleStepResult> {
   const targetTermsBlock =
     params.targetTerms.length > 0
-      ? `Incorpora de forma NATURAL y sin marcarlas ni destacarlas estas palabras/frases españolas donde tenga sentido ` +
-        `(no fuerces todas si no encajan bien): ${params.targetTerms.join(", ")}.`
+      ? `Vocabulario del estudiante — incorpora de forma NATURAL y sin marcarlas ni destacarlas estas palabras/frases ` +
+        `españolas donde tenga sentido (no fuerces todas si no encajan bien). Son lemas: ` +
+        `usa estas palabras en cualquier forma flexionada que suene natural (conjugada, en plural, etc.): ` +
+        `${params.targetTerms.join(", ")}.`
       : "";
 
   const factsBlock = params.facts
@@ -64,6 +85,7 @@ async function runWriteStep(params: {
     `Eres un redactor que escribe artículos originales en español latinoamericano neutro, estilo revista, ` +
     `para un estudiante de nivel ${params.level} (Marco Común Europeo). ` +
     `El artículo debe tener entre 250 y 320 palabras, párrafos cortos, vocabulario y gramática apropiados para el nivel ${params.level}. ` +
+    `${frequencyInstruction(params.level)} ` +
     `${targetTermsBlock}\n` +
     `Responde ÚNICAMENTE con JSON: {"title": string, "body": string}.`;
 

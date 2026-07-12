@@ -2,6 +2,7 @@ import type { UserRow } from "../db/repositories/users.js";
 import type { ArticleRow, ReadArticleSummary } from "../db/repositories/articles.js";
 import type { SessionRow } from "../db/repositories/sessions.js";
 import type { BankItemRow } from "../db/repositories/bank.js";
+import type { Mark } from "../domain/marks.js";
 
 export function serializeProfile(user: UserRow, topics: string[]) {
   return {
@@ -37,8 +38,7 @@ export function serializeHistoryItem(row: ReadArticleSummary) {
     title: row.title,
     topic: row.topic,
     readAt: row.readAt,
-    markedWordsCount: (JSON.parse(row.markedWords) as string[]).length,
-    markedSentsCount: (JSON.parse(row.markedSents) as string[]).length,
+    marksCount: (JSON.parse(row.marks) as unknown[]).length,
   };
 }
 
@@ -46,8 +46,7 @@ export function serializeReadArticle(article: ArticleRow) {
   return {
     ...serializeArticle(article),
     readAt: article.readAt,
-    markedWords: JSON.parse(article.markedWords) as string[],
-    markedSents: JSON.parse(article.markedSents) as string[],
+    marks: JSON.parse(article.marks) as Mark[],
     reviewResult: article.reviewResult ? (JSON.parse(article.reviewResult) as unknown) : null,
   };
 }
@@ -56,8 +55,7 @@ export function serializeSession(session: SessionRow) {
   return {
     id: session.id,
     articleId: session.articleId,
-    markedWords: JSON.parse(session.markedWords) as string[],
-    markedSents: JSON.parse(session.markedSents) as string[],
+    marks: JSON.parse(session.marks) as Mark[],
     state: session.state,
     updatedAt: session.updatedAt,
   };
@@ -66,13 +64,20 @@ export function serializeSession(session: SessionRow) {
 export function serializeBankItem(item: BankItemRow) {
   return {
     id: item.id,
-    term: item.term,
+    lemma: item.lemma,
+    surfaceForm: item.surfaceForm,
     isPhrase: item.isPhrase,
+    pos: item.pos,
+    gender: item.gender,
     status: item.status,
     exposures: item.exposures,
     cleanStreak: item.cleanStreak,
     translation: item.translation,
+    note: item.note,
     firstContext: item.firstContext,
+    contextTranslation: item.contextTranslation,
+    distractors: item.distractors ? (JSON.parse(item.distractors) as string[]) : null,
+    freqBand: item.freqBand,
     updatedAt: item.updatedAt,
   };
 }

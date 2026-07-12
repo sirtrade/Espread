@@ -25,20 +25,50 @@ export const sentenceCheckSchema = z.object({
 });
 export type SentenceCheckResult = z.infer<typeof sentenceCheckSchema>;
 
+export const posSchema = z.enum(["verb", "noun", "adj", "adv", "phrase", "other"]);
+export const freqBandSchema = z.enum(["top1000", "top3000", "top5000", "rare"]);
+
+// The old prompt dumped explanations and the Spanish original into the
+// translation field ("ранний (acceso anticipado — early access)"), which
+// leaked the answer into quiz questions. Reject anything that isn't a plain
+// short translation; explanations belong in `note`.
+export const shortTranslationSchema = z
+  .string()
+  .min(1)
+  .max(60)
+  .refine(
+    (s) => !s.includes("(") && !s.includes("—"),
+    "translation must be a short plain translation without parentheses or dashes",
+  );
+
+export const reviewItemSchema = z.object({
+  /** exact form(s) as marked in the text, e.g. "perfila" or "se llama" */
+  surface: z.string().min(1).max(120),
+  /** dictionary form: infinitive (with -se), noun singular, adj masc. sing. */
+  lemma: z.string().min(1).max(80),
+  pos: posSchema,
+  gender: z
+    .enum(["m", "f"])
+    .nullish()
+    .transform((v) => v ?? null),
+  translation: shortTranslationSchema,
+  note: z
+    .string()
+    .max(300)
+    .nullish()
+    .transform((v) => v || null),
+  contextTranslation: z
+    .string()
+    .max(500)
+    .nullish()
+    .transform((v) => v || null),
+  freqBand: freqBandSchema,
+  /** exactly 3 same-POS Spanish distractors for multiple-choice quizzes */
+  distractors: z.array(z.string().min(1).max(60)).length(3),
+});
+export type ReviewItem = z.infer<typeof reviewItemSchema>;
+
 export const reviewSchema = z.object({
-  words: z.array(
-    z.object({
-      term: z.string().min(1),
-      translation: z.string().min(1),
-      frequency: z.enum(["alta", "baja"]),
-    }),
-  ),
-  phrases: z.array(
-    z.object({
-      term: z.string().min(1),
-      explanation: z.string().min(1),
-      clave: z.string().nullable(),
-    }),
-  ),
+  items: z.array(reviewItemSchema),
 });
 export type ReviewResult = z.infer<typeof reviewSchema>;

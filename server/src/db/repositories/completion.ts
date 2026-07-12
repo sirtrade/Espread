@@ -13,8 +13,7 @@ export async function applyCompletion(params: {
   userId: number;
   sessionId: number;
   articleId: number;
-  markedWords: string;
-  markedSents: string;
+  marks: string;
   reviewResult: string;
   changedItems: readonly BankItemRecord[];
   newlyLearnedCount: number;
@@ -22,26 +21,43 @@ export async function applyCompletion(params: {
   const now = Date.now();
   db.transaction((trx) => {
     for (const item of params.changedItems) {
+      // The "only overwrite context fields with non-empty values" rule is
+      // applied in applyReviewToBank; the item here is the final state.
       trx
         .insert(bankItems)
         .values({
           userId: params.userId,
-          term: item.term,
+          lemma: item.lemma,
           isPhrase: item.isPhrase,
           status: item.status,
           exposures: item.exposures,
           cleanStreak: item.cleanStreak,
           translation: item.translation,
           firstContext: item.firstContext,
+          surfaceForm: item.surfaceForm,
+          pos: item.pos,
+          gender: item.gender,
+          note: item.note,
+          contextTranslation: item.contextTranslation,
+          distractors: item.distractors,
+          freqBand: item.freqBand,
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: [bankItems.userId, bankItems.term],
+          target: [bankItems.userId, bankItems.lemma],
           set: {
             status: item.status,
             exposures: item.exposures,
             cleanStreak: item.cleanStreak,
             translation: item.translation,
+            firstContext: item.firstContext,
+            surfaceForm: item.surfaceForm,
+            pos: item.pos,
+            gender: item.gender,
+            note: item.note,
+            contextTranslation: item.contextTranslation,
+            distractors: item.distractors,
+            freqBand: item.freqBand,
             updatedAt: now,
           },
         })
@@ -60,8 +76,7 @@ export async function applyCompletion(params: {
     trx
       .update(articles)
       .set({
-        markedWords: params.markedWords,
-        markedSents: params.markedSents,
+        marks: params.marks,
         reviewResult: params.reviewResult,
         readAt: now,
       })
