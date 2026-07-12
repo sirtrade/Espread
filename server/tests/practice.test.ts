@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCloze,
+  buildClozeCard,
   buildOptions,
   nextPracticeState,
+  parseStoredDistractors,
   PRACTICE_INTERVALS_DAYS,
 } from "../src/domain/practice.js";
 
@@ -73,5 +75,34 @@ describe("buildCloze", () => {
     expect(buildCloze("El equipo trabajó durante meses en el proyecto.", "durante meses")).toBe(
       "El equipo trabajó _____ en el proyecto.",
     );
+  });
+});
+
+describe("buildClozeCard", () => {
+  it("blanks the surface form when the lemma doesn't occur in the context", () => {
+    const card = buildClozeCard("El proyecto se perfila como líder.", "perfilarse", "perfila");
+    expect(card).toEqual({ prompt: "El proyecto se _____ como líder.", answer: "perfila" });
+  });
+
+  it("falls back to the lemma when there is no surface form", () => {
+    const card = buildClozeCard("La casa es grande.", "casa", null);
+    expect(card).toEqual({ prompt: "La _____ es grande.", answer: "casa" });
+  });
+
+  it("returns null when neither form occurs or there is no context", () => {
+    expect(buildClozeCard("Una frase sin la palabra.", "perfilarse", "perfila")).toBeNull();
+    expect(buildClozeCard(null, "casa", "casas")).toBeNull();
+  });
+});
+
+describe("parseStoredDistractors", () => {
+  it("parses a stored JSON array", () => {
+    expect(parseStoredDistractors('["uno","dos","tres"]')).toEqual(["uno", "dos", "tres"]);
+  });
+
+  it("returns [] for null, malformed JSON, or non-array values", () => {
+    expect(parseStoredDistractors(null)).toEqual([]);
+    expect(parseStoredDistractors("not json")).toEqual([]);
+    expect(parseStoredDistractors('{"a":1}')).toEqual([]);
   });
 });
