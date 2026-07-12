@@ -7,10 +7,12 @@ import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { tokenizeArticle } from "../lib/tokenize.js";
 import { displayLemma } from "../lib/vocab.js";
+import { useT, locale } from "../lib/i18n.js";
 
 /** Read-only view of a past reading: the article with the words and phrases
  *  the user had marked at the time, plus the saved LLM review below. */
 export function HistoryArticle() {
+  const { t, lang } = useT();
   const navigate = useNavigate();
   const { id } = useParams();
   const [article, setArticle] = useState<ReadArticle | null>(null);
@@ -24,7 +26,7 @@ export function HistoryArticle() {
       const { article: a } = await api.getReadArticle(Number(id));
       setArticle(a);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar el artículo");
+      setError(err instanceof Error ? err.message : t("historyArticle.loadError"));
     } finally {
       setLoading(false);
     }
@@ -71,25 +73,31 @@ export function HistoryArticle() {
 
   const review = article?.reviewResult;
 
-  if (loading) return <Spinner label="Cargando artículo..." />;
+  if (loading) return <Spinner label={t("reading.loading")} />;
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!article) return null;
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6">
       <div className="mb-4 flex items-center justify-between">
-        <button onClick={() => navigate("/history")} className="text-sm text-subtext" aria-label="Volver">
-          ← Historial
+        <button onClick={() => navigate("/history")} className="text-sm text-subtext" aria-label={t("historyArticle.back")}>
+          {t("historyArticle.back")}
         </button>
         <p className="text-xs text-subtext">
-          Leído el {new Date(article.readAt).toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })}
+          {t("historyArticle.readOn", {
+            date: new Date(article.readAt).toLocaleDateString(locale(lang), {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }),
+          })}
         </p>
       </div>
 
       <h1 className="mb-1 text-2xl font-semibold">{article.title}</h1>
       {article.sourceName && (
         <p className="mb-4 text-xs text-subtext">
-          Fuente:{" "}
+          {t("reading.source")}{" "}
           {article.sourceUrl ? (
             <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">
               {article.sourceName}
@@ -130,18 +138,20 @@ export function HistoryArticle() {
 /** Renders the saved review below the article, handling both archived formats
  *  (new `{ items }` and legacy `{ words, phrases }`) and a missing review. */
 function ReviewArchive({ review }: { review: ReadArticle["reviewResult"] }) {
+  const { t } = useT();
   if (isArchivedReviewResult(review)) return <NewReviewArchive review={review} />;
   if (review && (review.words.length > 0 || review.phrases.length > 0))
     return <LegacyReviewArchive review={review} />;
-  return <p className="text-sm text-subtext">No marcaste nada en esta lectura. ¡Buen trabajo!</p>;
+  return <p className="text-sm text-subtext">{t("review.nothingMarked")}</p>;
 }
 
 function NewReviewArchive({ review }: { review: ArchivedReviewResult }) {
+  const { t } = useT();
   if (review.items.length === 0)
-    return <p className="text-sm text-subtext">No marcaste nada en esta lectura. ¡Buen trabajo!</p>;
+    return <p className="text-sm text-subtext">{t("review.nothingMarked")}</p>;
   return (
     <>
-      <h2 className="mb-4 text-lg font-semibold">Lo que marcaste</h2>
+      <h2 className="mb-4 text-lg font-semibold">{t("review.whatYouMarked")}</h2>
       <ul className="flex flex-col gap-2">
         {review.items.map((item, i) => (
           <li key={i} className="rounded-xl bg-surface px-4 py-3">
@@ -156,13 +166,14 @@ function NewReviewArchive({ review }: { review: ArchivedReviewResult }) {
 }
 
 function LegacyReviewArchive({ review }: { review: LegacyReviewResult }) {
+  const { t } = useT();
   return (
     <>
-      <h2 className="mb-4 text-lg font-semibold">Lo que marcaste</h2>
+      <h2 className="mb-4 text-lg font-semibold">{t("review.whatYouMarked")}</h2>
 
       {review.words.length > 0 && (
         <section className="mb-6">
-          <p className="mb-2 text-sm font-medium text-subtext">Palabras</p>
+          <p className="mb-2 text-sm font-medium text-subtext">{t("historyArticle.words")}</p>
           <ul className="flex flex-col gap-2">
             {review.words.map((w, i) => (
               <li key={i} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
@@ -178,7 +189,7 @@ function LegacyReviewArchive({ review }: { review: LegacyReviewResult }) {
 
       {review.phrases.length > 0 && (
         <section className="mb-6">
-          <p className="mb-2 text-sm font-medium text-subtext">Frases</p>
+          <p className="mb-2 text-sm font-medium text-subtext">{t("historyArticle.phrases")}</p>
           <ul className="flex flex-col gap-2">
             {review.phrases.map((p, i) => (
               <li key={i} className="rounded-xl bg-surface px-4 py-3">

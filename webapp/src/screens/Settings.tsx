@@ -7,22 +7,15 @@ import type { ExplainLang, Level } from "../api/types.js";
 import { confirmDialog } from "../telegram/telegram.js";
 import { ThemePicker } from "../components/ThemePicker.js";
 import { FontSizePicker } from "../components/FontSizePicker.js";
+import { useT } from "../lib/i18n.js";
+import { langLabel } from "../lib/langs.js";
 
 const LEVELS: Level[] = ["A2", "B1", "B2", "C1"];
-const POOL_PRESETS: { value: number; label: string }[] = [
-  { value: 10, label: "10" },
-  { value: 20, label: "20" },
-  { value: 30, label: "30" },
-  { value: 50, label: "50" },
-  { value: 0, label: "Sin límite" },
-];
-const LANGS: { value: ExplainLang; label: string }[] = [
-  { value: "ru", label: "Русский" },
-  { value: "en", label: "English" },
-  { value: "es", label: "Solo español" },
-];
+const POOL_PRESETS: number[] = [10, 20, 30, 50, 0];
+const LANG_VALUES: ExplainLang[] = ["ru", "en", "es"];
 
 export function Settings() {
+  const { t, lang } = useT();
   const navigate = useNavigate();
   const { profile, setProfile } = useAuth();
   const [level, setLevel] = useState<Level>(profile!.level);
@@ -64,19 +57,16 @@ export function Settings() {
         timezone: deviceTimezone(),
       });
       setProfile(updated);
-      setMessage("Guardado");
+      setMessage(t("settings.saved"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar");
+      setError(err instanceof Error ? err.message : t("settings.saveError"));
     } finally {
       setSaving(false);
     }
   }
 
   async function resetProgress() {
-    const ok = await confirmDialog(
-      "Esto borrará tu banco de palabras, tus artículos y tus estadísticas. Esta acción no se puede deshacer.",
-      "Sí, reiniciar",
-    );
+    const ok = await confirmDialog(t("settings.resetConfirm"), t("settings.resetConfirmYes"));
     if (!ok) return;
     setResetting(true);
     setError(null);
@@ -84,7 +74,7 @@ export function Settings() {
       await api.resetProgress();
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo reiniciar el progreso");
+      setError(err instanceof Error ? err.message : t("settings.resetError"));
     } finally {
       setResetting(false);
     }
@@ -96,26 +86,26 @@ export function Settings() {
         <button onClick={() => navigate(-1)} className="text-subtext">
           ←
         </button>
-        <h1 className="text-xl font-semibold">Ajustes</h1>
+        <h1 className="text-xl font-semibold">{t("home.settings")}</h1>
       </div>
 
       <div className="flex flex-col gap-6">
         <div>
-          <p className="mb-2 text-sm font-medium">Tema de lectura</p>
+          <p className="mb-2 text-sm font-medium">{t("settings.readingTheme")}</p>
           <div className="rounded-xl bg-surface px-4 py-3">
             <ThemePicker withLabels />
           </div>
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Tamaño del texto</p>
+          <p className="mb-2 text-sm font-medium">{t("settings.textSize")}</p>
           <div className="rounded-xl bg-surface px-4 py-3">
             <FontSizePicker />
           </div>
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Nivel</p>
+          <p className="mb-2 text-sm font-medium">{t("settings.level")}</p>
           <div className="grid grid-cols-4 gap-2">
             {LEVELS.map((l) => (
               <button
@@ -130,31 +120,31 @@ export function Settings() {
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Idioma de las explicaciones</p>
+          <p className="mb-2 text-sm font-medium">{t("onboarding.explainLang")}</p>
           <div className="flex flex-col gap-2">
-            {LANGS.map((l) => (
+            {LANG_VALUES.map((value) => (
               <button
-                key={l.value}
-                onClick={() => setExplainLang(l.value)}
+                key={value}
+                onClick={() => setExplainLang(value)}
                 className={`rounded-xl px-4 py-3 text-left text-sm font-medium ${
-                  l.value === explainLang ? "bg-accent text-white" : "bg-surface"
+                  value === explainLang ? "bg-accent text-white" : "bg-surface"
                 }`}
               >
-                {l.label}
+                {langLabel(lang, value)}
               </button>
             ))}
           </div>
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Temas</p>
+          <p className="mb-2 text-sm font-medium">{t("settings.topics")}</p>
           <div className="flex flex-wrap gap-2">
             {topics.map((topic) => (
               <button
                 key={topic}
                 onClick={() => removeTopic(topic)}
                 className="rounded-full bg-accent px-4 py-2 text-sm text-white"
-                title="Quitar"
+                title={t("settings.removeTopic")}
               >
                 {topic} ✕
               </button>
@@ -165,19 +155,19 @@ export function Settings() {
               value={customTopic}
               onChange={(e) => setCustomTopic(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addCustomTopic()}
-              placeholder="Añadir tema..."
+              placeholder={t("settings.addTopic")}
               className="border-subtle flex-1 rounded-xl border bg-surface px-3 py-2 text-sm outline-none"
             />
             <Button variant="secondary" onClick={addCustomTopic}>
-              Añadir
+              {t("common.add")}
             </Button>
           </div>
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Lectura diaria</p>
+          <p className="mb-2 text-sm font-medium">{t("onboarding.daily")}</p>
           <label className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
-            <span className="text-sm">Enviarme un artículo cada día</span>
+            <span className="text-sm">{t("onboarding.dailyToggle")}</span>
             <input
               type="checkbox"
               checked={dailyEnabled}
@@ -187,7 +177,7 @@ export function Settings() {
           </label>
           {dailyEnabled && (
             <label className="mt-2 flex items-center justify-between rounded-xl bg-surface px-4 py-3">
-              <span className="text-sm">Hora</span>
+              <span className="text-sm">{t("onboarding.time")}</span>
               <input
                 type="time"
                 value={dailyTime}
@@ -199,15 +189,15 @@ export function Settings() {
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Quiz de vocabulario en el chat</p>
+          <p className="mb-2 text-sm font-medium">{t("settings.botQuiz")}</p>
           <div className="rounded-xl bg-surface px-4 py-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm">Quizzes por día</span>
+              <span className="text-sm">{t("settings.quizzesPerDay")}</span>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setBotQuizzesPerDay((n) => Math.max(0, n - 1))}
                   className="bg-subtle h-8 w-8 rounded-full text-lg leading-none"
-                  aria-label="Menos"
+                  aria-label={t("settings.less")}
                 >
                   −
                 </button>
@@ -215,7 +205,7 @@ export function Settings() {
                 <button
                   onClick={() => setBotQuizzesPerDay((n) => Math.min(12, n + 1))}
                   className="bg-subtle h-8 w-8 rounded-full text-lg leading-none"
-                  aria-label="Más"
+                  aria-label={t("settings.more")}
                 >
                   +
                 </button>
@@ -223,31 +213,31 @@ export function Settings() {
             </div>
             <p className="mt-2 text-xs text-subtext">
               {botQuizzesPerDay === 0
-                ? "Desactivado. El bot no enviará quizzes."
-                : `El bot te enviará ${botQuizzesPerDay} quiz(zes) entre las 09:00 y las 21:00.`}
+                ? t("settings.quizOff")
+                : t("settings.quizOn", { count: botQuizzesPerDay })}
             </p>
           </div>
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium">Palabras en estudio</p>
+          <p className="mb-2 text-sm font-medium">{t("settings.pool")}</p>
           <div className="grid grid-cols-5 gap-2">
-            {POOL_PRESETS.map((p) => (
+            {POOL_PRESETS.map((value) => (
               <button
-                key={p.value}
-                onClick={() => setActivePoolLimit(p.value)}
+                key={value}
+                onClick={() => setActivePoolLimit(value)}
                 className={`rounded-xl px-2 py-3 text-sm font-medium ${
-                  p.value === activePoolLimit ? "bg-accent text-white" : "bg-surface"
+                  value === activePoolLimit ? "bg-accent text-white" : "bg-surface"
                 }`}
               >
-                {p.label}
+                {value === 0 ? t("settings.poolUnlimited") : value}
               </button>
             ))}
           </div>
           <p className="mt-2 text-xs text-subtext">
             {activePoolLimit === 0
-              ? "Sin límite: todas las palabras que guardes entran en estudio."
-              : `Mantendrás hasta ${activePoolLimit} palabras en estudio a la vez. Las demás esperan en cola y entran a medida que dominas o descartas otras.`}
+              ? t("settings.poolNoLimitNote")
+              : t("settings.poolLimitNote", { count: activePoolLimit })}
           </p>
         </div>
 
@@ -255,12 +245,12 @@ export function Settings() {
         {error && <p className="text-sm text-red-500">{error}</p>}
 
         <Button onClick={save} disabled={saving || topics.length === 0}>
-          {saving ? "Guardando..." : "Guardar cambios"}
+          {saving ? t("common.saving") : t("settings.saveChanges")}
         </Button>
 
         <div className="mt-8 border-t border-subtle-light pt-6">
           <Button variant="secondary" className="w-full text-red-500" onClick={resetProgress} disabled={resetting}>
-            {resetting ? "Reiniciando..." : "Restablecer progreso"}
+            {resetting ? t("settings.resetting") : t("settings.reset")}
           </Button>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { api } from "../api/client.js";
 import type { ReviewItem } from "../api/types.js";
 import { buildQuizCards, type SessionCard } from "../lib/cards.js";
 import { QuizSession } from "../components/QuizSession.js";
+import { useT } from "../lib/i18n.js";
 
 interface QuizState {
   items?: ReviewItem[];
@@ -15,6 +16,7 @@ interface QuizState {
  *  bank. Answers count toward the learning streak (best-effort, keyed by
  *  lemma) just like Práctica. */
 export function Quiz() {
+  const { t } = useT();
   const navigate = useNavigate();
   const location = useLocation() as { state?: QuizState };
   const items = location.state?.items ?? [];
@@ -38,11 +40,11 @@ export function Quiz() {
 
   return (
     <QuizSession
-      title="Quiz rápido"
+      title={t("quiz.title")}
       cards={cards}
       onAnswer={(card, correct) => api.postPracticeAnswer({ lemma: card.lemma }, correct)}
       onFinish={({ learned }) => goHome(learned)}
-      finishLabel="Terminar"
+      finishLabel={t("common.finish")}
     />
   );
 }

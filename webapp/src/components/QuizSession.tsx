@@ -3,6 +3,7 @@ import type { PracticeAnswerResult } from "../api/types.js";
 import type { SessionCard } from "../lib/cards.js";
 import { Button } from "./Button.js";
 import { hapticSelect, hapticSuccess } from "../telegram/telegram.js";
+import { useT } from "../lib/i18n.js";
 
 /** Server outcome of an answer; `void` when the write was best-effort and lost. */
 export type AnswerOutcome = Pick<PracticeAnswerResult, "cleanStreak" | "status" | "streakCredited" | "becameLearned">;
@@ -38,10 +39,11 @@ export function QuizSession({
   pendingCount = 0,
   onAnswer,
   onFinish,
-  finishLabel = "Volver al inicio",
+  finishLabel,
   renderExtra,
   onNext,
 }: QuizSessionProps) {
+  const { t } = useT();
   const [index, setIndex] = useState(0);
   const [chosen, setChosen] = useState<string | null>(null);
   const [answers, setAnswers] = useState<RecordedAnswer[]>([]);
@@ -90,19 +92,21 @@ export function QuizSession({
         <div className="rounded-2xl bg-surface px-5 py-6 text-center">
           <p className="text-3xl">🎯</p>
           <p className="mt-2 text-lg font-semibold">
-            Verdad {correctCount} de {cards.length}
+            {t("quizSession.result", { correct: correctCount, total: cards.length })}
           </p>
         </div>
 
         {advanced.length > 0 && (
           <section className="mt-6">
-            <p className="mb-2 text-sm font-medium text-subtext">Avanzaron</p>
+            <p className="mb-2 text-sm font-medium text-subtext">{t("quizSession.advanced")}</p>
             <ul className="flex flex-col gap-2">
               {advanced.map((a) => (
                 <li key={a.card.key} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
                   <span className="font-medium">{a.card.lemma}</span>
                   <span className="text-xs text-subtext">
-                    {a.outcome?.becameLearned ? "¡dominada! 🏆" : `racha ${a.outcome?.cleanStreak ?? ""}`.trim()}
+                    {a.outcome?.becameLearned
+                      ? t("quizSession.mastered")
+                      : t("quizSession.streak", { n: a.outcome?.cleanStreak ?? "" })}
                   </span>
                 </li>
               ))}
@@ -112,12 +116,12 @@ export function QuizSession({
 
         {reset.length > 0 && (
           <section className="mt-6">
-            <p className="mb-2 text-sm font-medium text-subtext">Se reiniciaron</p>
+            <p className="mb-2 text-sm font-medium text-subtext">{t("quizSession.reset")}</p>
             <ul className="flex flex-col gap-2">
               {reset.map((a) => (
                 <li key={a.card.key} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
                   <span className="font-medium">{a.card.lemma}</span>
-                  <span className="text-xs text-subtext">racha reiniciada</span>
+                  <span className="text-xs text-subtext">{t("quizSession.streakReset")}</span>
                 </li>
               ))}
             </ul>
@@ -127,7 +131,7 @@ export function QuizSession({
         <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
           <div className="mx-auto max-w-md">
             <Button className="w-full" onClick={() => onFinish({ correct: correctCount, total: cards.length, learned })}>
-              {finishLabel}
+              {finishLabel ?? t("common.backHome")}
             </Button>
           </div>
         </div>
@@ -141,19 +145,19 @@ export function QuizSession({
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="text-sm text-subtext">
           {index + 1} / {cards.length}
-          {pendingCount > cards.length ? ` · ${pendingCount} pendientes` : ""}
+          {pendingCount > cards.length ? ` ${t("quizSession.pending", { count: pendingCount })}` : ""}
         </p>
       </div>
 
       {card.type === "cloze" ? (
         <>
-          <p className="mb-2 text-sm text-subtext">Completa la frase:</p>
+          <p className="mb-2 text-sm text-subtext">{t("quizSession.completa")}</p>
           <p className="article-text mb-2">{card.prompt}</p>
           {card.contextTranslation && <p className="mb-6 text-sm italic text-subtext">{card.contextTranslation}</p>}
         </>
       ) : (
         <>
-          <p className="mb-2 text-sm text-subtext">¿Cómo se dice...?</p>
+          <p className="mb-2 text-sm text-subtext">{t("quizSession.howSay")}</p>
           <p className="mb-6 text-xl font-medium">«{card.prompt}»</p>
         </>
       )}
@@ -195,7 +199,7 @@ export function QuizSession({
       <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
         <div className="mx-auto flex max-w-md items-center justify-end">
           <Button onClick={next} disabled={chosen === null}>
-            {isLast ? "Terminar" : "Siguiente"}
+            {isLast ? t("common.finish") : t("common.next")}
           </Button>
         </div>
       </div>

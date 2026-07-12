@@ -10,11 +10,13 @@ import { fromMarks, noWordBetween, sentenceWordRange, toMarks, type MarkPos } fr
 import { markReadingHintSeen, readingHintSeen } from "../lib/hint.js";
 import { hapticSelect } from "../telegram/telegram.js";
 import { ThemePicker } from "../components/ThemePicker.js";
+import { useT } from "../lib/i18n.js";
 
 const LONG_PRESS_MS = 450;
 const MOVE_CANCEL_PX = 10;
 
 export function Reading() {
+  const { t } = useT();
   const navigate = useNavigate();
   const [article, setArticle] = useState<Article | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -45,7 +47,7 @@ export function Reading() {
       setMarks(fromMarks(s.marks));
       if (!readingHintSeen()) setShowHint(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar la lectura");
+      setError(err instanceof Error ? err.message : t("reading.loadError"));
     } finally {
       setLoading(false);
     }
@@ -64,7 +66,7 @@ export function Reading() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       api.putSession(toMarks(marks, paragraphs)).catch(() => {
-        /* best-effort autosave; final save happens on "Terminé" */
+        /* best-effort autosave; the final save happens when the reader finishes */
       });
     }, 800);
     return () => {
@@ -174,12 +176,12 @@ export function Reading() {
       await api.reviewSession();
       navigate("/review");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo analizar la lectura");
+      setError(err instanceof Error ? err.message : t("reading.analyzeError"));
       setFinishing(false);
     }
   }
 
-  if (loading) return <Spinner label="Cargando artículo..." />;
+  if (loading) return <Spinner label={t("reading.loading")} />;
   if (error && !article) return <ErrorState message={error} onRetry={load} />;
   if (!article) return null;
 
@@ -188,7 +190,7 @@ export function Reading() {
       <h1 className="mb-1 text-2xl font-semibold">{article.title}</h1>
       {article.sourceName && (
         <p className="mb-4 text-xs text-subtext">
-          Fuente:{" "}
+          {t("reading.source")}{" "}
           {article.sourceUrl ? (
             <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">
               {article.sourceName}
@@ -202,7 +204,7 @@ export function Reading() {
       <div className="mb-4 flex items-center justify-end">
         <div className="flex items-center gap-3">
           <ThemePicker />
-          <button onClick={() => navigate("/settings")} className="text-lg text-subtext" aria-label="Ajustes">
+          <button onClick={() => navigate("/settings")} className="text-lg text-subtext" aria-label={t("home.settings")}>
             ⚙
           </button>
         </div>
@@ -213,8 +215,7 @@ export function Reading() {
           onClick={dismissHint}
           className="bg-subtle mb-4 rounded-xl px-4 py-3 text-left text-xs text-subtext"
         >
-          Toca una palabra para marcarla. Toca la de al lado para unirlas en una frase. Mantén pulsado para marcar
-          la oración entera.
+          {t("reading.hint")}
         </button>
       )}
 
@@ -250,11 +251,9 @@ export function Reading() {
 
       <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
         <div className="mx-auto flex max-w-md items-center justify-between gap-4">
-          <p className="text-xs text-subtext">
-            {marks.length} {marks.length === 1 ? "marca" : "marcas"}
-          </p>
+          <p className="text-xs text-subtext">{t("reading.marks", { count: marks.length })}</p>
           <Button onClick={finish} disabled={finishing}>
-            {finishing ? "Analizando..." : "Terminé"}
+            {finishing ? t("reading.analyzing") : t("reading.finish")}
           </Button>
         </div>
         {error && <p className="mt-2 text-xs text-red-500">{error}</p>}

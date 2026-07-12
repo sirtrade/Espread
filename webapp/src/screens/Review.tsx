@@ -6,7 +6,8 @@ import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { hapticSelect, hapticSuccess } from "../telegram/telegram.js";
-import { POS_LABEL, displayLemma, highlightSurface } from "../lib/vocab.js";
+import { posLabel, displayLemma, highlightSurface } from "../lib/vocab.js";
+import { useT } from "../lib/i18n.js";
 
 const LEARNED_STREAK = 3;
 
@@ -19,6 +20,7 @@ function defaultDecision(item: ReviewItem): Decision {
 }
 
 export function Review() {
+  const { t, lang } = useT();
   const navigate = useNavigate();
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
@@ -37,7 +39,7 @@ export function Review() {
       for (const item of r.items) init[item.lemma] = defaultDecision(item);
       setDecisions(init);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo analizar tu lectura");
+      setError(err instanceof Error ? err.message : t("review.analyzeError"));
     } finally {
       setLoading(false);
     }
@@ -77,12 +79,12 @@ export function Review() {
         navigate("/", { state: { newlyLearned, queued } });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar tu progreso");
+      setError(err instanceof Error ? err.message : t("review.saveError"));
       setContinuing(false);
     }
   }
 
-  if (loading) return <Spinner label="Analizando tus palabras y frases..." />;
+  if (loading) return <Spinner label={t("review.spinnerAnalyzing")} />;
   if (error && !result) return <ErrorState message={error} onRetry={load} />;
   if (!result) return null;
 
@@ -90,15 +92,15 @@ export function Review() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-28">
-      <h1 className="mb-6 text-2xl font-semibold">Tu análisis</h1>
+      <h1 className="mb-6 text-2xl font-semibold">{t("review.title")}</h1>
 
       {nothingMarked && result.wovenTerms.length === 0 && (
-        <p className="text-sm text-subtext">No marcaste nada en esta lectura. ¡Buen trabajo!</p>
+        <p className="text-sm text-subtext">{t("review.nothingMarked")}</p>
       )}
 
       {result.items.length > 0 && (
         <section className="mb-8">
-          <p className="mb-3 text-sm font-medium text-subtext">Lo que marcaste</p>
+          <p className="mb-3 text-sm font-medium text-subtext">{t("review.whatYouMarked")}</p>
           <ul className="flex flex-col gap-3">
             {result.items.map((item, i) => {
               const decision = decisions[item.lemma] ?? defaultDecision(item);
@@ -107,10 +109,10 @@ export function Review() {
                 <li key={i} className="rounded-2xl bg-surface px-4 py-4">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <span className="text-lg font-semibold">{displayLemma(item)}</span>
-                    <span className="text-sm text-subtext">· {POS_LABEL[item.pos]}</span>
+                    <span className="text-sm text-subtext">· {posLabel(lang, item.pos)}</span>
                     {item.freqBand === "rare" && (
                       <span className="badge-amber rounded-full px-2 py-0.5 text-xs font-medium text-text">
-                        poco frecuente
+                        {t("review.rare")}
                       </span>
                     )}
                   </div>
@@ -123,7 +125,7 @@ export function Review() {
                     aria-expanded={isOpen}
                   >
                     <span className={`transition-transform ${isOpen ? "rotate-90" : ""}`}>›</span>
-                    {isOpen ? "Ocultar el contexto" : "Ver en contexto"}
+                    {isOpen ? t("review.hideContext") : t("review.showContext")}
                   </button>
 
                   {isOpen && (
@@ -142,13 +144,13 @@ export function Review() {
                       onClick={() => setDecision(item.lemma, "bank")}
                       className={`flex-1 px-3 py-2 ${decision === "bank" ? "bg-accent text-white" : "text-subtext"}`}
                     >
-                      Guardar
+                      {t("review.save")}
                     </button>
                     <button
                       onClick={() => setDecision(item.lemma, "skip")}
                       className={`flex-1 px-3 py-2 ${decision === "skip" ? "bg-subtle text-text" : "text-subtext"}`}
                     >
-                      Omitir
+                      {t("review.skip")}
                     </button>
                   </div>
                 </li>
@@ -160,18 +162,16 @@ export function Review() {
 
       {result.wovenTerms.length > 0 && (
         <section className="mb-6">
-          <p className="mb-1 text-sm font-medium text-subtext">Tus palabras en este artículo</p>
-          <p className="mb-3 text-xs text-subtext">
-            Cada lectura sin volver a marcarlas te acerca a dominarlas ({LEARNED_STREAK} de {LEARNED_STREAK}).
-          </p>
+          <p className="mb-1 text-sm font-medium text-subtext">{t("review.yourWords")}</p>
+          <p className="mb-3 text-xs text-subtext">{t("review.wovenHint", { streak: LEARNED_STREAK })}</p>
           <ul className="flex flex-col gap-2">
             {result.wovenTerms.map((w) => {
               const filled = w.markedAgain ? 0 : Math.min(w.cleanStreak + 1, LEARNED_STREAK);
               const label = w.markedAgain
-                ? "Vuelta a marcar · progreso reiniciado"
+                ? t("review.markedAgain")
                 : filled >= LEARNED_STREAK
-                  ? "¡Lista para dominar!"
-                  : `${filled} / ${LEARNED_STREAK} para dominarla`;
+                  ? t("review.readyToMaster")
+                  : t("review.streakProgress", { filled, total: LEARNED_STREAK });
               return (
                 <li key={w.lemma} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
                   <div>
@@ -196,7 +196,7 @@ export function Review() {
       <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
         <div className="mx-auto max-w-md">
           <Button className="w-full" onClick={handleContinue} disabled={continuing}>
-            {continuing ? "Guardando..." : "Continuar"}
+            {continuing ? t("common.saving") : t("review.continue")}
           </Button>
         </div>
       </div>

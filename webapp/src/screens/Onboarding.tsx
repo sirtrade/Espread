@@ -3,21 +3,21 @@ import { api, deviceTimezone } from "../api/client.js";
 import { useAuth } from "../state/AuthContext.js";
 import { Button } from "../components/Button.js";
 import type { ExplainLang, Level } from "../api/types.js";
-import { hapticSelect } from "../telegram/telegram.js";
+import { hapticSelect, initialLang } from "../telegram/telegram.js";
+import { t } from "../lib/i18n.js";
+import { langLabel } from "../lib/langs.js";
 
 const LEVELS: Level[] = ["A2", "B1", "B2", "C1"];
-const LANGS: { value: ExplainLang; label: string }[] = [
-  { value: "ru", label: "Русский" },
-  { value: "en", label: "English" },
-  { value: "es", label: "Solo español" },
-];
+const LANG_VALUES: ExplainLang[] = ["ru", "en", "es"];
 const DEFAULT_TOPICS = ["Tecnología", "Deporte y fitness", "Cocina", "Ciencia", "Videojuegos", "América Latina"];
 
 export function Onboarding() {
   const { setProfile } = useAuth();
   const [step, setStep] = useState(0);
   const [level, setLevel] = useState<Level>("A2");
-  const [explainLang, setExplainLang] = useState<ExplainLang>("ru");
+  // No profile yet, so the chrome follows Telegram's language until the user
+  // picks one here — then the whole screen switches on the spot.
+  const [explainLang, setExplainLang] = useState<ExplainLang>(initialLang());
   const [topics, setTopics] = useState<string[]>(["Tecnología", "Ciencia"]);
   const [customTopic, setCustomTopic] = useState("");
   const [dailyEnabled, setDailyEnabled] = useState(true);
@@ -51,7 +51,7 @@ export function Onboarding() {
       });
       setProfile(profile);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar tu perfil");
+      setError(err instanceof Error ? err.message : t(explainLang, "onboarding.saveError"));
     } finally {
       setSaving(false);
     }
@@ -59,13 +59,13 @@ export function Onboarding() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-8">
-      <h1 className="mb-1 text-2xl font-semibold">Bienvenido a Lector</h1>
-      <p className="mb-6 text-sm text-subtext">Lectura extensiva en español, a tu ritmo.</p>
+      <h1 className="mb-1 text-2xl font-semibold">{t(explainLang, "onboarding.welcome")}</h1>
+      <p className="mb-6 text-sm text-subtext">{t(explainLang, "onboarding.subtitle")}</p>
 
       {step === 0 && (
         <div className="flex flex-1 flex-col gap-6">
           <div>
-            <p className="mb-2 text-sm font-medium">Tu nivel de español</p>
+            <p className="mb-2 text-sm font-medium">{t(explainLang, "onboarding.level")}</p>
             <div className="grid grid-cols-4 gap-2">
               {LEVELS.map((l) => (
                 <button
@@ -84,20 +84,20 @@ export function Onboarding() {
             </div>
           </div>
           <div>
-            <p className="mb-2 text-sm font-medium">Idioma de las explicaciones</p>
+            <p className="mb-2 text-sm font-medium">{t(explainLang, "onboarding.explainLang")}</p>
             <div className="flex flex-col gap-2">
-              {LANGS.map((l) => (
+              {LANG_VALUES.map((value) => (
                 <button
-                  key={l.value}
+                  key={value}
                   onClick={() => {
                     hapticSelect();
-                    setExplainLang(l.value);
+                    setExplainLang(value);
                   }}
                   className={`rounded-xl px-4 py-3 text-left text-sm font-medium ${
-                    explainLang === l.value ? "bg-accent text-white" : "bg-surface text-text"
+                    explainLang === value ? "bg-accent text-white" : "bg-surface text-text"
                   }`}
                 >
-                  {l.label}
+                  {langLabel(explainLang, value)}
                 </button>
               ))}
             </div>
@@ -107,7 +107,7 @@ export function Onboarding() {
 
       {step === 1 && (
         <div className="flex flex-1 flex-col gap-4">
-          <p className="text-sm font-medium">Temas que te interesan</p>
+          <p className="text-sm font-medium">{t(explainLang, "onboarding.topics")}</p>
           <div className="flex flex-wrap gap-2">
             {[...new Set([...DEFAULT_TOPICS, ...topics])].map((topic) => (
               <button
@@ -126,11 +126,11 @@ export function Onboarding() {
               value={customTopic}
               onChange={(e) => setCustomTopic(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addCustomTopic()}
-              placeholder="Otro tema..."
+              placeholder={t(explainLang, "onboarding.otherTopic")}
               className="border-subtle flex-1 rounded-xl border bg-surface px-3 py-2 text-sm outline-none"
             />
             <Button variant="secondary" onClick={addCustomTopic}>
-              Añadir
+              {t(explainLang, "common.add")}
             </Button>
           </div>
         </div>
@@ -138,9 +138,9 @@ export function Onboarding() {
 
       {step === 2 && (
         <div className="flex flex-1 flex-col gap-4">
-          <p className="text-sm font-medium">Lectura diaria</p>
+          <p className="text-sm font-medium">{t(explainLang, "onboarding.daily")}</p>
           <label className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
-            <span className="text-sm">Enviarme un artículo cada día</span>
+            <span className="text-sm">{t(explainLang, "onboarding.dailyToggle")}</span>
             <input
               type="checkbox"
               checked={dailyEnabled}
@@ -150,7 +150,7 @@ export function Onboarding() {
           </label>
           {dailyEnabled && (
             <label className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
-              <span className="text-sm">Hora</span>
+              <span className="text-sm">{t(explainLang, "onboarding.time")}</span>
               <input
                 type="time"
                 value={dailyTime}
@@ -167,17 +167,17 @@ export function Onboarding() {
       <div className="mt-8 flex gap-3">
         {step > 0 && (
           <Button variant="secondary" onClick={() => setStep((s) => s - 1)}>
-            Atrás
+            {t(explainLang, "common.back")}
           </Button>
         )}
         {step < 2 && (
           <Button className="flex-1" onClick={() => setStep((s) => s + 1)} disabled={topics.length === 0 && step === 1}>
-            Siguiente
+            {t(explainLang, "common.next")}
           </Button>
         )}
         {step === 2 && (
           <Button className="flex-1" onClick={finish} disabled={saving}>
-            {saving ? "Guardando..." : "Empezar a leer"}
+            {saving ? t(explainLang, "common.saving") : t(explainLang, "onboarding.start")}
           </Button>
         )}
       </div>
