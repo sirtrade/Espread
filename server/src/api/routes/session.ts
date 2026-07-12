@@ -33,7 +33,7 @@ sessionRoutes.put("/", async (c) => {
   const session = await getActiveSession(userId);
   if (!session) throw Errors.notFound("Sesión de lectura");
 
-  await updateSessionMarks(session.id, body.data.markedWords, body.data.markedSents);
+  await updateSessionMarks(session.id, body.data.marks);
   return c.json({ ok: true });
 });
 

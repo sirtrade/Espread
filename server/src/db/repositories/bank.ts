@@ -10,15 +10,22 @@ export async function getBankItemsMap(userId: number): Promise<Map<string, BankI
   const rows = await db.query.bankItems.findMany({ where: eq(bankItems.userId, userId) });
   return new Map(
     rows.map((r) => [
-      r.term,
+      r.lemma,
       {
-        term: r.term,
+        lemma: r.lemma,
         isPhrase: r.isPhrase,
         status: r.status,
         exposures: r.exposures,
         cleanStreak: r.cleanStreak,
         translation: r.translation,
         firstContext: r.firstContext,
+        surfaceForm: r.surfaceForm,
+        pos: r.pos,
+        gender: r.gender,
+        note: r.note,
+        contextTranslation: r.contextTranslation,
+        distractors: r.distractors,
+        freqBand: r.freqBand,
       },
     ]),
   );
@@ -33,10 +40,10 @@ export async function getBankItems(userId: number, status?: BankStatus): Promise
 
 export async function getActiveItemsForSelection(
   userId: number,
-): Promise<Array<{ term: string; exposures: number }>> {
+): Promise<Array<{ lemma: string; exposures: number }>> {
   const rows = await db.query.bankItems.findMany({
     where: and(eq(bankItems.userId, userId), eq(bankItems.status, "active")),
-    columns: { term: true, exposures: true },
+    columns: { lemma: true, exposures: true },
   });
   return rows;
 }
@@ -121,6 +128,33 @@ export async function getRandomDueItem(userId: number, now: number): Promise<Ban
     limit: 1,
   });
   return row;
+}
+
+/** Legacy rows (created before the lemma migration) whose card fields are still empty. */
+export async function getUnenrichedItems(limit: number): Promise<BankItemRow[]> {
+  return db.query.bankItems.findMany({
+    where: or(isNull(bankItems.pos), isNull(bankItems.freqBand)),
+    orderBy: [asc(bankItems.id)],
+    limit,
+  });
+}
+
+export async function countUnenrichedItems(): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(bankItems)
+    .where(or(isNull(bankItems.pos), isNull(bankItems.freqBand)));
+  return row?.count ?? 0;
+}
+
+export async function updateBankItemFields(
+  itemId: number,
+  fields: Partial<Omit<BankItemRow, "id" | "userId" | "createdAt">>,
+): Promise<void> {
+  await db
+    .update(bankItems)
+    .set({ ...fields, updatedAt: Date.now() })
+    .where(eq(bankItems.id, itemId));
 }
 
 export async function countBankByStatus(userId: number, status: BankStatus): Promise<number> {

@@ -14,8 +14,9 @@ function parseJsonLoose(text: string): unknown {
 export interface CallJsonParams<T> {
   system: string;
   messages: Anthropic.MessageParam[];
-  schema: z.ZodType<T>;
-  kind: "search" | "generate" | "review" | "practice";
+  // Input typed as unknown so schemas with transforms (input ≠ output) fit.
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>;
+  kind: "search" | "generate" | "review" | "practice" | "enrich";
   userId: number | null;
   model: string;
   maxTokens: number;

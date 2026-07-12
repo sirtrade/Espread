@@ -43,15 +43,31 @@ export const bankItems = sqliteTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    term: text("term").notNull(),
+    // Dictionary form — the canonical key (verb infinitive incl. pronominal
+    // -se, noun singular, adjective masculine singular).
+    lemma: text("lemma").notNull(),
     isPhrase: integer("is_phrase", { mode: "boolean" }).notNull().default(false),
-    status: text("status", { enum: ["active", "learned", "ignored"] })
+    // "queued" is reserved for the upcoming intake queue; nothing sets it yet.
+    status: text("status", { enum: ["active", "learned", "ignored", "queued"] })
       .notNull()
       .default("active"),
     exposures: integer("exposures").notNull().default(1),
     cleanStreak: integer("clean_streak").notNull().default(0),
+    // Short translation of the lemma (no parentheses, no Spanish inside).
     translation: text("translation"),
+    // The sentence in which the word was marked.
     firstContext: text("first_context"),
+    // The exact inflected form as it appeared in the text ("perfila").
+    surfaceForm: text("surface_form"),
+    pos: text("pos", { enum: ["verb", "noun", "adj", "adv", "phrase", "other"] }),
+    gender: text("gender", { enum: ["m", "f"] }),
+    // Optional usage explanation (what used to pollute translation).
+    note: text("note"),
+    // Translation of firstContext into the user's explain language.
+    contextTranslation: text("context_translation"),
+    // JSON array of 3 same-POS Spanish words, for quiz options.
+    distractors: text("distractors"),
+    freqBand: text("freq_band", { enum: ["top1000", "top3000", "top5000", "rare"] }),
     // Spaced-repetition state for the practice mode. Deliberately separate
     // from status/cleanStreak: practice reinforces memory but only clean
     // reading exposures can promote an item to "learned".
@@ -65,7 +81,7 @@ export const bankItems = sqliteTable(
       .default(sql`(unixepoch('now') * 1000)`),
   },
   (t) => ({
-    userTermIdx: uniqueIndex("bank_items_user_term_idx").on(t.userId, t.term),
+    userLemmaIdx: uniqueIndex("bank_items_user_lemma_idx").on(t.userId, t.lemma),
   }),
 );
 
@@ -87,8 +103,8 @@ export const articles = sqliteTable(
     // Reading history: when the session completes, its marks and LLM review
     // are archived here (an article is read at most once) so past readings
     // can be reopened with the words the user didn't know at the time.
-    markedWords: text("marked_words").notNull().default("[]"),
-    markedSents: text("marked_sents").notNull().default("[]"),
+    // JSON array of Mark objects: { text, sentence, kind, pos? }.
+    marks: text("marks").notNull().default("[]"),
     reviewResult: text("review_result"),
     readAt: integer("read_at"),
     createdAt: integer("created_at")
@@ -110,8 +126,8 @@ export const readingSessions = sqliteTable(
     articleId: integer("article_id")
       .notNull()
       .references(() => articles.id, { onDelete: "cascade" }),
-    markedWords: text("marked_words").notNull().default("[]"),
-    markedSents: text("marked_sents").notNull().default("[]"),
+    // JSON array of Mark objects: { text, sentence, kind, pos? }.
+    marks: text("marks").notNull().default("[]"),
     reviewResult: text("review_result"),
     state: text("state", { enum: ["reading", "reviewed"] })
       .notNull()
@@ -130,7 +146,7 @@ export const llmCalls = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-    kind: text("kind", { enum: ["search", "generate", "review", "practice"] }).notNull(),
+    kind: text("kind", { enum: ["search", "generate", "review", "practice", "enrich"] }).notNull(),
     model: text("model").notNull(),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
+import type { Mark } from "../src/domain/marks.js";
 
 const { createMock } = vi.hoisted(() => ({ createMock: vi.fn() }));
 
@@ -30,6 +31,18 @@ function fakeMessage(body: unknown): Anthropic.Message {
       service_tier: null,
     },
   } as Anthropic.Message;
+}
+
+function mockSearchAndWrite(title: string, body: string) {
+  createMock
+    .mockResolvedValueOnce(
+      fakeMessage({
+        facts: "Un equipo publicó un estudio sobre el tema en la región este mes.",
+        source_name: "Diario de Prueba",
+        source_url: "https://example.com/noticia",
+      }),
+    )
+    .mockResolvedValueOnce(fakeMessage({ title, body }));
 }
 
 describe("generate -> review -> complete cycle (mocked LLM)", () => {
@@ -71,21 +84,11 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
   });
 
   it("weaves a marked word into a later article and promotes it to learned after 3 clean exposures", async () => {
-    // --- Cycle 1: generate an article, mark a word + a phrase, review, complete ---
-    createMock
-      .mockResolvedValueOnce(
-        fakeMessage({
-          facts: "Un equipo de científicos publicó un estudio sobre el clima en la región.",
-          source_name: "Diario de Prueba",
-          source_url: "https://example.com/noticia",
-        }),
-      )
-      .mockResolvedValueOnce(
-        fakeMessage({
-          title: "Un descubrimiento importante",
-          body: "Los científicos anunciaron un hallazgo relevante. El equipo trabajó durante meses.",
-        }),
-      );
+    // --- Cycle 1: generate an article, mark a word + a span, review, complete ---
+    mockSearchAndWrite(
+      "Un descubrimiento importante",
+      "Los científicos anunciaron un hallazgo relevante. El equipo trabajó durante meses.",
+    );
 
     const { article: article1, session: session1 } = await startReading(userId);
     expect(article1.title).toBe("Un descubrimiento importante");
@@ -93,28 +96,57 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
 
     createMock.mockResolvedValueOnce(
       fakeMessage({
-        words: [{ term: "hallazgo", translation: "discovery", frequency: "alta" }],
-        phrases: [{ term: "trabajó durante meses", explanation: "worked for months", clave: "durante meses" }],
+        items: [
+          {
+            surface: "hallazgo",
+            lemma: "hallazgo",
+            pos: "noun",
+            gender: "m",
+            translation: "discovery",
+            note: null,
+            contextTranslation: "The scientists announced a relevant discovery.",
+            freqBand: "top3000",
+            distractors: ["esfuerzo", "acuerdo", "nivel"],
+          },
+          {
+            surface: "durante meses",
+            lemma: "durante meses",
+            pos: "phrase",
+            gender: null,
+            translation: "for months",
+            note: "duración continuada",
+            contextTranslation: "The team worked for months.",
+            freqBand: "top3000",
+            distractors: ["sin parar", "a menudo", "de repente"],
+          },
+        ],
       }),
     );
-    await updateSessionMarks(session1.id, ["hallazgo"], ["trabajó durante meses"]);
+    const marks: Mark[] = [
+      { text: "hallazgo", sentence: "Los científicos anunciaron un hallazgo relevante.", kind: "word" },
+      {
+        text: "trabajó durante meses",
+        sentence: "El equipo trabajó durante meses.",
+        kind: "span",
+        pos: { p: 0, s: 1, t: [2, 5] },
+      },
+    ];
+    await updateSessionMarks(session1.id, marks);
     const review1 = await reviewSession(userId);
-    expect(review1.words[0]?.term).toBe("hallazgo");
-    expect(review1.phrases[0]?.clave).toBe("durante meses");
+    expect(review1.items.map((i) => i.lemma).sort()).toEqual(["durante meses", "hallazgo"]);
 
     const complete1 = await completeSession(userId);
     expect(complete1.newlyLearned).toEqual([]);
 
     const activeAfterCycle1 = await getBankItems(userId, "active");
-    const terms = activeAfterCycle1.map((i) => i.term).sort();
-    expect(terms).toEqual(["durante meses", "hallazgo"]);
+    const lemmas = activeAfterCycle1.map((i) => i.lemma).sort();
+    expect(lemmas).toEqual(["durante meses", "hallazgo"]);
 
     // Completion archives the session's marks and review onto the article
     // (reading history), even though the session row itself is deleted.
     const archived = await getArticleById(article1.id);
     expect(archived?.readAt).not.toBeNull();
-    expect(JSON.parse(archived!.markedWords)).toEqual(["hallazgo"]);
-    expect(JSON.parse(archived!.markedSents)).toEqual(["trabajó durante meses"]);
+    expect(JSON.parse(archived!.marks)).toEqual(marks);
     expect(archived!.reviewResult).not.toBeNull();
 
     const history1 = await listReadArticles(userId, 10, 0);
@@ -122,57 +154,43 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     expect(history1.items[0]?.id).toBe(article1.id);
     expect(history1.items[0]?.title).toBe("Un descubrimiento importante");
 
-    // --- Cycle 2: the next generation prompt must include the marked word (recirculation) ---
-    createMock
-      .mockResolvedValueOnce(fakeMessage({ facts: "Otro estudio reciente.", source_name: "Fuente", source_url: "https://example.com/2" }))
-      .mockResolvedValueOnce(
-        fakeMessage({
-          title: "Segunda lectura",
-          body: "Un texto que menciona el hallazgo otra vez, con más contexto y detalles sobre el estudio.",
-        }),
-      );
+    // --- Cycle 2: the next generation prompt must include the marked lemma (recirculation) ---
+    mockSearchAndWrite(
+      "Segunda lectura",
+      "Un texto que menciona el hallazgo otra vez, con más contexto y detalles sobre el estudio.",
+    );
 
     const { session: session2 } = await startReading(userId);
     // calls: 0=cycle1 search, 1=cycle1 write, 2=cycle1 review, 3=cycle2 search, 4=cycle2 write
     const writeCallArgs = createMock.mock.calls[4]?.[0] as { system: string };
     expect(writeCallArgs.system).toContain("hallazgo");
+    // Woven lemmas may be inflected; the exact-form requirement is gone.
+    expect(writeCallArgs.system).toContain("cualquier forma flexionada");
 
     // Nothing marked this time -> reviewMarkedItems short-circuits without an LLM
     // call (llm/review.ts), and both bank items get a clean exposure.
-    await updateSessionMarks(session2.id, [], []);
+    await updateSessionMarks(session2.id, []);
     await reviewSession(userId);
     const complete2 = await completeSession(userId);
     expect(complete2.newlyLearned).toEqual([]);
 
     // --- Cycle 3: second clean exposure ---
-    createMock
-      .mockResolvedValueOnce(
-        fakeMessage({ facts: "Un tercer estudio confirma los resultados anteriores.", source_name: "Fuente", source_url: "https://example.com/3" }),
-      )
-      .mockResolvedValueOnce(
-        fakeMessage({
-          title: "Tercera lectura",
-          body: "Más noticias sobre el hallazgo, con nuevos detalles publicados por el equipo de investigación.",
-        }),
-      );
+    mockSearchAndWrite(
+      "Tercera lectura",
+      "Más noticias sobre el hallazgo, con nuevos detalles publicados por el equipo de investigación.",
+    );
     const { session: session3 } = await startReading(userId);
-    await updateSessionMarks(session3.id, [], []);
+    await updateSessionMarks(session3.id, []);
     await reviewSession(userId);
     await completeSession(userId);
 
     // --- Cycle 4: third clean exposure -> "hallazgo" and the phrase both become learned ---
-    createMock
-      .mockResolvedValueOnce(
-        fakeMessage({ facts: "Un cuarto estudio amplía los hallazgos previos del equipo.", source_name: "Fuente", source_url: "https://example.com/4" }),
-      )
-      .mockResolvedValueOnce(
-        fakeMessage({
-          title: "Cuarta lectura",
-          body: "Última mención del hallazgo, cerrando la serie de artículos sobre este estudio científico.",
-        }),
-      );
+    mockSearchAndWrite(
+      "Cuarta lectura",
+      "Última mención del hallazgo, cerrando la serie de artículos sobre este estudio científico.",
+    );
     const { session: session4 } = await startReading(userId);
-    await updateSessionMarks(session4.id, [], []);
+    await updateSessionMarks(session4.id, []);
     await reviewSession(userId);
     const complete4 = await completeSession(userId);
 
@@ -181,19 +199,25 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     const activeAfterLearning = await getBankItems(userId, "active");
     expect(activeAfterLearning).toHaveLength(0);
     const learned = await getBankItems(userId, "learned");
-    expect(learned.map((i) => i.term).sort()).toEqual(["durante meses", "hallazgo"]);
+    expect(learned.map((i) => i.lemma).sort()).toEqual(["durante meses", "hallazgo"]);
   });
 
-  it("stored the translation and the sentence containing the term as firstContext", async () => {
+  it("stored the structured card: translation, marked sentence as firstContext, and quiz fields", async () => {
     const learned = await getBankItems(userId, "learned");
-    const hallazgo = learned.find((i) => i.term === "hallazgo");
+    const hallazgo = learned.find((i) => i.lemma === "hallazgo");
     expect(hallazgo?.translation).toBe("discovery");
+    expect(hallazgo?.surfaceForm).toBe("hallazgo");
+    expect(hallazgo?.pos).toBe("noun");
+    expect(hallazgo?.gender).toBe("m");
     expect(hallazgo?.firstContext).toBe("Los científicos anunciaron un hallazgo relevante.");
+    expect(hallazgo?.contextTranslation).toBe("The scientists announced a relevant discovery.");
+    expect(hallazgo?.freqBand).toBe("top3000");
+    expect(JSON.parse(hallazgo!.distractors!)).toEqual(["esfuerzo", "acuerdo", "nivel"]);
   });
 
   it("lets the owner (and only the owner) change a bank item's status manually", async () => {
     const learned = await getBankItems(userId, "learned");
-    const item = learned.find((i) => i.term === "hallazgo")!;
+    const item = learned.find((i) => i.lemma === "hallazgo")!;
 
     const foreign = await setBankItemStatus(userId + 1, item.id, "ignored");
     expect(foreign).toBeUndefined();
@@ -201,5 +225,128 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     const updated = await setBankItemStatus(userId, item.id, "active");
     expect(updated?.status).toBe("active");
     expect(updated?.cleanStreak).toBe(0);
+  });
+
+  it("merges 'se' + 'llama' marked in one sentence into a single llamarse card", async () => {
+    const user = await findOrCreateUser(999002, "cliticstest");
+    await setUserTopics(user.id, ["Sociedad"]);
+
+    const sentence = "Mi vecino se llama Andrés y trabaja en el puerto.";
+    mockSearchAndWrite("Historias del puerto", `${sentence} Cada mañana saluda a todos.`);
+    const { session } = await startReading(user.id);
+
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "se llama",
+            lemma: "llamarse",
+            pos: "verb",
+            gender: null,
+            translation: "зваться, называться",
+            note: "verbo pronominal: llamarse + nombre",
+            contextTranslation: "Моего соседа зовут Андрес, он работает в порту.",
+            freqBand: "top1000",
+            distractors: ["quedarse", "ponerse", "irse"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(session.id, [
+      { text: "se", sentence, kind: "word" },
+      { text: "llama", sentence, kind: "word" },
+    ]);
+    const review = await reviewSession(user.id);
+    expect(review.items).toHaveLength(1);
+
+    await completeSession(user.id);
+
+    const bank = await getBankItems(user.id);
+    expect(bank).toHaveLength(1);
+    expect(bank[0]).toMatchObject({
+      lemma: "llamarse",
+      pos: "verb",
+      surfaceForm: "se llama",
+      translation: "зваться, называться",
+      contextTranslation: "Моего соседа зовут Андрес, он работает в порту.",
+      firstContext: sentence,
+      status: "active",
+    });
+  });
+
+  it("stores lemma=lanzamiento / noun / m / surfaceForm=lanzamientos for a marked plural", async () => {
+    const user = await findOrCreateUser(999003, "lemmatest");
+    await setUserTopics(user.id, ["Tecnología"]);
+
+    const sentence = "Los lanzamientos de la empresa fueron un éxito rotundo.";
+    mockSearchAndWrite("Novedades de la empresa", `${sentence} Los clientes esperan más productos.`);
+    const { session } = await startReading(user.id);
+
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "lanzamientos",
+            lemma: "lanzamiento",
+            pos: "noun",
+            gender: "m",
+            translation: "запуск, выпуск",
+            note: null,
+            contextTranslation: "Запуски продуктов компании прошли с большим успехом.",
+            freqBand: "top5000",
+            distractors: ["desarrollo", "acuerdo", "crecimiento"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(session.id, [{ text: "lanzamientos", sentence, kind: "word" }]);
+    await reviewSession(user.id);
+    await completeSession(user.id);
+
+    const bank = await getBankItems(user.id);
+    const card = bank.find((i) => i.lemma === "lanzamiento");
+    expect(card).toMatchObject({
+      lemma: "lanzamiento",
+      pos: "noun",
+      gender: "m",
+      surfaceForm: "lanzamientos",
+      firstContext: sentence,
+      status: "active",
+    });
+  });
+
+  it("sends a rare word to ignored instead of the active bank", async () => {
+    const user = await findOrCreateUser(999004, "raretest");
+    await setUserTopics(user.id, ["Ciencia"]);
+
+    const sentence = "El espectrómetro de masas confirmó el resultado.";
+    mockSearchAndWrite("Instrumentos de laboratorio", `${sentence} El estudio continúa.`);
+    const { session } = await startReading(user.id);
+
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "espectrómetro",
+            lemma: "espectrómetro",
+            pos: "noun",
+            gender: "m",
+            translation: "спектрометр",
+            note: "término técnico de laboratorio",
+            contextTranslation: "Масс-спектрометр подтвердил результат.",
+            freqBand: "rare",
+            distractors: ["telescopio", "microscopio", "termómetro"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(session.id, [{ text: "espectrómetro", sentence, kind: "word" }]);
+    await reviewSession(user.id);
+    await completeSession(user.id);
+
+    const ignored = await getBankItems(user.id, "ignored");
+    expect(ignored.map((i) => i.lemma)).toEqual(["espectrómetro"]);
+    const active = await getBankItems(user.id, "active");
+    expect(active).toHaveLength(0);
   });
 });

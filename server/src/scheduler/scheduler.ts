@@ -92,7 +92,7 @@ async function runLearnedDigest(now: Date): Promise<void> {
     if (learned.length === 0) continue;
 
     try {
-      const list = learned.map((item) => `• ${item.term}`).join("\n");
+      const list = learned.map((item) => `• ${item.lemma}`).join("\n");
       await bot.api.sendMessage(user.tgUserId, `🎉 ¡Aprendiste ${learned.length} palabra(s)/frase(s) hoy!\n\n${list}`);
       await setLastLearnedDigestAt(user.id, now.getTime());
     } catch (err) {

@@ -34,9 +34,23 @@ export const practiceSentenceSchema = z.object({
   sentence: z.string().trim().min(3).max(500),
 });
 
+// Mark contract agreed with the webapp: `pos` is client-side highlight
+// positioning data — the server stores and returns it verbatim.
+export const markSchema = z.object({
+  text: z.string().min(1).max(500),
+  sentence: z.string().min(1).max(1000),
+  kind: z.enum(["word", "span", "sentence"]),
+  pos: z
+    .object({
+      p: z.number().int().min(0),
+      s: z.number().int().min(0),
+      t: z.tuple([z.number().int().min(0), z.number().int().min(0)]),
+    })
+    .optional(),
+});
+
 export const putSessionSchema = z.object({
-  markedWords: z.array(z.string().min(1).max(80)).max(300),
-  markedSents: z.array(z.string().min(1).max(500)).max(150),
+  marks: z.array(markSchema).max(300),
 });
 
 export const bankQuerySchema = z.object({

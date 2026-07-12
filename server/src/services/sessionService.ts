@@ -1,8 +1,9 @@
 import { normalizeTerm } from "../domain/normalize.js";
 import { findTermContext } from "../domain/context.js";
+import { dedupeMarks, type Mark } from "../domain/marks.js";
 import { applyReviewToBank, type BankItemRecord, type ReviewedItem } from "../domain/bank.js";
 import { reviewMarkedItems } from "../llm/review.js";
-import { reviewSchema, type ReviewResult } from "../llm/schemas.js";
+import { reviewSchema, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
 import { config } from "../lib/config.js";
 import { withUserLock } from "../lib/locks.js";
 import { Errors } from "../api/errors.js";
@@ -31,8 +32,7 @@ export async function reviewSession(userId: number): Promise<ReviewResult> {
     const [article, user] = await Promise.all([getArticleById(session.articleId), getUserById(userId)]);
     if (!article || !user) throw Errors.notFound("Artículo o usuario");
 
-    const markedWords = [...new Set((JSON.parse(session.markedWords) as string[]).map(normalizeTerm).filter(Boolean))];
-    const markedSents = [...new Set((JSON.parse(session.markedSents) as string[]).map((s) => s.trim()).filter(Boolean))];
+    const marks = dedupeMarks(JSON.parse(session.marks) as Mark[]);
 
     const result = await reviewMarkedItems({
       userId,
@@ -40,8 +40,7 @@ export async function reviewSession(userId: number): Promise<ReviewResult> {
       articleBody: article.body,
       level: user.level,
       explainLang: user.explainLang,
-      markedWords,
-      markedSents,
+      marks,
     });
 
     await setSessionReviewed(session.id, result);
@@ -60,7 +59,39 @@ function bankItemDiffers(before: BankItemRecord | undefined, after: BankItemReco
     before.status !== after.status ||
     before.exposures !== after.exposures ||
     before.cleanStreak !== after.cleanStreak ||
-    before.translation !== after.translation
+    before.translation !== after.translation ||
+    before.surfaceForm !== after.surfaceForm ||
+    before.firstContext !== after.firstContext ||
+    before.pos !== after.pos ||
+    before.gender !== after.gender ||
+    before.note !== after.note ||
+    before.contextTranslation !== after.contextTranslation ||
+    before.distractors !== after.distractors ||
+    before.freqBand !== after.freqBand
+  );
+}
+
+/** The sentence the item was marked in: prefer the mark whose sentence
+ *  contains the surface form, then a body search, then a body-prefix fallback. */
+function contextForItem(item: ReviewItem, marks: readonly Mark[], articleBody: string, fallback: string): string {
+  const normSurface = normalizeTerm(item.surface);
+  if (normSurface) {
+    for (const mark of marks) {
+      if (!mark.sentence) continue;
+      if (` ${normalizeTerm(mark.sentence)} `.includes(` ${normSurface} `)) return mark.sentence;
+    }
+    // A merged construction ("se llama") may not appear contiguously; fall
+    // back to the sentence of the mark whose text is part of the surface.
+    for (const mark of marks) {
+      if (!mark.sentence) continue;
+      const normText = normalizeTerm(mark.text);
+      if (normText && ` ${normSurface} `.includes(` ${normText} `)) return mark.sentence;
+    }
+  }
+  return (
+    findTermContext(articleBody, item.surface) ??
+    findTermContext(articleBody, item.lemma) ??
+    fallback
   );
 }
 
@@ -76,52 +107,48 @@ export async function completeSession(userId: number): Promise<CompleteResult> {
     if (!article) throw Errors.notFound("Artículo");
 
     const review = reviewSchema.parse(JSON.parse(session.reviewResult));
-    const exposedTerms: string[] = JSON.parse(article.targetTerms);
+    const marks = JSON.parse(session.marks) as Mark[];
+    const exposedLemmas: string[] = JSON.parse(article.targetTerms);
     const fallbackContext = article.body.slice(0, 200);
-    const contextFor = (term: string) => findTermContext(article.body, term) ?? fallbackContext;
 
-    const reviewedItems: ReviewedItem[] = [
-      ...review.words.map((w) => {
-        const term = normalizeTerm(w.term);
-        return {
-          term,
-          isPhrase: false,
-          translation: w.translation,
-          frequency: w.frequency,
-          context: contextFor(term),
-        };
-      }),
-      ...review.phrases
-        .filter((p) => p.clave)
-        .map((p) => {
-          const term = normalizeTerm(p.clave as string);
-          return {
-            term,
-            isPhrase: true,
-            translation: p.explanation,
-            frequency: "alta" as const,
-            context: contextFor(term),
-          };
-        }),
-    ];
+    const reviewedItems: ReviewedItem[] = [];
+    for (const item of review.items) {
+      const lemma = normalizeTerm(item.lemma);
+      if (!lemma) continue;
+      // The prompt forbids duplicate lemmas, but dedupe defensively: the
+      // first card wins, later ones would double-count exposures.
+      if (reviewedItems.some((r) => r.lemma === lemma)) continue;
+      reviewedItems.push({
+        lemma,
+        isPhrase: item.pos === "phrase",
+        surfaceForm: item.surface,
+        pos: item.pos,
+        gender: item.gender,
+        translation: item.translation,
+        note: item.note,
+        contextTranslation: item.contextTranslation,
+        freqBand: item.freqBand,
+        distractors: item.distractors,
+        context: contextForItem(item, marks, article.body, fallbackContext),
+      });
+    }
 
     const before = await getBankItemsMap(userId);
-    const after = applyReviewToBank(before, exposedTerms, reviewedItems);
+    const after = applyReviewToBank(before, exposedLemmas, reviewedItems);
 
     // Only rows that actually changed get written — a completion typically
-    // touches a handful of terms, not the user's whole bank.
-    const changedItems = [...after.values()].filter((item) => bankItemDiffers(before.get(item.term), item));
+    // touches a handful of lemmas, not the user's whole bank.
+    const changedItems = [...after.values()].filter((item) => bankItemDiffers(before.get(item.lemma), item));
 
     const newlyLearned = changedItems
-      .filter((item) => item.status === "learned" && before.get(item.term)?.status !== "learned")
-      .map((item) => item.term);
+      .filter((item) => item.status === "learned" && before.get(item.lemma)?.status !== "learned")
+      .map((item) => item.lemma);
 
     await applyCompletion({
       userId,
       sessionId: session.id,
       articleId: article.id,
-      markedWords: session.markedWords,
-      markedSents: session.markedSents,
+      marks: session.marks,
       reviewResult: session.reviewResult,
       changedItems,
       newlyLearnedCount: newlyLearned.length,

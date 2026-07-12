@@ -61,8 +61,7 @@ export interface ReadArticleSummary {
   title: string;
   topic: string;
   readAt: number | null;
-  markedWords: string;
-  markedSents: string;
+  marks: string;
 }
 
 /** Completed readings, newest first, for the history screen. */
@@ -78,7 +77,7 @@ export async function listReadArticles(
       orderBy: [desc(articles.readAt)],
       limit,
       offset,
-      columns: { id: true, title: true, topic: true, readAt: true, markedWords: true, markedSents: true },
+      columns: { id: true, title: true, topic: true, readAt: true, marks: true },
     }),
     db.select({ total: sql<number>`count(*)` }).from(articles).where(where),
   ]);

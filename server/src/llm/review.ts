@@ -1,6 +1,7 @@
 import { callJsonLLM } from "./callJson.js";
 import { reviewSchema, type ReviewResult } from "./schemas.js";
 import { config } from "../lib/config.js";
+import type { Mark } from "../domain/marks.js";
 
 const EXPLAIN_LANG_NAME: Record<"ru" | "en" | "es", string> = {
   ru: "ruso",
@@ -14,36 +15,57 @@ export interface ReviewParams {
   articleBody: string;
   level: string;
   explainLang: "ru" | "en" | "es";
-  markedWords: string[];
-  markedSents: string[];
+  marks: Mark[];
 }
 
 /**
- * Single LLM call implementing TZ 4.2.3 "Terminé" review: contextual
- * translation + frequency verdict for marked words, explanation + optional
- * "clave" idiom extraction for marked phrases.
+ * Single LLM call implementing the "Terminé" review: turns the reader's
+ * marks into structured vocabulary cards (lemma, POS, short translation,
+ * usage note, sentence translation, frequency band, quiz distractors).
+ * Adjacent marks that form one construction are merged into one card.
  */
 export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewResult> {
-  if (params.markedWords.length === 0 && params.markedSents.length === 0) {
-    return { words: [], phrases: [] };
+  if (params.marks.length === 0) {
+    return { items: [] };
   }
 
+  const lang = EXPLAIN_LANG_NAME[params.explainLang];
   const system =
     `Eres un profesor de español que ayuda a un estudiante de nivel ${params.level}. ` +
-    `Explica en ${EXPLAIN_LANG_NAME[params.explainLang]}. ` +
-    `Para cada PALABRA marcada: da su traducción/significado según el contexto del artículo, y un veredicto de frecuencia: ` +
-    `"alta" si pertenece al vocabulario de las ~5000-7000 palabras más frecuentes del español o es vocabulario temático útil, ` +
-    `"baja" si es rara, nombre propio, o término muy especializado. ` +
-    `En el campo "term" devuelve la palabra o frase EXACTAMENTE como fue marcada (sin lematizar ni corregir). ` +
-    `Para cada FRASE marcada: explica su significado en contexto, y si contiene una construcción o modismo frecuente de 2 a 4 palabras ` +
-    `que causó la dificultad, extráelo en el campo "clave" (si no aplica o no es frecuente, usa null). ` +
-    `Responde ÚNICAMENTE con JSON: {"words": [{"term": string, "translation": string, "frequency": "alta"|"baja"}], ` +
-    `"phrases": [{"term": string, "explanation": string, "clave": string|null}]}.`;
+    `El estudiante marcó palabras, fragmentos y oraciones que no entendió mientras leía el artículo. ` +
+    `Convierte las marcas en fichas de vocabulario. Responde ÚNICAMENTE con JSON: ` +
+    `{"items": [{"surface": string, "lemma": string, "pos": "verb"|"noun"|"adj"|"adv"|"phrase"|"other", ` +
+    `"gender": "m"|"f"|null, "translation": string, "note": string|null, "contextTranslation": string|null, ` +
+    `"freqBand": "top1000"|"top3000"|"top5000"|"rare", "distractors": [string, string, string]}]}.\n` +
+    `Reglas para cada ficha:\n` +
+    `- "surface": la forma EXACTA tal como aparece en el texto (p. ej. "perfila", "lanzamientos", "se llama").\n` +
+    `- "lemma": la forma de diccionario: verbo en infinitivo (con -se si es pronominal: "perfilarse", "llamarse"), ` +
+    `sustantivo en singular, adjetivo en masculino singular. Para expresiones, la forma neutra ("llegar cargado de").\n` +
+    `- "pos": categoría gramatical; usa "phrase" para expresiones de varias palabras.\n` +
+    `- "gender": solo para sustantivos ("m" o "f"); null en los demás casos.\n` +
+    `- "translation": traducción CORTA del lemma en ${lang}: máximo 5 palabras, sin paréntesis, sin guiones largos, ` +
+    `sin repetir el original español dentro. SOLO la traducción.\n` +
+    `- "note": opcional, en ${lang}: matices de uso, régimen preposicional, por qué se usa así en el texto. ` +
+    `Todo lo que NO sea la traducción va aquí, nunca en "translation".\n` +
+    `- "contextTranslation": traducción en ${lang} de la oración marcada (campo "sentence" de la marca). ` +
+    `Null solo si la marca no trae oración.\n` +
+    `- "freqBand": banda de frecuencia del lemma en español: "top1000", "top3000", "top5000" (dentro de las ` +
+    `1000/3000/5000 palabras más frecuentes) o "rare" (fuera de las 5000 más frecuentes, término especializado o nombre propio).\n` +
+    `- "distractors": exactamente 3 palabras españolas de la MISMA categoría gramatical y nivel parecido, ` +
+    `que NO sean sinónimos del lemma (se usan como opciones incorrectas en un quiz).\n` +
+    `Reglas de agrupación:\n` +
+    `- Marcas vecinas de la misma oración que forman UNA construcción se combinan en UNA sola ficha: ` +
+    `clítico + verbo ("se" + "llama" → lemma "llamarse"), perífrasis ("llega" + "cargado de" → "llegar cargado de").\n` +
+    `- Un clítico o artículo marcado solo, sin pareja en la oración ("se", "lo", "la"): no merece ficha propia; ` +
+    `devuélvelo con freqBand "rare" y explica en "note" qué función cumple en esa oración.\n` +
+    `- Para una oración completa marcada: traduce la oración en "contextTranslation" y elige como ficha la ` +
+    `construcción o palabra (2-4 palabras máximo) que más probablemente causó la dificultad.\n` +
+    `- No dupliques fichas: si dos marcas llevan al mismo lemma, devuelve una sola ficha.`;
 
+  const marksPayload = params.marks.map((m) => ({ text: m.text, sentence: m.sentence, kind: m.kind }));
   const userContent =
     `Artículo:\nTítulo: ${params.articleTitle}\n${params.articleBody}\n\n` +
-    `Palabras marcadas: ${JSON.stringify(params.markedWords)}\n` +
-    `Frases marcadas: ${JSON.stringify(params.markedSents)}`;
+    `Marcas del estudiante: ${JSON.stringify(marksPayload)}`;
 
   return callJsonLLM({
     system,
@@ -52,6 +74,6 @@ export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewRes
     kind: "review",
     userId: params.userId,
     model: config.MODEL,
-    maxTokens: 2048,
+    maxTokens: 4096,
   });
 }

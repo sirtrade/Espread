@@ -85,3 +85,34 @@ export function buildCloze(context: string, term: string): string | null {
   if (idx < 0) return null;
   return context.slice(0, idx) + "_____" + context.slice(idx + term.length);
 }
+
+/**
+ * Cloze over the stored context: the blank hides the surface form actually
+ * used in the sentence ("perfila"), falling back to the lemma. Returns the
+ * blanked prompt plus the answer that fills it, or null when neither form
+ * occurs in the context.
+ */
+export function buildClozeCard(
+  context: string | null,
+  lemma: string,
+  surfaceForm: string | null,
+): { prompt: string; answer: string } | null {
+  if (!context) return null;
+  for (const answer of [surfaceForm, lemma]) {
+    if (!answer) continue;
+    const prompt = buildCloze(context, answer);
+    if (prompt) return { prompt, answer };
+  }
+  return null;
+}
+
+/** Same-POS distractors stored on the item (JSON), falling back gracefully. */
+export function parseStoredDistractors(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((d): d is string => typeof d === "string" && d.length > 0) : [];
+  } catch {
+    return [];
+  }
+}
