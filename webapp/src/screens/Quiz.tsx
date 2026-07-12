@@ -38,7 +38,7 @@ export function Quiz() {
     <QuizSession
       title={t("quiz.title")}
       cards={cards}
-      onAnswer={(card, correct) => api.postPracticeAnswer({ lemma: card.lemma }, correct)}
+      onAnswer={(card, correct, usedHint) => api.postPracticeAnswer({ lemma: card.lemma }, correct, usedHint)}
       onFinish={() => goHome()}
       finishLabel={t("common.finish")}
     />

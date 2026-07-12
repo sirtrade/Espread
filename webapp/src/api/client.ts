@@ -133,10 +133,10 @@ export const api = {
   getPracticeQueue: (limit = 10) => request<{ cards: PracticeCard[]; due: number }>(`/practice/queue?limit=${limit}`),
   // Práctica answers carry an itemId; the post-reading Quiz carries a lemma
   // (it never sees bank item ids). Both drive the same learning + SRS update.
-  postPracticeAnswer: (target: { itemId: number } | { lemma: string }, correct: boolean) =>
+  postPracticeAnswer: (target: { itemId: number } | { lemma: string }, correct: boolean, usedHint = false) =>
     request<PracticeAnswerResult>("/practice/answer", {
       method: "POST",
-      body: JSON.stringify({ ...target, correct }),
+      body: JSON.stringify({ ...target, correct, usedHint }),
     }),
   checkPracticeSentence: (itemId: number, sentence: string) =>
     request<SentenceCheckResult>("/practice/sentence", { method: "POST", body: JSON.stringify({ itemId, sentence }) }),

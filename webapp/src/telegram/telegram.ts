@@ -11,6 +11,12 @@ import {
   showPopup,
   isPopupSupported,
   retrieveLaunchParams,
+  mountBackButton,
+  showBackButton as sdkShowBackButton,
+  hideBackButton as sdkHideBackButton,
+  onBackButtonClick,
+  isBackButtonSupported,
+  isBackButtonMounted,
 } from "@telegram-apps/sdk-react";
 import type { ExplainLang } from "../api/types.js";
 
@@ -89,6 +95,38 @@ export function hapticSuccess(): void {
   if (!inTelegram) return;
   try {
     hapticFeedbackNotificationOccurred("success");
+  } catch {
+    /* not supported on this client */
+  }
+}
+
+/** Removes the click handler bound by the last showBackButton() call, if any. */
+let backButtonOff: (() => void) | null = null;
+
+/** Shows Telegram's native BackButton and routes its taps (and the hardware
+ *  back gesture) to `onClick`. Replaces any previously bound handler. No-op
+ *  outside Telegram or on clients without BackButton support (local dev). */
+export function showBackButton(onClick: () => void): void {
+  if (!inTelegram) return;
+  try {
+    if (!isBackButtonSupported()) return;
+    if (!isBackButtonMounted()) mountBackButton();
+    backButtonOff?.();
+    backButtonOff = onBackButtonClick(onClick);
+    sdkShowBackButton();
+  } catch {
+    /* not supported on this client */
+  }
+}
+
+/** Hides the BackButton and unbinds its handler. Safe to call unconditionally
+ *  (e.g. on Home, or when a screen using it unmounts). */
+export function hideBackButton(): void {
+  backButtonOff?.();
+  backButtonOff = null;
+  if (!inTelegram) return;
+  try {
+    if (isBackButtonMounted()) sdkHideBackButton();
   } catch {
     /* not supported on this client */
   }

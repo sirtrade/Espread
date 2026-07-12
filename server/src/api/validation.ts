@@ -35,6 +35,9 @@ export const practiceAnswerSchema = z
     itemId: z.number().int().positive().optional(),
     lemma: z.string().trim().min(1).max(80).optional(),
     correct: z.boolean(),
+    // The reader revealed the context translation before answering: a correct
+    // answer then earns no SRS credit (retrieval was scaffolded, not recalled).
+    usedHint: z.boolean().optional(),
   })
   .refine((d) => d.itemId != null || d.lemma != null, "Se requiere itemId o lemma");
 
