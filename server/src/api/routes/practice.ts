@@ -102,7 +102,7 @@ practiceRoutes.post("/answer", async (c) => {
   }
   if (itemId == null) throw Errors.badRequest("Falta itemId o lemma");
 
-  const result = await applyPracticeAnswer(userId, itemId, body.data.correct);
+  const result = await applyPracticeAnswer(userId, itemId, body.data.correct, Date.now(), body.data.usedHint ?? false);
   if (!result) throw Errors.notFound("Palabra");
   return c.json({
     ok: true,

@@ -104,4 +104,24 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     const res = await applyPracticeAnswer(userId, id, false, now);
     expect(res).toMatchObject({ advanced: false, srsStage: 0, status: "active" });
   });
+
+  it("does not credit a correct answer given after revealing the hint", async () => {
+    const id = await seedItem({ lemma: "conpista", srsStage: 2, nextDueAt: 1000 });
+    const now = Date.UTC(2026, 0, 22, 9, 0, 0);
+    const res = await applyPracticeAnswer(userId, id, true, now, true);
+    // No advance: the schedule (stage/nextDueAt/lastCreditAt) is left untouched
+    // so the word stays due for an unaided retrieval later.
+    expect(res).toMatchObject({ advanced: false, srsStage: 2 });
+    const item = await getBankItemById(userId, id);
+    expect(item?.srsStage).toBe(2);
+    expect(item?.nextDueAt).toBe(1000);
+    expect(item?.lastCreditAt).toBeNull();
+  });
+
+  it("still resets on a wrong answer even when the hint was used", async () => {
+    const id = await seedItem({ lemma: "pistafallada", srsStage: 4 });
+    const now = Date.UTC(2026, 0, 23, 9, 0, 0);
+    const res = await applyPracticeAnswer(userId, id, false, now, true);
+    expect(res).toMatchObject({ advanced: false, srsStage: 0 });
+  });
 });
