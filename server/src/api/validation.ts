@@ -24,10 +24,15 @@ export const patchMeSchema = z.object({
   botQuizzesPerDay: z.number().int().min(0).max(12).optional(),
 });
 
-export const practiceAnswerSchema = z.object({
-  itemId: z.number().int().positive(),
-  correct: z.boolean(),
-});
+// Práctica answers carry an itemId; the post-reading Quiz carries a lemma
+// (the client never sees bank item ids). Exactly one identifier is required.
+export const practiceAnswerSchema = z
+  .object({
+    itemId: z.number().int().positive().optional(),
+    lemma: z.string().trim().min(1).max(80).optional(),
+    correct: z.boolean(),
+  })
+  .refine((d) => d.itemId != null || d.lemma != null, "Se requiere itemId o lemma");
 
 export const practiceSentenceSchema = z.object({
   itemId: z.number().int().positive(),

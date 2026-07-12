@@ -1,0 +1,1 @@
+ALTER TABLE `bank_items` ADD `last_streak_credit_at` integer;

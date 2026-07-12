@@ -136,12 +136,32 @@ export interface Stats {
 
 export interface PracticeCard {
   itemId: number;
-  term: string;
+  lemma: string;
   isPhrase: boolean;
   translation: string | null;
   type: "cloze" | "recall";
   prompt: string;
+  /** the correct option: blanked surface form (cloze) or lemma (recall) */
+  answer: string;
   options: string[];
+  /** the article sentence, shown as after-answer feedback */
+  context: string | null;
+  /** translation of the context sentence, shown as a cloze hint */
+  contextTranslation: string | null;
+}
+
+/** New learning + SRS state returned after a practice/quiz answer, used to
+ *  build the end-of-session summary (which words advanced or reset). */
+export interface PracticeAnswerResult {
+  ok: true;
+  practiceStage: number;
+  nextPracticeAt: number;
+  cleanStreak: number;
+  status: BankStatus;
+  /** the streak moved up (a clean encounter landed, within the daily cap) */
+  streakCredited: boolean;
+  /** this answer promoted the word to "learned" */
+  becameLearned: boolean;
 }
 
 export interface SentenceCheckResult {

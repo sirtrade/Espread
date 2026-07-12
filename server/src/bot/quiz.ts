@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
 import { logger } from "../lib/logger.js";
-import { buildClozeCard, buildOptions, parseStoredDistractors } from "../domain/practice.js";
+import { buildCard, parseStoredDistractors } from "../domain/practice.js";
 import {
   applyPracticeAnswer,
   getBankItemById,
@@ -19,22 +19,34 @@ export async function sendBotQuiz(bot: Bot, user: UserRow): Promise<boolean> {
   const item = await getRandomDueItem(user.id, Date.now());
   if (!item) return false;
 
-  const pool = [
-    ...parseStoredDistractors(item.distractors),
-    ...(await getDistractorPool(user.id, item.id)).map((d) => d.lemma),
-  ];
+  const poolLemmas = (await getDistractorPool(user.id, item.id, { pos: item.pos, isPhrase: item.isPhrase })).map(
+    (d) => d.lemma,
+  );
 
-  const cloze = buildClozeCard(item.firstContext, item.lemma, item.surfaceForm);
-  const answer = cloze ? cloze.answer : item.lemma;
-  const options = buildOptions(answer, pool);
-  const correctIdx = options.findIndex((o) => o === answer);
+  const card = buildCard({
+    lemma: item.lemma,
+    isPhrase: item.isPhrase,
+    translation: item.translation,
+    firstContext: item.firstContext,
+    surfaceForm: item.surfaceForm,
+    contextTranslation: item.contextTranslation,
+    pos: item.pos,
+    storedDistractors: parseStoredDistractors(item.distractors),
+    poolLemmas,
+  });
+  // Nothing safely quizzable (no context/translation or too few distractors):
+  // skip so the caller retries with another item on the next tick.
+  if (!card) return false;
 
-  const question = cloze
-    ? `🧠 Completa la frase:\n\n${cloze.prompt}`
-    : `🧠 ¿Cómo se dice en español?\n\n«${item.translation ?? item.lemma}»`;
+  const correctIdx = card.options.findIndex((o) => o === card.answer);
+
+  const question =
+    card.type === "cloze"
+      ? `🧠 Completa la frase:\n\n${card.prompt}`
+      : `🧠 ¿Cómo se dice en español?\n\n«${card.prompt}»`;
 
   const kb = new InlineKeyboard();
-  options.forEach((opt, idx) => {
+  card.options.forEach((opt, idx) => {
     // Answers carry only ids/indexes: callback_data is limited to 64 bytes.
     kb.text(opt, `pq:${item.id}:${idx}:${correctIdx}`).row();
   });

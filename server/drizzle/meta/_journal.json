@@ -43,6 +43,13 @@
       "when": 1783817390901,
       "tag": "0005_lemma_bank_and_marks",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1783821566121,
+      "tag": "0006_mysterious_living_lightning",
+      "breakpoints": true
     }
   ]
 }

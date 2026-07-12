@@ -1,8 +1,8 @@
 import { and, asc, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { bankItems } from "../schema.js";
-import type { BankItemRecord, BankStatus } from "../../domain/bank.js";
-import { nextPracticeState } from "../../domain/practice.js";
+import { bankItems, userStats } from "../schema.js";
+import type { BankItemRecord, BankStatus, PartOfSpeech } from "../../domain/bank.js";
+import { nextPracticeState, nextStreakState } from "../../domain/practice.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -90,31 +90,108 @@ export async function countDueForPractice(userId: number, now: number): Promise<
   return row?.count ?? 0;
 }
 
-/** Applies a practice answer to the SRS state. Never touches status/cleanStreak. */
+/** The outcome of one practice answer: the new SRS + learning state, plus
+ *  flags the client needs for its end-of-session summary. */
+export interface PracticeAnswerResult {
+  itemId: number;
+  lemma: string;
+  practiceStage: number;
+  nextPracticeAt: number;
+  cleanStreak: number;
+  status: BankStatus;
+  /** the streak moved up (a clean encounter landed, respecting the daily cap) */
+  streakCredited: boolean;
+  /** this answer promoted the item to "learned" */
+  becameLearned: boolean;
+}
+
+/**
+ * Applies one practice answer. Advances the SRS ladder (always) and the
+ * learning streak (a first-try-correct answer is a clean encounter, capped at
+ * one credit per day; a wrong answer resets it). Promotion to "learned" bumps
+ * userStats.itemsLearned in the same transaction — the same accounting as a
+ * clean reading exposure in applyCompletion.
+ */
 export async function applyPracticeAnswer(
   userId: number,
   itemId: number,
   correct: boolean,
   now = Date.now(),
-): Promise<BankItemRow | undefined> {
+): Promise<PracticeAnswerResult | undefined> {
   const item = await db.query.bankItems.findFirst({
     where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)),
   });
   if (!item) return undefined;
 
-  const next = nextPracticeState(item.practiceStage, correct, now);
-  const [row] = await db.update(bankItems).set(next).where(eq(bankItems.id, itemId)).returning();
-  return row;
+  const srs = nextPracticeState(item.practiceStage, correct, now);
+  const streak = nextStreakState(
+    { cleanStreak: item.cleanStreak, status: item.status, lastStreakCreditAt: item.lastStreakCreditAt },
+    correct,
+    now,
+  );
+
+  db.transaction((trx) => {
+    trx
+      .update(bankItems)
+      .set({
+        practiceStage: srs.practiceStage,
+        nextPracticeAt: srs.nextPracticeAt,
+        cleanStreak: streak.cleanStreak,
+        status: streak.status,
+        lastStreakCreditAt: streak.lastStreakCreditAt,
+        updatedAt: now,
+      })
+      .where(eq(bankItems.id, itemId))
+      .run();
+
+    if (streak.becameLearned) {
+      trx
+        .update(userStats)
+        .set({ itemsLearned: sql`${userStats.itemsLearned} + 1` })
+        .where(eq(userStats.userId, userId))
+        .run();
+    }
+  });
+
+  return {
+    itemId,
+    lemma: item.lemma,
+    practiceStage: srs.practiceStage,
+    nextPracticeAt: srs.nextPracticeAt,
+    cleanStreak: streak.cleanStreak,
+    status: streak.status,
+    streakCredited: streak.streakCredited,
+    becameLearned: streak.becameLearned,
+  };
 }
 
 export async function getBankItemById(userId: number, itemId: number): Promise<BankItemRow | undefined> {
   return db.query.bankItems.findFirst({ where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)) });
 }
 
-/** Random terms from the user's other bank items, used as quiz distractors. */
-export async function getDistractorPool(userId: number, excludeItemId: number, limit = 12): Promise<BankItemRow[]> {
+/** Resolves a lemma to the user's bank row (post-reading quiz answers arrive
+ *  keyed by lemma, since the client never sees item ids). */
+export async function getBankItemByLemma(userId: number, lemma: string): Promise<BankItemRow | undefined> {
+  return db.query.bankItems.findFirst({ where: and(eq(bankItems.userId, userId), eq(bankItems.lemma, lemma)) });
+}
+
+/** Random same-POS terms from the user's other bank items, used as quiz
+ *  distractors. Filtering by POS and phrase-ness keeps decoys plausible and
+ *  stops phrases and single words from mixing in one card's options. */
+export async function getDistractorPool(
+  userId: number,
+  excludeItemId: number,
+  filter: { pos: PartOfSpeech | null; isPhrase: boolean },
+  limit = 12,
+): Promise<BankItemRow[]> {
+  const conditions = [
+    eq(bankItems.userId, userId),
+    ne(bankItems.id, excludeItemId),
+    eq(bankItems.isPhrase, filter.isPhrase),
+  ];
+  if (filter.pos) conditions.push(eq(bankItems.pos, filter.pos));
   return db.query.bankItems.findMany({
-    where: and(eq(bankItems.userId, userId), ne(bankItems.id, excludeItemId)),
+    where: and(...conditions),
     orderBy: sql`random()`,
     limit,
   });
