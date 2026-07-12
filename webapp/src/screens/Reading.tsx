@@ -6,10 +6,13 @@ import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { tokenizeArticle } from "../lib/tokenize.js";
+import { fromMarks, noWordBetween, sentenceWordRange, toMarks, type MarkPos } from "../lib/marks.js";
+import { markReadingHintSeen, readingHintSeen } from "../lib/hint.js";
 import { hapticSelect } from "../telegram/telegram.js";
 import { ThemePicker } from "../components/ThemePicker.js";
 
-type Mode = "words" | "sentences";
+const LONG_PRESS_MS = 450;
+const MOVE_CANCEL_PX = 10;
 
 export function Reading() {
   const navigate = useNavigate();
@@ -17,11 +20,16 @@ export function Reading() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>("words");
-  const [markedWords, setMarkedWords] = useState<Set<string>>(new Set());
-  const [markedSents, setMarkedSents] = useState<Set<string>>(new Set());
+  const [marks, setMarks] = useState<MarkPos[]>([]);
+  const [showHint, setShowHint] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Long-press detection shared across all word tokens: a tap toggles the word,
+  // a hold (~450ms without moving) toggles the whole sentence.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const longPressFired = useRef(false);
 
   async function load() {
     setLoading(true);
@@ -34,8 +42,8 @@ export function Reading() {
       }
       setSession(s);
       setArticle(a);
-      setMarkedWords(new Set(s.markedWords));
-      setMarkedSents(new Set(s.markedSents));
+      setMarks(fromMarks(s.marks));
+      if (!readingHintSeen()) setShowHint(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo cargar la lectura");
     } finally {
@@ -48,12 +56,14 @@ export function Reading() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const paragraphs = useMemo(() => (article ? tokenizeArticle(article.body) : []), [article]);
+
   // Autosave marks a moment after they change.
   useEffect(() => {
     if (!session) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      api.putSession([...markedWords], [...markedSents]).catch(() => {
+      api.putSession(toMarks(marks, paragraphs)).catch(() => {
         /* best-effort autosave; final save happens on "Terminé" */
       });
     }, 800);
@@ -61,36 +71,106 @@ export function Reading() {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markedWords, markedSents]);
+  }, [marks]);
 
-  const paragraphs = useMemo(() => (article ? tokenizeArticle(article.body) : []), [article]);
+  function dismissHint() {
+    if (!showHint) return;
+    setShowHint(false);
+    markReadingHintSeen();
+  }
 
-  function toggleWord(word: string) {
+  // Tap on a word: remove it if already marked, extend an adjacent mark into a
+  // span, or start a fresh single-word mark on this occurrence.
+  function tapWord(p: number, s: number, ti: number) {
     hapticSelect();
-    const key = word.toLowerCase();
-    setMarkedWords((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
+    dismissHint();
+    const tokens = paragraphs[p].sentences[s].tokens;
+    setMarks((prev) => {
+      const covering = prev.findIndex(
+        (m) => m.kind !== "sentence" && m.p === p && m.s === s && ti >= m.t[0] && ti <= m.t[1],
+      );
+      if (covering !== -1) {
+        return prev.filter((_, i) => i !== covering);
+      }
+      const adjacent = prev.findIndex(
+        (m) =>
+          m.kind !== "sentence" &&
+          m.p === p &&
+          m.s === s &&
+          ((ti > m.t[1] && noWordBetween(tokens, m.t[1], ti)) ||
+            (ti < m.t[0] && noWordBetween(tokens, m.t[0], ti))),
+      );
+      if (adjacent !== -1) {
+        const m = prev[adjacent];
+        const next = [...prev];
+        next[adjacent] = { ...m, kind: "span", t: [Math.min(m.t[0], ti), Math.max(m.t[1], ti)] };
+        return next;
+      }
+      return [...prev, { kind: "word", p, s, t: [ti, ti] }];
     });
   }
 
-  function toggleSentence(sentence: string) {
+  // Long-press: toggle the whole sentence as one mark.
+  function toggleSentence(p: number, s: number) {
     hapticSelect();
-    setMarkedSents((prev) => {
-      const next = new Set(prev);
-      if (next.has(sentence)) next.delete(sentence);
-      else next.add(sentence);
-      return next;
+    dismissHint();
+    setMarks((prev) => {
+      const idx = prev.findIndex((m) => m.kind === "sentence" && m.p === p && m.s === s);
+      if (idx !== -1) return prev.filter((_, i) => i !== idx);
+      const range = sentenceWordRange(paragraphs[p].sentences[s].tokens);
+      return [...prev, { kind: "sentence", p, s, t: range }];
     });
+  }
+
+  function cancelPress() {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    pressStart.current = null;
+  }
+
+  function onPointerDown(e: React.PointerEvent, p: number, s: number) {
+    longPressFired.current = false;
+    pressStart.current = { x: e.clientX, y: e.clientY };
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      toggleSentence(p, s);
+    }, LONG_PRESS_MS);
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!pressStart.current) return;
+    if (
+      Math.abs(e.clientX - pressStart.current.x) > MOVE_CANCEL_PX ||
+      Math.abs(e.clientY - pressStart.current.y) > MOVE_CANCEL_PX
+    ) {
+      cancelPress();
+    }
+  }
+
+  function onWordClick(p: number, s: number, ti: number) {
+    if (longPressFired.current) {
+      longPressFired.current = false;
+      return;
+    }
+    tapWord(p, s, ti);
+  }
+
+  function isTokenMarked(p: number, s: number, ti: number): boolean {
+    return marks.some((m) => m.kind !== "sentence" && m.p === p && m.s === s && ti >= m.t[0] && ti <= m.t[1]);
+  }
+
+  function isSentMarked(p: number, s: number): boolean {
+    return marks.some((m) => m.kind === "sentence" && m.p === p && m.s === s);
   }
 
   async function finish() {
     setFinishing(true);
     setError(null);
     try {
-      await api.putSession([...markedWords], [...markedSents]);
+      await api.putSession(toMarks(marks, paragraphs));
       await api.reviewSession();
       navigate("/review");
     } catch (err) {
@@ -119,25 +199,7 @@ export function Reading() {
         </p>
       )}
 
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setMode("words")}
-            className={`rounded-full px-4 py-1.5 text-xs font-medium ${
-              mode === "words" ? "bg-accent text-white" : "bg-surface text-subtext"
-            }`}
-          >
-            Palabras
-          </button>
-          <button
-            onClick={() => setMode("sentences")}
-            className={`rounded-full px-4 py-1.5 text-xs font-medium ${
-              mode === "sentences" ? "bg-accent text-white" : "bg-surface text-subtext"
-            }`}
-          >
-            Frases
-          </button>
-        </div>
+      <div className="mb-4 flex items-center justify-end">
         <div className="flex items-center gap-3">
           <ThemePicker />
           <button onClick={() => navigate("/settings")} className="text-lg text-subtext" aria-label="Ajustes">
@@ -146,44 +208,42 @@ export function Reading() {
         </div>
       </div>
 
-      <article className="article-text space-y-4">
+      {showHint && (
+        <button
+          onClick={dismissHint}
+          className="bg-subtle mb-4 rounded-xl px-4 py-3 text-left text-xs text-subtext"
+        >
+          Toca una palabra para marcarla. Toca la de al lado para unirlas en una frase. Mantén pulsado para marcar
+          la oración entera.
+        </button>
+      )}
+
+      <article className="article-text space-y-4" onContextMenu={(e) => e.preventDefault()}>
         {paragraphs.map((p, pi) => (
           <p key={pi}>
-            {p.sentences.map((s, si) => {
-              const sentMarked = markedSents.has(s.text);
-              return (
-                <span
-                  key={si}
-                  onClick={mode === "sentences" ? () => toggleSentence(s.text) : undefined}
-                  className={mode === "sentences" ? `cursor-pointer ${sentMarked ? "sent-marked" : ""}` : ""}
-                >
-                  {s.tokens.map((t, ti) =>
-                    t.type === "word" ? (
-                      <span
-                        key={ti}
-                        onClick={
-                          mode === "words"
-                            ? (e) => {
-                                e.stopPropagation();
-                                toggleWord(t.text);
-                              }
-                            : undefined
-                        }
-                        className={
-                          mode === "words"
-                            ? `cursor-pointer py-0.5 ${markedWords.has(t.text.toLowerCase()) ? "word-marked" : ""}`
-                            : undefined
-                        }
-                      >
-                        {t.text}
-                      </span>
-                    ) : (
-                      <span key={ti}>{t.text}</span>
-                    ),
-                  )}{" "}
-                </span>
-              );
-            })}
+            {p.sentences.map((s, si) => (
+              <span key={si} className={isSentMarked(pi, si) ? "sent-marked" : ""}>
+                {s.tokens.map((t, ti) =>
+                  t.type === "word" ? (
+                    <span
+                      key={ti}
+                      onPointerDown={(e) => onPointerDown(e, pi, si)}
+                      onPointerMove={onPointerMove}
+                      onPointerUp={cancelPress}
+                      onPointerCancel={cancelPress}
+                      onClick={() => onWordClick(pi, si, ti)}
+                      className={`cursor-pointer py-0.5 ${isTokenMarked(pi, si, ti) ? "word-marked" : ""}`}
+                    >
+                      {t.text}
+                    </span>
+                  ) : (
+                    <span key={ti} className={isTokenMarked(pi, si, ti) ? "word-marked" : undefined}>
+                      {t.text}
+                    </span>
+                  ),
+                )}{" "}
+              </span>
+            ))}
           </p>
         ))}
       </article>
@@ -191,7 +251,7 @@ export function Reading() {
       <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
         <div className="mx-auto flex max-w-md items-center justify-between gap-4">
           <p className="text-xs text-subtext">
-            {markedWords.size} palabras · {markedSents.size} frases marcadas
+            {marks.length} {marks.length === 1 ? "marca" : "marcas"}
           </p>
           <Button onClick={finish} disabled={finishing}>
             {finishing ? "Analizando..." : "Terminé"}
