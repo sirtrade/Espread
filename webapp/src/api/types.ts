@@ -45,6 +45,40 @@ export interface Session {
   updatedAt: number;
 }
 
+export type Pos = "verb" | "noun" | "adj" | "adv" | "phrase" | "other";
+export type FreqBand = "top1000" | "top3000" | "top5000" | "rare";
+
+/** A structured vocabulary card returned by the review endpoint. `contextSentence`
+ *  is the exact sentence from the article the item was marked in. */
+export interface ReviewItem {
+  surface: string;
+  lemma: string;
+  pos: Pos;
+  gender: "m" | "f" | null;
+  translation: string;
+  note: string | null;
+  contextTranslation: string | null;
+  freqBand: FreqBand;
+  distractors: string[];
+  contextSentence: string;
+}
+
+/** How one of the article's woven bank words fared this reading. */
+export interface WovenTerm {
+  lemma: string;
+  /** clean-exposure streak before this session is completed */
+  cleanStreak: number;
+  /** the reader marked it again -> its streak resets on completion */
+  markedAgain: boolean;
+}
+
+export interface ReviewResult {
+  items: ReviewItem[];
+  wovenTerms: WovenTerm[];
+}
+
+/** Legacy `{ words, phrases }` review shape still archived on read articles
+ *  (reading history). Kept until the history screen migrates to `ReviewItem`. */
 export interface ReviewWord {
   term: string;
   translation: string;
@@ -57,7 +91,7 @@ export interface ReviewPhrase {
   clave: string | null;
 }
 
-export interface ReviewResult {
+export interface LegacyReviewResult {
   words: ReviewWord[];
   phrases: ReviewPhrase[];
 }
@@ -91,7 +125,7 @@ export interface HistoryItem {
 export interface ReadArticle extends Article {
   readAt: number;
   marks: Mark[];
-  reviewResult: ReviewResult | null;
+  reviewResult: LegacyReviewResult | null;
 }
 
 export interface Stats {

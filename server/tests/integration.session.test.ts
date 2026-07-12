@@ -315,6 +315,157 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     });
   });
 
+  it("keeps a rejected word out of the active bank even if frequent", async () => {
+    const user = await findOrCreateUser(999005, "rejecttest");
+    await setUserTopics(user.id, ["Sociedad"]);
+
+    const sentence = "El acuerdo entre las partes fue firmado ayer.";
+    mockSearchAndWrite("Noticias del día", `${sentence} La reunión duró horas.`);
+    const { session } = await startReading(user.id);
+
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "acuerdo",
+            lemma: "acuerdo",
+            pos: "noun",
+            gender: "m",
+            translation: "соглашение",
+            note: null,
+            contextTranslation: "Соглашение между сторонами было подписано вчера.",
+            freqBand: "top1000",
+            distractors: ["desacuerdo", "conflicto", "debate"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(session.id, [{ text: "acuerdo", sentence, kind: "word" }]);
+    await reviewSession(user.id);
+    // The reader flipped this frequent word to "skip" on the review screen.
+    await completeSession(user.id, { rejected: ["acuerdo"] });
+
+    const active = await getBankItems(user.id, "active");
+    expect(active).toHaveLength(0);
+    const ignored = await getBankItems(user.id, "ignored");
+    expect(ignored.map((i) => i.lemma)).toEqual(["acuerdo"]);
+  });
+
+  it("puts an accepted rare word into the active bank despite the freq verdict", async () => {
+    const user = await findOrCreateUser(999006, "accepttest");
+    await setUserTopics(user.id, ["Ciencia"]);
+
+    const sentence = "El biólogo describió el fenómeno de la bioluminiscencia.";
+    mockSearchAndWrite("Vida marina", `${sentence} El hallazgo sorprendió a todos.`);
+    const { session } = await startReading(user.id);
+
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "bioluminiscencia",
+            lemma: "bioluminiscencia",
+            pos: "noun",
+            gender: "f",
+            translation: "биолюминесценция",
+            note: "término científico",
+            contextTranslation: "Биолог описал явление биолюминесценции.",
+            freqBand: "rare",
+            distractors: ["fotosíntesis", "gravedad", "electricidad"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(session.id, [{ text: "bioluminiscencia", sentence, kind: "word" }]);
+    await reviewSession(user.id);
+    // The reader flipped this rare word to "save" on the review screen.
+    await completeSession(user.id, { accepted: ["bioluminiscencia"] });
+
+    const active = await getBankItems(user.id, "active");
+    expect(active.map((i) => i.lemma)).toEqual(["bioluminiscencia"]);
+    const ignored = await getBankItems(user.id, "ignored");
+    expect(ignored).toHaveLength(0);
+  });
+
+  it("reports woven-word progress: clean streak untouched, re-marked word flagged", async () => {
+    const user = await findOrCreateUser(999007, "woventest");
+    await setUserTopics(user.id, ["Tecnología"]);
+
+    // Cycle 1: seed two active words in the bank.
+    const seed = "La innovación impulsa la economía y genera empleo.";
+    mockSearchAndWrite("Economía digital", `${seed} Las empresas invierten más.`);
+    const { session: s1 } = await startReading(user.id);
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "innovación",
+            lemma: "innovación",
+            pos: "noun",
+            gender: "f",
+            translation: "инновация",
+            note: null,
+            contextTranslation: "Инновации двигают экономику.",
+            freqBand: "top3000",
+            distractors: ["tradición", "rutina", "costumbre"],
+          },
+          {
+            surface: "empleo",
+            lemma: "empleo",
+            pos: "noun",
+            gender: "m",
+            translation: "работа",
+            note: null,
+            contextTranslation: "Инновации создают рабочие места.",
+            freqBand: "top3000",
+            distractors: ["descanso", "paro", "ocio"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(s1.id, [
+      { text: "innovación", sentence: seed, kind: "word" },
+      { text: "empleo", sentence: seed, kind: "word" },
+    ]);
+    await reviewSession(user.id);
+    await completeSession(user.id);
+
+    // Cycle 2: both are woven in (targetTerms). Re-mark only "innovación".
+    const sentence = "La innovación cambió el sector por completo.";
+    mockSearchAndWrite("Más tecnología", `${sentence} El empleo creció con ella.`);
+    const { session: s2, article } = await startReading(user.id);
+    expect(JSON.parse(article.targetTerms).sort()).toEqual(["empleo", "innovación"]);
+
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "innovación",
+            lemma: "innovación",
+            pos: "noun",
+            gender: "f",
+            translation: "инновация",
+            note: null,
+            contextTranslation: "Инновация изменила сектор.",
+            freqBand: "top3000",
+            distractors: ["tradición", "rutina", "costumbre"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(s2.id, [{ text: "innovación", sentence, kind: "word" }]);
+    const view = await reviewSession(user.id);
+
+    const woven = new Map(view.wovenTerms.map((w) => [w.lemma, w]));
+    expect(woven.get("innovación")?.markedAgain).toBe(true);
+    expect(woven.get("empleo")?.markedAgain).toBe(false);
+    // Both carry the current streak (0) before completion.
+    expect(woven.get("empleo")?.cleanStreak).toBe(0);
+
+    // The review item also carries the marked sentence for the card.
+    expect(view.items[0]?.contextSentence).toBe(sentence);
+  });
+
   it("sends a rare word to ignored instead of the active bank", async () => {
     const user = await findOrCreateUser(999004, "raretest");
     await setUserTopics(user.id, ["Ciencia"]);

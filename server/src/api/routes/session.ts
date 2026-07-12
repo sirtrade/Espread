@@ -9,7 +9,7 @@ import { getArticleById } from "../../db/repositories/articles.js";
 import { reviewSession, completeSession } from "../../services/sessionService.js";
 import { Errors } from "../errors.js";
 import { serializeArticle, serializeSession } from "../serializers.js";
-import { putSessionSchema } from "../validation.js";
+import { completeSessionSchema, putSessionSchema } from "../validation.js";
 import type { AppEnv } from "../context.js";
 
 export const sessionRoutes = new Hono<AppEnv>();
@@ -51,6 +51,10 @@ sessionRoutes.post("/review", async (c) => {
 
 sessionRoutes.post("/complete", async (c) => {
   const { userId } = c.get("session");
-  const result = await completeSession(userId);
+  // Empty body is valid: it means "use the default frequency behavior".
+  const parsed = completeSessionSchema.safeParse((await c.req.json().catch(() => null)) ?? {});
+  if (!parsed.success) throw Errors.badRequest(parsed.error.issues[0]?.message ?? "Datos inválidos");
+
+  const result = await completeSession(userId, parsed.data);
   return c.json(result);
 });
