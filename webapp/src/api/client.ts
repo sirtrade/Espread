@@ -118,7 +118,8 @@ export const api = {
     request<{ ok: true }>("/session", { method: "PUT", body: JSON.stringify({ marks }) }),
   deleteSession: () => request<{ ok: true }>("/session", { method: "DELETE" }),
   reviewSession: () => request<ReviewResult>("/session/review", { method: "POST" }),
-  completeSession: () => request<CompleteResult>("/session/complete", { method: "POST" }),
+  completeSession: (choices: { accepted?: string[]; rejected?: string[] } = {}) =>
+    request<CompleteResult>("/session/complete", { method: "POST", body: JSON.stringify(choices) }),
   getBank: (status?: BankStatus) => request<{ items: BankItem[] }>(`/bank${status ? `?status=${status}` : ""}`),
   patchBankItem: (id: number, status: BankStatus) =>
     request<{ item: BankItem }>(`/bank/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),

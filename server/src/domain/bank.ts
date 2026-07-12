@@ -52,6 +52,22 @@ export function statusForFreqBand(freqBand: FreqBand): BankStatus {
   return freqBand === "rare" ? "ignored" : "active";
 }
 
+/** The reader's explicit accept/reject choices from the review screen, keyed
+ *  by lemma. Sets are normalized lemmas restricted to the current review. */
+export interface StatusOverrides {
+  accepted: ReadonlySet<string>;
+  rejected: ReadonlySet<string>;
+}
+
+/** Honors the reader's manual choice over the frequency verdict: a rejected
+ *  lemma never enters the active bank even if frequent, an accepted one does
+ *  even if rare. Absent an override, falls back to the frequency band. */
+function statusForItem(lemma: string, freqBand: FreqBand, overrides?: StatusOverrides): BankStatus {
+  if (overrides?.rejected.has(lemma)) return "ignored";
+  if (overrides?.accepted.has(lemma)) return "active";
+  return statusForFreqBand(freqBand);
+}
+
 /** Overwrites card fields from a fresh review verdict. surfaceForm /
  *  firstContext / contextTranslation are only replaced by non-empty values,
  *  so a review that couldn't see the context never wipes existing data. */
@@ -84,6 +100,7 @@ export function applyReviewToBank(
   existing: ReadonlyMap<string, BankItemRecord>,
   exposedLemmas: readonly string[],
   reviewed: readonly ReviewedItem[],
+  overrides?: StatusOverrides,
 ): Map<string, BankItemRecord> {
   const result = new Map<string, BankItemRecord>();
   for (const [lemma, item] of existing) {
@@ -101,7 +118,7 @@ export function applyReviewToBank(
     if (mark) {
       item.exposures += 1;
       item.cleanStreak = 0;
-      item.status = statusForFreqBand(mark.freqBand);
+      item.status = statusForItem(lemma, mark.freqBand, overrides);
       updateCardFields(item, mark);
     } else {
       item.exposures += 1;
@@ -119,13 +136,13 @@ export function applyReviewToBank(
     if (item) {
       item.exposures += 1;
       item.cleanStreak = 0;
-      item.status = statusForFreqBand(mark.freqBand);
+      item.status = statusForItem(mark.lemma, mark.freqBand, overrides);
       updateCardFields(item, mark);
     } else {
       result.set(mark.lemma, {
         lemma: mark.lemma,
         isPhrase: mark.isPhrase,
-        status: statusForFreqBand(mark.freqBand),
+        status: statusForItem(mark.lemma, mark.freqBand, overrides),
         exposures: 1,
         cleanStreak: 0,
         translation: mark.translation,

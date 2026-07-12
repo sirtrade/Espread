@@ -53,6 +53,14 @@ export const putSessionSchema = z.object({
   marks: z.array(markSchema).max(300),
 });
 
+// The review screen sends the reader's per-card intake choices as lemmas.
+// Shape only: the service further restricts these to lemmas that appear in
+// the current review result. Both fields optional -> default freq behavior.
+export const completeSessionSchema = z.object({
+  accepted: z.array(z.string().min(1).max(80)).max(100).optional(),
+  rejected: z.array(z.string().min(1).max(80)).max(100).optional(),
+});
+
 export const bankQuerySchema = z.object({
   status: z.enum(["active", "learned", "ignored"]).optional(),
 });
