@@ -1,10 +1,14 @@
 /**
  * Spaced-repetition schedule shared by reading and practice. A word climbs the
  * interval ladder on every successful encounter — a clean reading exposure
- * (woven into an article and NOT re-marked) or a first-try-correct quiz answer
- * — and drops back to stage 0 on a failure (re-marked while reading, or a wrong
- * quiz answer). `nextDueAt` decides when the word comes up again, both for
- * weaving into the next article and for practice.
+ * (woven into an article and NOT re-marked) or a first-try-correct quiz answer.
+ * A failure (re-marked while reading, or a wrong quiz answer) is a soft lapse:
+ * the word drops a couple rungs (`lapseSrs`) rather than restarting from zero,
+ * because memory keeps its storage strength and re-learning is faster (savings;
+ * Bjork & Bjork, 1992). A full reset to stage 0 (`resetSrs`) is reserved for a
+ * manual status change, where a clean restart is intended. `nextDueAt` decides
+ * when the word comes up again, both for weaving into the next article and for
+ * practice.
  *
  * A word that succeeds again while already at the top rung (i.e. it survived
  * the whole ladder plus the final 120-day review) graduates to "learned"
@@ -46,12 +50,28 @@ export function advanceSrs(currentStage: number, now: number): SrsState {
 }
 
 /**
- * A failure resets the ladder to stage 0. `delayMs` controls how soon it's due
- * again: 0 for a re-marked reading word (eligible for the very next article), a
- * short retry for a wrong quiz answer so it isn't asked back-to-back.
+ * A full reset to stage 0. Reserved for a manual status change, where the reader
+ * deliberately restarts the word's schedule. Ordinary failures use `lapseSrs`.
+ * `delayMs` controls how soon it's due again.
  */
 export function resetSrs(now: number, delayMs = 0): SrsState {
   return { srsStage: 0, nextDueAt: now + delayMs };
+}
+
+/** How many rungs a lapse drops the ladder (a soft lapse, not a full reset). */
+export const LAPSE_STAGE_DROP = 2;
+
+/**
+ * A soft lapse for a failed retrieval — a wrong quiz answer, or a word re-marked
+ * while reading. The word drops `LAPSE_STAGE_DROP` rungs (floored at 0) instead
+ * of resetting to stage 0: memory keeps its storage strength, so re-learning is
+ * faster and the word doesn't have to climb the whole ladder again. `delayMs`
+ * controls how soon it's due again: 0 for a re-marked reading word (eligible for
+ * the very next article), a short retry for a wrong quiz answer so it isn't
+ * asked back-to-back. A lapse from stage 0 or 1 stays low but never goes negative.
+ */
+export function lapseSrs(currentStage: number, now: number, delayMs = 0): SrsState {
+  return { srsStage: Math.max(0, currentStage - LAPSE_STAGE_DROP), nextDueAt: now + delayMs };
 }
 
 /** Two timestamps fall on the same calendar day (UTC). */

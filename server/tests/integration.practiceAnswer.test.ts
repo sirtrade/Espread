@@ -54,15 +54,23 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     expect(item?.lastCreditAt).toBe(now);
   });
 
-  it("resets to stage 0 with a short retry on a wrong answer", async () => {
+  it("soft-lapses a couple rungs with a short retry on a wrong answer", async () => {
     const id = await seedItem({ lemma: "fallada", srsStage: 3 });
     const now = Date.UTC(2026, 0, 12, 9, 0, 0);
     const res = await applyPracticeAnswer(userId, id, false, now);
-    expect(res).toMatchObject({ advanced: false, srsStage: 0 });
+    // stage 3 - LAPSE_STAGE_DROP(2) = 1, not a full reset to 0.
+    expect(res).toMatchObject({ advanced: false, srsStage: 1 });
     const item = await getBankItemById(userId, id);
-    expect(item?.srsStage).toBe(0);
+    expect(item?.srsStage).toBe(1);
     expect(item?.nextDueAt).toBeGreaterThan(now);
     expect(item?.nextDueAt!).toBeLessThan(now + DAY);
+  });
+
+  it("floors the lapse at stage 0 for a low-stage wrong answer", async () => {
+    const id = await seedItem({ lemma: "baja", srsStage: 1 });
+    const now = Date.UTC(2026, 0, 12, 10, 0, 0);
+    const res = await applyPracticeAnswer(userId, id, false, now);
+    expect(res).toMatchObject({ advanced: false, srsStage: 0 });
   });
 
   it("does not climb twice the same day, but still advances the next day", async () => {
@@ -97,11 +105,33 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     expect(item?.status).toBe("learned");
   });
 
-  it("resets a top-rung word instead of graduating it on a wrong answer", async () => {
+  it("soft-lapses a top-rung word instead of graduating it on a wrong answer", async () => {
     const { SRS_MAX_STAGE } = await import("../src/domain/srs.js");
     const id = await seedItem({ lemma: "casigraduada", srsStage: SRS_MAX_STAGE });
     const now = Date.UTC(2026, 0, 21, 9, 0, 0);
     const res = await applyPracticeAnswer(userId, id, false, now);
-    expect(res).toMatchObject({ advanced: false, srsStage: 0, status: "active" });
+    // Drops two rungs (SRS_MAX_STAGE - 2), stays active, not reset to 0.
+    expect(res).toMatchObject({ advanced: false, srsStage: SRS_MAX_STAGE - 2, status: "active" });
+  });
+
+  it("does not credit a correct answer given after revealing the hint", async () => {
+    const id = await seedItem({ lemma: "conpista", srsStage: 2, nextDueAt: 1000 });
+    const now = Date.UTC(2026, 0, 22, 9, 0, 0);
+    const res = await applyPracticeAnswer(userId, id, true, now, true);
+    // No advance: the schedule (stage/nextDueAt/lastCreditAt) is left untouched
+    // so the word stays due for an unaided retrieval later.
+    expect(res).toMatchObject({ advanced: false, srsStage: 2 });
+    const item = await getBankItemById(userId, id);
+    expect(item?.srsStage).toBe(2);
+    expect(item?.nextDueAt).toBe(1000);
+    expect(item?.lastCreditAt).toBeNull();
+  });
+
+  it("still lapses on a wrong answer even when the hint was used", async () => {
+    const id = await seedItem({ lemma: "pistafallada", srsStage: 4 });
+    const now = Date.UTC(2026, 0, 23, 9, 0, 0);
+    const res = await applyPracticeAnswer(userId, id, false, now, true);
+    // A wrong answer lapses regardless of the hint: stage 4 - 2 = 2.
+    expect(res).toMatchObject({ advanced: false, srsStage: 2 });
   });
 });

@@ -89,7 +89,7 @@ export function Practice() {
       title={t("practice.title")}
       cards={cards}
       pendingCount={due}
-      onAnswer={(card, correct) => api.postPracticeAnswer({ itemId: card.itemId! }, correct)}
+      onAnswer={(card, correct, usedHint) => api.postPracticeAnswer({ itemId: card.itemId! }, correct, usedHint)}
       onFinish={() => navigate("/")}
       onNext={resetWriting}
       renderExtra={(card, chosen) => {

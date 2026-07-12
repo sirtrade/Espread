@@ -1,4 +1,4 @@
-import { advanceSrs, creditAllowedToday, graduatesOnSuccess, resetSrs } from "./srs.js";
+import { advanceSrs, creditAllowedToday, graduatesOnSuccess, lapseSrs } from "./srs.js";
 
 /**
  * Active words with an SRS stage at or below this rung count toward the active
@@ -111,8 +111,9 @@ function occupiesSlot(item: Pick<BankItemRecord, "status" | "srsStage">): boolea
  * Rules:
  * - exposedLemmas are the active bank items that were actually woven into the
  *   article (validated against the body). Ones NOT re-marked earn a clean
- *   exposure and climb the SRS ladder (once per day). Ones re-marked drop back
- *   to stage 0 (due again immediately) and follow the fresh verdict.
+ *   exposure and climb the SRS ladder (once per day). Ones re-marked are a soft
+ *   lapse — they drop a couple rungs (`lapseSrs`, not a full reset), stay due
+ *   immediately, and follow the fresh verdict.
  * - Any other marked item (new or already tracked) is upserted per its
  *   frequency band: top1000..top5000 -> active, rare -> ignored.
  * - `poolLimit` caps the active pool (0 = no limit), counting only words young
@@ -147,10 +148,10 @@ export function applyReviewToBank(
 
     const mark = reviewedMap.get(lemma);
     if (mark) {
-      // Re-marked: the word is still unknown — reset the schedule so it comes
-      // back soon, and follow the fresh frequency verdict.
+      // Re-marked: the word is still unknown — a soft lapse drops it a couple
+      // rungs (not to 0) so it comes back soon, and follow the fresh verdict.
       item.exposures += 1;
-      const s = resetSrs(now);
+      const s = lapseSrs(item.srsStage, now);
       item.srsStage = s.srsStage;
       item.nextDueAt = s.nextDueAt;
       item.status = statusForItem(lemma, mark.freqBand, overrides);
@@ -195,9 +196,10 @@ export function applyReviewToBank(
     const prior = result.get(mark.lemma);
     const priorOccupied = prior ? occupiesSlot(prior) : false;
     if (prior) {
-      // A marked word is unknown again: reset its schedule to stage 0.
+      // A marked word is unknown again: a soft lapse drops it a couple rungs
+      // (not a full reset) so it comes back soon.
       prior.exposures += 1;
-      const s = resetSrs(now);
+      const s = lapseSrs(prior.srsStage, now);
       prior.srsStage = s.srsStage;
       prior.nextDueAt = s.nextDueAt;
       prior.status = status;
@@ -222,8 +224,9 @@ export function applyReviewToBank(
         freqBand: mark.freqBand,
       });
     }
-    // New and reset words sit at stage 0, so an active one always occupies a slot.
-    const nowOccupied = status === "active";
+    // A new word sits at stage 0, but a soft-lapsed one may still be above the
+    // pool-slot threshold — count only words that actually occupy a slot.
+    const nowOccupied = occupiesSlot(result.get(mark.lemma)!);
     slotCount += (nowOccupied ? 1 : 0) - (priorOccupied ? 1 : 0);
   }
 

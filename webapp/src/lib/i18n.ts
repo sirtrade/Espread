@@ -198,6 +198,9 @@ export interface Dict {
   "quizSession.streak": (p: { n: string | number }) => string;
   "quizSession.reset": string;
   "quizSession.streakReset": string;
+  "quizSession.showHint": string;
+  "quizSession.retry": string;
+  "quizSession.exit": string;
 
   "pos.verb": string;
   "pos.noun": string;
@@ -390,8 +393,11 @@ const es: Dict = {
   "quizSession.advanced": "Avanzaron",
   "quizSession.mastered": "¡dominada! 🏆",
   "quizSession.streak": ({ n }) => `racha ${n}`,
-  "quizSession.reset": "Se reiniciaron",
-  "quizSession.streakReset": "racha reiniciada",
+  "quizSession.reset": "Volverán antes",
+  "quizSession.streakReset": "vuelve antes",
+  "quizSession.showHint": "Mostrar traducción",
+  "quizSession.retry": "repaso",
+  "quizSession.exit": "Terminar",
 
   "pos.verb": "verbo",
   "pos.noun": "sustantivo",
@@ -585,8 +591,11 @@ const ru: Dict = {
   "quizSession.advanced": "Продвинулись",
   "quizSession.mastered": "освоено! 🏆",
   "quizSession.streak": ({ n }) => `серия ${n}`,
-  "quizSession.reset": "Сброшены",
-  "quizSession.streakReset": "серия сброшена",
+  "quizSession.reset": "Повторим раньше",
+  "quizSession.streakReset": "повторим раньше",
+  "quizSession.showHint": "Показать перевод",
+  "quizSession.retry": "повтор",
+  "quizSession.exit": "Завершить",
 
   "pos.verb": "глагол",
   "pos.noun": "сущ.",
@@ -780,8 +789,11 @@ const en: Dict = {
   "quizSession.advanced": "Advanced",
   "quizSession.mastered": "mastered! 🏆",
   "quizSession.streak": ({ n }) => `streak ${n}`,
-  "quizSession.reset": "Reset",
-  "quizSession.streakReset": "streak reset",
+  "quizSession.reset": "Coming back sooner",
+  "quizSession.streakReset": "back sooner",
+  "quizSession.showHint": "Show translation",
+  "quizSession.retry": "retry",
+  "quizSession.exit": "Finish",
 
   "pos.verb": "verb",
   "pos.noun": "noun",
