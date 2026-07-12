@@ -106,12 +106,10 @@ practiceRoutes.post("/answer", async (c) => {
   if (!result) throw Errors.notFound("Palabra");
   return c.json({
     ok: true,
-    practiceStage: result.practiceStage,
-    nextPracticeAt: result.nextPracticeAt,
-    cleanStreak: result.cleanStreak,
+    srsStage: result.srsStage,
+    nextDueAt: result.nextDueAt,
     status: result.status,
-    streakCredited: result.streakCredited,
-    becameLearned: result.becameLearned,
+    advanced: result.advanced,
   });
 });
 

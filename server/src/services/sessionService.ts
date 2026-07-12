@@ -23,12 +23,12 @@ export interface ReviewItemView extends ReviewItem {
 }
 
 /** One woven bank word's standing in this reading, so the review screen can
- *  show the reader whether their known words earned a clean exposure. */
+ *  show the reader how the word is progressing on the SRS ladder. */
 export interface WovenTermProgress {
   lemma: string;
-  /** clean-exposure streak BEFORE this session is completed */
-  cleanStreak: number;
-  /** the reader marked it again -> the streak will reset on completion */
+  /** SRS ladder rung BEFORE this session is completed */
+  srsStage: number;
+  /** the reader marked it again -> its schedule resets on completion */
   markedAgain: boolean;
 }
 
@@ -52,7 +52,7 @@ function buildReviewView(article: ArticleRow, marks: readonly Mark[], result: Re
     const record = bank.get(lemma);
     return {
       lemma,
-      cleanStreak: record?.cleanStreak ?? 0,
+      srsStage: record?.srsStage ?? 0,
       markedAgain: reviewedLemmas.has(normalizeTerm(lemma)),
     };
   });
@@ -95,7 +95,6 @@ export async function reviewSession(userId: number): Promise<ReviewView> {
 }
 
 export interface CompleteResult {
-  newlyLearned: string[];
   /** lemmas this completion parked in the queue (active pool was full) */
   queued: string[];
   articlesRead: number;
@@ -106,7 +105,9 @@ function bankItemDiffers(before: BankItemRecord | undefined, after: BankItemReco
   return (
     before.status !== after.status ||
     before.exposures !== after.exposures ||
-    before.cleanStreak !== after.cleanStreak ||
+    before.srsStage !== after.srsStage ||
+    before.nextDueAt !== after.nextDueAt ||
+    before.lastCreditAt !== after.lastCreditAt ||
     before.translation !== after.translation ||
     before.surfaceForm !== after.surfaceForm ||
     before.firstContext !== after.firstContext ||
@@ -202,10 +203,6 @@ export async function completeSession(userId: number, choices: CompletionChoices
     // touches a handful of lemmas, not the user's whole bank.
     const changedItems = [...after.values()].filter((item) => bankItemDiffers(before.get(item.lemma), item));
 
-    const newlyLearned = changedItems
-      .filter((item) => item.status === "learned" && before.get(item.lemma)?.status !== "learned")
-      .map((item) => item.lemma);
-
     const newlyQueued = changedItems
       .filter((item) => item.status === "queued" && before.get(item.lemma)?.status !== "queued")
       .map((item) => item.lemma);
@@ -217,17 +214,16 @@ export async function completeSession(userId: number, choices: CompletionChoices
       marks: session.marks,
       reviewResult: session.reviewResult,
       changedItems,
-      newlyLearnedCount: newlyLearned.length,
     });
 
-    // Words that became learned/ignored this session freed slots; refill the
-    // pool from any pre-existing queue (FIFO). A word we just queued may get
+    // Clean exposures that matured words past the pool threshold freed slots;
+    // refill from any pre-existing queue (FIFO). A word we just queued may get
     // promoted right back if enough slots opened — so report only what
     // actually stayed in the queue.
     const promoted = new Set(await rebalanceActivePool(userId, user.activePoolLimit));
     const queued = newlyQueued.filter((lemma) => !promoted.has(lemma));
 
     const stats = await getUserStats(userId);
-    return { newlyLearned, queued, articlesRead: stats?.articlesRead ?? 0 };
+    return { queued, articlesRead: stats?.articlesRead ?? 0 };
   });
 }

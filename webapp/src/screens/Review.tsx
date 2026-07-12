@@ -5,11 +5,10 @@ import type { ReviewItem, ReviewResult } from "../api/types.js";
 import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
-import { hapticSelect, hapticSuccess } from "../telegram/telegram.js";
+import { hapticSelect } from "../telegram/telegram.js";
 import { posLabel, displayLemma, highlightSurface } from "../lib/vocab.js";
+import { intervalDaysForStage, SRS_MAX_STAGE } from "../lib/srs.js";
 import { useT } from "../lib/i18n.js";
-
-const LEARNED_STREAK = 3;
 
 type Decision = "bank" | "skip";
 
@@ -65,18 +64,17 @@ export function Review() {
     try {
       const accepted = result.items.filter((it) => decisions[it.lemma] === "bank");
       const rejected = result.items.filter((it) => decisions[it.lemma] === "skip");
-      const { newlyLearned, queued } = await api.completeSession({
+      const { queued } = await api.completeSession({
         accepted: accepted.map((it) => it.lemma),
         rejected: rejected.map((it) => it.lemma),
       });
-      if (newlyLearned.length > 0) hapticSuccess();
       // Reinforce right away with a quick recall quiz over the accepted words.
       // Queued words aren't in study yet, so they're not quizzed — but the
       // count still rides along to the Home banner.
       if (accepted.length > 0) {
-        navigate("/quiz", { state: { items: accepted, newlyLearned, queued } });
+        navigate("/quiz", { state: { items: accepted, queued } });
       } else {
-        navigate("/", { state: { newlyLearned, queued } });
+        navigate("/", { state: { queued } });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("review.saveError"));
@@ -163,29 +161,20 @@ export function Review() {
       {result.wovenTerms.length > 0 && (
         <section className="mb-6">
           <p className="mb-1 text-sm font-medium text-subtext">{t("review.yourWords")}</p>
-          <p className="mb-3 text-xs text-subtext">{t("review.wovenHint", { streak: LEARNED_STREAK })}</p>
+          <p className="mb-3 text-xs text-subtext">{t("review.wovenHintSrs")}</p>
           <ul className="flex flex-col gap-2">
             {result.wovenTerms.map((w) => {
-              const filled = w.markedAgain ? 0 : Math.min(w.cleanStreak + 1, LEARNED_STREAK);
+              // A clean reading here bumps the word one rung up the ladder;
+              // one that already topped the ladder graduates to "learned".
               const label = w.markedAgain
                 ? t("review.markedAgain")
-                : filled >= LEARNED_STREAK
-                  ? t("review.readyToMaster")
-                  : t("review.streakProgress", { filled, total: LEARNED_STREAK });
+                : w.srsStage >= SRS_MAX_STAGE
+                  ? t("quizSession.mastered")
+                  : t("review.wovenNextIn", { days: intervalDaysForStage(w.srsStage + 1) });
               return (
                 <li key={w.lemma} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
-                  <div>
-                    <p className="font-medium">{w.lemma}</p>
-                    <p className="text-xs text-subtext">{label}</p>
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    {Array.from({ length: LEARNED_STREAK }, (_, di) => (
-                      <span
-                        key={di}
-                        className={`h-2 w-2 rounded-full ${di < filled ? "bg-teal" : "dot-empty"}`}
-                      />
-                    ))}
-                  </div>
+                  <p className="font-medium">{w.lemma}</p>
+                  <p className={`shrink-0 text-xs ${w.markedAgain ? "text-amber" : "text-subtext"}`}>{label}</p>
                 </li>
               );
             })}

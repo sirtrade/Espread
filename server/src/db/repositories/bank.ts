@@ -1,8 +1,14 @@
 import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { bankItems, userStats } from "../schema.js";
-import { queuedPromotionCount, type BankItemRecord, type BankStatus, type PartOfSpeech } from "../../domain/bank.js";
-import { nextPracticeState, nextStreakState } from "../../domain/practice.js";
+import { bankItems } from "../schema.js";
+import {
+  POOL_SLOT_MAX_STAGE,
+  queuedPromotionCount,
+  type BankItemRecord,
+  type BankStatus,
+  type PartOfSpeech,
+} from "../../domain/bank.js";
+import { advanceSrs, creditAllowedToday, graduatesOnSuccess, PRACTICE_RETRY_MS, resetSrs } from "../../domain/srs.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -16,7 +22,9 @@ export async function getBankItemsMap(userId: number): Promise<Map<string, BankI
         isPhrase: r.isPhrase,
         status: r.status,
         exposures: r.exposures,
-        cleanStreak: r.cleanStreak,
+        srsStage: r.srsStage,
+        nextDueAt: r.nextDueAt,
+        lastCreditAt: r.lastCreditAt,
         translation: r.translation,
         firstContext: r.firstContext,
         surfaceForm: r.surfaceForm,
@@ -40,19 +48,21 @@ export async function getBankItems(userId: number, status?: BankStatus): Promise
 
 export async function getActiveItemsForSelection(
   userId: number,
-): Promise<Array<{ lemma: string; exposures: number }>> {
+): Promise<Array<{ lemma: string; exposures: number; srsStage: number; nextDueAt: number | null }>> {
   const rows = await db.query.bankItems.findMany({
     where: and(eq(bankItems.userId, userId), eq(bankItems.status, "active")),
-    columns: { lemma: true, exposures: true },
+    columns: { lemma: true, exposures: true, srsStage: true, nextDueAt: true },
   });
   return rows;
 }
 
 export async function setBankItemStatus(userId: number, itemId: number, status: BankStatus): Promise<BankItemRow | undefined> {
+  // A manual status change restarts the schedule: the word is due right away
+  // (relevant when moving it back into study) and sits at the bottom rung.
+  const now = Date.now();
   const [row] = await db
     .update(bankItems)
-    // A manual status change is a fresh start for the learning counter.
-    .set({ status, cleanStreak: 0, updatedAt: Date.now() })
+    .set({ status, srsStage: 0, nextDueAt: now, lastCreditAt: null, updatedAt: now })
     .where(and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)))
     .returning();
   return row;
@@ -68,7 +78,7 @@ function dueForPracticeWhere(userId: number, now: number) {
   return and(
     eq(bankItems.userId, userId),
     eq(bankItems.status, "active"),
-    or(isNull(bankItems.nextPracticeAt), lte(bankItems.nextPracticeAt, now)),
+    or(isNull(bankItems.nextDueAt), lte(bankItems.nextDueAt, now)),
   );
 }
 
@@ -77,7 +87,7 @@ export async function getDueForPractice(userId: number, now: number, limit: numb
   return db.query.bankItems.findMany({
     where: dueForPracticeWhere(userId, now),
     // Nulls (never practiced) sort first in SQLite ASC — new words come first.
-    orderBy: [asc(bankItems.nextPracticeAt)],
+    orderBy: [asc(bankItems.nextDueAt)],
     limit,
   });
 }
@@ -90,34 +100,27 @@ export async function countDueForPractice(userId: number, now: number): Promise<
   return row?.count ?? 0;
 }
 
-/** The outcome of one practice answer: the new SRS + learning state, plus
- *  flags the client needs for its end-of-session summary. */
+/** The outcome of one practice answer: the new schedule state plus whether the
+ *  word climbed the SRS ladder, for the end-of-session summary. */
 export interface PracticeAnswerResult {
   itemId: number;
   lemma: string;
-  practiceStage: number;
-  nextPracticeAt: number;
-  cleanStreak: number;
+  srsStage: number;
+  nextDueAt: number;
   status: BankStatus;
-  /** the streak moved up (a clean encounter landed, respecting the daily cap) */
-  streakCredited: boolean;
-  /** this answer promoted the item to "learned" */
-  becameLearned: boolean;
+  /** the word climbed a rung this answer (first-try correct, within the daily cap) */
+  advanced: boolean;
 }
 
 /**
- * Applies one practice answer. Advances the SRS ladder (always) and the
- * learning streak (a first-try-correct answer is a clean encounter, capped at
- * one credit per day; a wrong answer resets it). Promotion to "learned" bumps
- * userStats.itemsLearned in the same transaction — the same accounting as a
- * clean reading exposure in applyCompletion.
- *
- * A `becameLearned` here frees an active slot, but we deliberately do NOT
- * rebalance the queue from this path: practice runs card-by-card with no
- * queued-count surface to report back to the client. The freed slot is picked
- * up by the next completeSession / bank PATCH / limit raise, all of which call
- * rebalanceActivePool. Queued words never surface for practice anyway
- * (getDueForPractice filters status=active), so nothing is lost by waiting.
+ * Applies one practice answer to the shared SRS schedule:
+ *  - a first-try-correct answer climbs a rung (once per calendar day per item);
+ *  - a correct answer for a word already at the top rung graduates it to
+ *    "learned" instead;
+ *  - a repeat correct answer the same day leaves the schedule untouched;
+ *  - a wrong answer drops the word back to stage 0, due again after a short retry.
+ * Practice and reading share this ladder, so drilling a word pushes out its
+ * next appearance in articles too.
  */
 export async function applyPracticeAnswer(
   userId: number,
@@ -130,46 +133,36 @@ export async function applyPracticeAnswer(
   });
   if (!item) return undefined;
 
-  const srs = nextPracticeState(item.practiceStage, correct, now);
-  const streak = nextStreakState(
-    { cleanStreak: item.cleanStreak, status: item.status, lastStreakCreditAt: item.lastStreakCreditAt },
-    correct,
-    now,
-  );
+  let srsStage = item.srsStage;
+  let nextDueAt = item.nextDueAt ?? now;
+  let lastCreditAt = item.lastCreditAt;
+  let status = item.status;
+  let advanced = false;
 
-  db.transaction((trx) => {
-    trx
-      .update(bankItems)
-      .set({
-        practiceStage: srs.practiceStage,
-        nextPracticeAt: srs.nextPracticeAt,
-        cleanStreak: streak.cleanStreak,
-        status: streak.status,
-        lastStreakCreditAt: streak.lastStreakCreditAt,
-        updatedAt: now,
-      })
-      .where(eq(bankItems.id, itemId))
-      .run();
-
-    if (streak.becameLearned) {
-      trx
-        .update(userStats)
-        .set({ itemsLearned: sql`${userStats.itemsLearned} + 1` })
-        .where(eq(userStats.userId, userId))
-        .run();
+  if (!correct) {
+    const s = resetSrs(now, PRACTICE_RETRY_MS);
+    srsStage = s.srsStage;
+    nextDueAt = s.nextDueAt;
+  } else if (creditAllowedToday(item.lastCreditAt, now)) {
+    if (graduatesOnSuccess(item.srsStage)) {
+      status = "learned";
+      lastCreditAt = now;
+      advanced = true;
+    } else {
+      const s = advanceSrs(item.srsStage, now);
+      srsStage = s.srsStage;
+      nextDueAt = s.nextDueAt;
+      lastCreditAt = now;
+      advanced = true;
     }
-  });
+  }
 
-  return {
-    itemId,
-    lemma: item.lemma,
-    practiceStage: srs.practiceStage,
-    nextPracticeAt: srs.nextPracticeAt,
-    cleanStreak: streak.cleanStreak,
-    status: streak.status,
-    streakCredited: streak.streakCredited,
-    becameLearned: streak.becameLearned,
-  };
+  await db
+    .update(bankItems)
+    .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
+    .where(eq(bankItems.id, itemId));
+
+  return { itemId, lemma: item.lemma, srsStage, nextDueAt, status, advanced };
 }
 
 export async function getBankItemById(userId: number, itemId: number): Promise<BankItemRow | undefined> {
@@ -249,6 +242,22 @@ export async function countBankByStatus(userId: number, status: BankStatus): Pro
   return row?.count ?? 0;
 }
 
+/** Active words young enough to occupy a pool slot (srsStage <= threshold).
+ *  Matured words still circulate but no longer count against the cap. */
+export async function countActiveInPool(userId: number): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(bankItems)
+    .where(
+      and(
+        eq(bankItems.userId, userId),
+        eq(bankItems.status, "active"),
+        lte(bankItems.srsStage, POOL_SLOT_MAX_STAGE),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
 /**
  * Refills the active pool from the queue: while there's room under `poolLimit`
  * (0 = no limit), promotes the oldest queued words (createdAt ASC) to active.
@@ -259,7 +268,7 @@ export async function countBankByStatus(userId: number, status: BankStatus): Pro
  */
 export async function rebalanceActivePool(userId: number, poolLimit: number): Promise<string[]> {
   const [activeCount, queuedCount] = await Promise.all([
-    countBankByStatus(userId, "active"),
+    countActiveInPool(userId),
     countBankByStatus(userId, "queued"),
   ]);
   const promote = queuedPromotionCount(activeCount, queuedCount, poolLimit);

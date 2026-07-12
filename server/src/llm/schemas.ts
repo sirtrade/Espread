@@ -15,6 +15,12 @@ export type SearchStepResult = z.infer<typeof searchStepSchema>;
 export const articleStepSchema = z.object({
   title: z.string().min(3).max(200),
   body: z.string().min(50),
+  // Which of the offered vocabulary words the model actually wove in. Optional
+  // and advisory: the server re-verifies against the body before trusting it.
+  usedTerms: z
+    .array(z.string().min(1).max(80))
+    .nullish()
+    .transform((v) => v ?? []),
 });
 export type ArticleStepResult = z.infer<typeof articleStepSchema>;
 

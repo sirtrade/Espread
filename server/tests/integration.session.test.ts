@@ -85,7 +85,7 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     sqlite.close();
   });
 
-  it("weaves a marked word into a later article and promotes it to learned after 3 clean exposures", async () => {
+  it("weaves a marked word into a later article and climbs its SRS ladder on a clean exposure", async () => {
     // --- Cycle 1: generate an article, mark a word + a span, review, complete ---
     mockSearchAndWrite(
       "Un descubrimiento importante",
@@ -137,8 +137,7 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     const review1 = await reviewSession(userId);
     expect(review1.items.map((i) => i.lemma).sort()).toEqual(["durante meses", "hallazgo"]);
 
-    const complete1 = await completeSession(userId);
-    expect(complete1.newlyLearned).toEqual([]);
+    await completeSession(userId);
 
     const activeAfterCycle1 = await getBankItems(userId, "active");
     const lemmas = activeAfterCycle1.map((i) => i.lemma).sort();
@@ -169,44 +168,31 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     // Woven lemmas may be inflected; the exact-form requirement is gone.
     expect(writeCallArgs.system).toContain("cualquier forma flexionada");
 
-    // Nothing marked this time -> reviewMarkedItems short-circuits without an LLM
-    // call (llm/review.ts), and both bank items get a clean exposure.
-    await updateSessionMarks(session2.id, []);
-    await reviewSession(userId);
-    const complete2 = await completeSession(userId);
-    expect(complete2.newlyLearned).toEqual([]);
+    // Only "hallazgo" actually appears in the generated body, so only it is
+    // stored as a woven term (the phrase wasn't used and stays due).
+    const article2 = await getArticleById(session2.articleId);
+    expect(JSON.parse(article2!.targetTerms)).toEqual(["hallazgo"]);
 
-    // --- Cycle 3: second clean exposure ---
-    mockSearchAndWrite(
-      "Tercera lectura",
-      "Más noticias sobre el hallazgo, con nuevos detalles publicados por el equipo de investigación.",
-    );
-    const { session: session3 } = await startReading(userId);
-    await updateSessionMarks(session3.id, []);
+    // Nothing marked this time -> "hallazgo" earns a clean exposure and climbs
+    // one rung of the SRS ladder (auto-"learned" only happens at the top rung).
+    await updateSessionMarks(session2.id, []);
     await reviewSession(userId);
     await completeSession(userId);
 
-    // --- Cycle 4: third clean exposure -> "hallazgo" and the phrase both become learned ---
-    mockSearchAndWrite(
-      "Cuarta lectura",
-      "Última mención del hallazgo, cerrando la serie de artículos sobre este estudio científico.",
-    );
-    const { session: session4 } = await startReading(userId);
-    await updateSessionMarks(session4.id, []);
-    await reviewSession(userId);
-    const complete4 = await completeSession(userId);
-
-    expect(complete4.newlyLearned.sort()).toEqual(["durante meses", "hallazgo"]);
-
-    const activeAfterLearning = await getBankItems(userId, "active");
-    expect(activeAfterLearning).toHaveLength(0);
-    const learned = await getBankItems(userId, "learned");
-    expect(learned.map((i) => i.lemma).sort()).toEqual(["durante meses", "hallazgo"]);
+    const active2 = await getBankItems(userId, "active");
+    const hallazgo2 = active2.find((i) => i.lemma === "hallazgo");
+    expect(hallazgo2?.srsStage).toBe(1);
+    expect(hallazgo2?.nextDueAt).not.toBeNull();
+    // The phrase was never woven in, so it stayed at the bottom rung, due now.
+    const phrase2 = active2.find((i) => i.lemma === "durante meses");
+    expect(phrase2?.srsStage).toBe(0);
+    // Far from the top rung: the "learned" bucket is still empty.
+    expect(await getBankItems(userId, "learned")).toHaveLength(0);
   });
 
   it("stored the structured card: translation, marked sentence as firstContext, and quiz fields", async () => {
-    const learned = await getBankItems(userId, "learned");
-    const hallazgo = learned.find((i) => i.lemma === "hallazgo");
+    const active = await getBankItems(userId, "active");
+    const hallazgo = active.find((i) => i.lemma === "hallazgo");
     expect(hallazgo?.translation).toBe("discovery");
     expect(hallazgo?.surfaceForm).toBe("hallazgo");
     expect(hallazgo?.pos).toBe("noun");
@@ -218,15 +204,16 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
   });
 
   it("lets the owner (and only the owner) change a bank item's status manually", async () => {
-    const learned = await getBankItems(userId, "learned");
-    const item = learned.find((i) => i.lemma === "hallazgo")!;
+    const active = await getBankItems(userId, "active");
+    const item = active.find((i) => i.lemma === "hallazgo")!;
 
     const foreign = await setBankItemStatus(userId + 1, item.id, "ignored");
     expect(foreign).toBeUndefined();
 
-    const updated = await setBankItemStatus(userId, item.id, "active");
-    expect(updated?.status).toBe("active");
-    expect(updated?.cleanStreak).toBe(0);
+    const updated = await setBankItemStatus(userId, item.id, "learned");
+    expect(updated?.status).toBe("learned");
+    // A manual status change restarts the schedule.
+    expect(updated?.srsStage).toBe(0);
   });
 
   it("merges 'se' + 'llama' marked in one sentence into a single llamarse card", async () => {
@@ -567,8 +554,8 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     const woven = new Map(view.wovenTerms.map((w) => [w.lemma, w]));
     expect(woven.get("innovación")?.markedAgain).toBe(true);
     expect(woven.get("empleo")?.markedAgain).toBe(false);
-    // Both carry the current streak (0) before completion.
-    expect(woven.get("empleo")?.cleanStreak).toBe(0);
+    // Both carry their current SRS rung (0) before completion.
+    expect(woven.get("empleo")?.srsStage).toBe(0);
 
     // The review item also carries the marked sentence for the card.
     expect(view.items[0]?.contextSentence).toBe(sentence);

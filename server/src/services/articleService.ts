@@ -1,5 +1,6 @@
 import { pickTopic } from "../domain/topicRotation.js";
 import { selectTargetTerms } from "../domain/bank.js";
+import { verifyWovenTerms } from "../domain/weaving.js";
 import { generateArticle } from "../llm/articleGeneration.js";
 import { config } from "../lib/config.js";
 import { withUserLock } from "../lib/locks.js";
@@ -29,9 +30,13 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
   const topic = pickTopic(topics, recentTopics);
 
   const activeItems = await getActiveItemsForSelection(userId);
-  const targetTerms = selectTargetTerms(activeItems, 8);
+  // Candidates we ASK the model to weave in (dosed). What it actually uses is
+  // re-verified below, so a skipped candidate stays due for a later article.
+  const candidateTerms = selectTargetTerms(activeItems, Date.now());
 
-  const generated = await generateArticle({ userId, level: user.level, topic, targetTerms });
+  const generated = await generateArticle({ userId, level: user.level, topic, targetTerms: candidateTerms });
+
+  const wovenTerms = verifyWovenTerms(candidateTerms, generated.body, generated.usedTerms);
 
   return createArticle({
     userId,
@@ -40,7 +45,7 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
     topic,
     sourceName: generated.sourceName,
     sourceUrl: generated.sourceUrl,
-    targetTerms,
+    targetTerms: wovenTerms,
     prefetched,
   });
 }

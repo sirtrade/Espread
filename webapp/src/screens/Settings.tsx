@@ -4,7 +4,7 @@ import { api, deviceTimezone } from "../api/client.js";
 import { useAuth } from "../state/AuthContext.js";
 import { Button } from "../components/Button.js";
 import type { ExplainLang, Level } from "../api/types.js";
-import { confirmDialog } from "../telegram/telegram.js";
+import { confirmDialog, hapticSelect } from "../telegram/telegram.js";
 import { ThemePicker } from "../components/ThemePicker.js";
 import { FontSizePicker } from "../components/FontSizePicker.js";
 import { useT } from "../lib/i18n.js";
@@ -39,6 +39,23 @@ export function Settings() {
     const t = customTopic.trim();
     if (t && !topics.includes(t)) setTopics((prev) => [...prev, t]);
     setCustomTopic("");
+  }
+
+  // The language switch applies immediately (the whole UI re-renders in the
+  // new language), unlike the rest of the form which waits for "Save".
+  async function changeLang(value: ExplainLang) {
+    if (value === explainLang) return;
+    hapticSelect();
+    const previous = explainLang;
+    setExplainLang(value);
+    setError(null);
+    try {
+      const updated = await api.patchMe({ explainLang: value });
+      setProfile(updated);
+    } catch (err) {
+      setExplainLang(previous);
+      setError(err instanceof Error ? err.message : t("settings.saveError"));
+    }
   }
 
   async function save() {
@@ -91,6 +108,24 @@ export function Settings() {
 
       <div className="flex flex-col gap-6">
         <div>
+          <p className="mb-2 text-sm font-medium">{t("settings.language")}</p>
+          <div className="flex flex-col gap-2">
+            {LANG_VALUES.map((value) => (
+              <button
+                key={value}
+                onClick={() => changeLang(value)}
+                className={`rounded-xl px-4 py-3 text-left text-sm font-medium ${
+                  value === explainLang ? "bg-accent text-white" : "bg-surface"
+                }`}
+              >
+                {langLabel(lang, value)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-subtext">{t("settings.languageNote")}</p>
+        </div>
+
+        <div>
           <p className="mb-2 text-sm font-medium">{t("settings.readingTheme")}</p>
           <div className="rounded-xl bg-surface px-4 py-3">
             <ThemePicker withLabels />
@@ -114,23 +149,6 @@ export function Settings() {
                 className={`rounded-xl py-3 text-sm font-medium ${l === level ? "bg-accent text-white" : "bg-surface"}`}
               >
                 {l}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-2 text-sm font-medium">{t("onboarding.explainLang")}</p>
-          <div className="flex flex-col gap-2">
-            {LANG_VALUES.map((value) => (
-              <button
-                key={value}
-                onClick={() => setExplainLang(value)}
-                className={`rounded-xl px-4 py-3 text-left text-sm font-medium ${
-                  value === explainLang ? "bg-accent text-white" : "bg-surface"
-                }`}
-              >
-                {langLabel(lang, value)}
               </button>
             ))}
           </div>

@@ -3,22 +3,66 @@ import type { Bot } from "grammy";
 import { logger } from "../lib/logger.js";
 import { buildCard, parseStoredDistractors } from "../domain/practice.js";
 import {
+  buildTypedQuizCard,
+  gradeTypedAnswer,
+  PENDING_QUIZ_TTL_MS,
+  TYPED_QUIZ_MIN_STAGE,
+} from "../domain/typedQuiz.js";
+import {
   applyPracticeAnswer,
   getBankItemById,
   getDistractorPool,
   getRandomDueItem,
+  type BankItemRow,
 } from "../db/repositories/bank.js";
-import { findUserByTgId, type UserRow } from "../db/repositories/users.js";
+import { clearPendingQuiz, findUserByTgId, setPendingQuiz, type UserRow } from "../db/repositories/users.js";
 
 /**
- * Sends one multiple-choice vocabulary quiz to the user's chat. Returns
- * false when the user has nothing due to practice (caller then skips the
- * lastBotQuizAt update so the next tick tries again).
+ * Sends one vocabulary quiz to the user's chat. Words still low on the SRS
+ * ladder get a multiple-choice card (recognition — low effort, fits a word
+ * that was only just met); words at stage >= TYPED_QUIZ_MIN_STAGE get a
+ * typed-recall question instead — the user must produce the Spanish word from
+ * the translation, which is a far stronger retrieval exercise than picking it
+ * out of four buttons. Returns false when the user has nothing due to
+ * practice (caller then skips the lastBotQuizAt update so the next tick tries
+ * again).
  */
 export async function sendBotQuiz(bot: Bot, user: UserRow): Promise<boolean> {
   const item = await getRandomDueItem(user.id, Date.now());
   if (!item) return false;
 
+  if (item.srsStage >= TYPED_QUIZ_MIN_STAGE) {
+    const sent = await sendTypedQuiz(bot, user, item);
+    if (sent) return true;
+    // No safe typed card (e.g. missing translation) — fall back to buttons.
+  }
+
+  return sendChoiceQuiz(bot, user, item);
+}
+
+/** Typed-recall quiz: translation shown, the Spanish word must be typed back. */
+async function sendTypedQuiz(bot: Bot, user: UserRow, item: BankItemRow): Promise<boolean> {
+  const card = buildTypedQuizCard({
+    lemma: item.lemma,
+    translation: item.translation,
+    firstContext: item.firstContext,
+    surfaceForm: item.surfaceForm,
+  });
+  if (!card) return false;
+
+  const hint = card.contextHint ? `\n\n${card.contextHint}` : "";
+  const question = `✍️ Escribe en español:\n\n«${card.prompt}»${hint}`;
+
+  // No parse_mode: article sentences may contain characters Markdown chokes on.
+  await bot.api.sendMessage(user.tgUserId, question, {
+    reply_markup: { force_reply: true, input_field_placeholder: "Tu respuesta..." },
+  });
+  await setPendingQuiz(user.id, item.id, Date.now());
+  return true;
+}
+
+/** Multiple-choice quiz (cloze or recall) over inline keyboard buttons. */
+async function sendChoiceQuiz(bot: Bot, user: UserRow, item: BankItemRow): Promise<boolean> {
   const poolLemmas = (await getDistractorPool(user.id, item.id, { pos: item.pos, isPhrase: item.isPhrase })).map(
     (d) => d.lemma,
   );
@@ -38,7 +82,7 @@ export async function sendBotQuiz(bot: Bot, user: UserRow): Promise<boolean> {
   // skip so the caller retries with another item on the next tick.
   if (!card) return false;
 
-  const correctIdx = card.options.findIndex((o) => o === card.answer);
+  const correctIdx = card.options.indexOf(card.answer);
 
   const question =
     card.type === "cloze"
@@ -53,6 +97,11 @@ export async function sendBotQuiz(bot: Bot, user: UserRow): Promise<boolean> {
 
   await bot.api.sendMessage(user.tgUserId, question, { reply_markup: kb });
   return true;
+}
+
+/** "lemma — translation" feedback line shown after any answer. */
+function answerLineFor(item: BankItemRow): string {
+  return item.translation ? `${item.lemma} — ${item.translation}` : item.lemma;
 }
 
 export function registerQuizHandlers(bot: Bot): void {
@@ -72,14 +121,48 @@ export function registerQuizHandlers(bot: Bot): void {
 
     await ctx.answerCallbackQuery({ text: correct ? "✅ ¡Correcto!" : "❌ Casi..." });
 
-    const answerLine = item
-      ? `${item.lemma}${item.translation ? ` — ${item.translation}` : ""}`
-      : "";
+    const answerLine = item ? answerLineFor(item) : "";
     const original = ctx.callbackQuery.message?.text ?? "";
     const verdict = correct ? "✅ ¡Correcto!" : "❌ La respuesta correcta era:";
     // Replace the keyboard with the outcome so the quiz can't be answered twice.
     await ctx
       .editMessageText(`${original}\n\n${verdict}\n${answerLine}`.trim())
       .catch((err) => logger.warn({ err }, "Failed to edit quiz message"));
+  });
+
+  // Free-text answers to typed quizzes. Anything that isn't one — commands,
+  // texts with no pending quiz, expired pendings — is passed down the
+  // middleware chain untouched.
+  bot.on("message:text", async (ctx, next) => {
+    const text = ctx.message.text;
+    if (text.startsWith("/")) return next();
+
+    const user = ctx.from ? await findUserByTgId(ctx.from.id) : undefined;
+    if (!user?.pendingQuizItemId || !user.pendingQuizSentAt) return next();
+
+    if (Date.now() - user.pendingQuizSentAt > PENDING_QUIZ_TTL_MS) {
+      await clearPendingQuiz(user.id);
+      return next();
+    }
+
+    const item = await getBankItemById(user.id, user.pendingQuizItemId);
+    await clearPendingQuiz(user.id);
+    if (!item) return next();
+
+    const accepted = [item.surfaceForm, item.lemma].filter((f): f is string => !!f);
+    const grade = gradeTypedAnswer(text, accepted);
+    await applyPracticeAnswer(user.id, item.id, grade.correct);
+
+    const answerLine = answerLineFor(item);
+    const contextLine = item.firstContext ? `\n\n${item.firstContext}` : "";
+    let verdict: string;
+    if (grade.verdict === "exact") {
+      verdict = "✅ ¡Correcto!";
+    } else if (grade.verdict === "spelling") {
+      verdict = `✅ ¡Correcto! Ojo con la ortografía: «${grade.matched}»`;
+    } else {
+      verdict = "❌ La respuesta correcta era:";
+    }
+    await ctx.reply(`${verdict}\n${answerLine}${contextLine}`);
   });
 }

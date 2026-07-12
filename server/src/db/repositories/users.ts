@@ -8,6 +8,8 @@ export type UserPatch = Partial<{
   level: "A2" | "B1" | "B2" | "C1";
   explainLang: "ru" | "en" | "es";
   timezone: string;
+  theme: "claro" | "sepia" | "oscuro" | "ambar";
+  fontSize: "sm" | "md" | "lg" | "xl";
   dailyEnabled: boolean;
   dailyTime: string;
   botQuizzesPerDay: number;
@@ -39,6 +41,15 @@ export async function markPrefetchDone(userId: number, dateStr: string): Promise
 
 export async function setLastBotQuizAt(userId: number, ts: number): Promise<void> {
   await db.update(users).set({ lastBotQuizAt: ts }).where(eq(users.id, userId));
+}
+
+/** Marks a typed bot quiz as awaiting the user's free-text answer. */
+export async function setPendingQuiz(userId: number, itemId: number, ts: number): Promise<void> {
+  await db.update(users).set({ pendingQuizItemId: itemId, pendingQuizSentAt: ts }).where(eq(users.id, userId));
+}
+
+export async function clearPendingQuiz(userId: number): Promise<void> {
+  await db.update(users).set({ pendingQuizItemId: null, pendingQuizSentAt: null }).where(eq(users.id, userId));
 }
 
 export async function markDailyDelivered(userId: number, dateStr: string): Promise<void> {

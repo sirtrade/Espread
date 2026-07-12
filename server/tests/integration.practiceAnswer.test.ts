@@ -1,16 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
 
 const DAY = 24 * 60 * 60 * 1000;
 
-describe("applyPracticeAnswer: practice feeds the learning pipeline", () => {
+describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
   let db: typeof import("../src/db/client.js").db;
   let sqlite: typeof import("../src/db/client.js").sqlite;
   let schema: typeof import("../src/db/schema.js");
   let applyPracticeAnswer: typeof import("../src/db/repositories/bank.js").applyPracticeAnswer;
   let getBankItemById: typeof import("../src/db/repositories/bank.js").getBankItemById;
   let findOrCreateUser: typeof import("../src/db/repositories/users.js").findOrCreateUser;
-  let getUserStats: typeof import("../src/db/repositories/stats.js").getUserStats;
   let userId: number;
 
   async function seedItem(fields: Partial<typeof schema.bankItems.$inferInsert> = {}): Promise<number> {
@@ -24,7 +22,7 @@ describe("applyPracticeAnswer: practice feeds the learning pipeline", () => {
         surfaceForm: "casa",
         pos: "noun",
         status: "active",
-        cleanStreak: 0,
+        srsStage: 0,
         ...fields,
       })
       .returning();
@@ -38,7 +36,6 @@ describe("applyPracticeAnswer: practice feeds the learning pipeline", () => {
     schema = await import("../src/db/schema.js");
     ({ applyPracticeAnswer, getBankItemById } = await import("../src/db/repositories/bank.js"));
     ({ findOrCreateUser } = await import("../src/db/repositories/users.js"));
-    ({ getUserStats } = await import("../src/db/repositories/stats.js"));
 
     const user = await findOrCreateUser(555001, "practicetest");
     userId = user.id;
@@ -46,50 +43,65 @@ describe("applyPracticeAnswer: practice feeds the learning pipeline", () => {
 
   afterAll(() => sqlite.close());
 
-  it("credits a clean encounter on a correct answer and advances the SRS ladder", async () => {
+  it("climbs the ladder on a correct answer and schedules the next review", async () => {
     const id = await seedItem({ lemma: "correcta1" });
     const now = Date.UTC(2026, 0, 10, 9, 0, 0);
     const res = await applyPracticeAnswer(userId, id, true, now);
-    expect(res).toMatchObject({ cleanStreak: 1, streakCredited: true, practiceStage: 1 });
+    expect(res).toMatchObject({ advanced: true, srsStage: 1 });
     const item = await getBankItemById(userId, id);
-    expect(item?.cleanStreak).toBe(1);
-    expect(item?.nextPracticeAt).toBe(now + 1 * DAY);
+    expect(item?.srsStage).toBe(1);
+    expect(item?.nextDueAt).toBe(now + 1 * DAY);
+    expect(item?.lastCreditAt).toBe(now);
   });
 
-  it("promotes to learned on the 3rd credited answer and bumps itemsLearned", async () => {
-    const id = await seedItem({ lemma: "aprendida", cleanStreak: 2 });
-    const before = await getUserStats(userId);
+  it("resets to stage 0 with a short retry on a wrong answer", async () => {
+    const id = await seedItem({ lemma: "fallada", srsStage: 3 });
     const now = Date.UTC(2026, 0, 12, 9, 0, 0);
-    const res = await applyPracticeAnswer(userId, id, true, now);
-    expect(res).toMatchObject({ cleanStreak: 3, status: "learned", becameLearned: true });
+    const res = await applyPracticeAnswer(userId, id, false, now);
+    expect(res).toMatchObject({ advanced: false, srsStage: 0 });
     const item = await getBankItemById(userId, id);
-    expect(item?.status).toBe("learned");
-    const after = await getUserStats(userId);
-    expect((after?.itemsLearned ?? 0) - (before?.itemsLearned ?? 0)).toBe(1);
+    expect(item?.srsStage).toBe(0);
+    expect(item?.nextDueAt).toBeGreaterThan(now);
+    expect(item?.nextDueAt!).toBeLessThan(now + DAY);
   });
 
-  it("resets the streak to 0 on a wrong answer", async () => {
-    const id = await seedItem({ lemma: "fallada", cleanStreak: 2 });
-    const res = await applyPracticeAnswer(userId, id, false, Date.UTC(2026, 0, 12, 9, 0, 0));
-    expect(res).toMatchObject({ cleanStreak: 0, streakCredited: false });
-    const item = await getBankItemById(userId, id);
-    expect(item?.cleanStreak).toBe(0);
-  });
-
-  it("does not move the streak on a second correct answer the same day, but still moves the SRS", async () => {
+  it("does not climb twice the same day, but still advances the next day", async () => {
     const id = await seedItem({ lemma: "mismodia" });
     const morning = Date.UTC(2026, 0, 15, 8, 0, 0);
     const evening = Date.UTC(2026, 0, 15, 21, 0, 0);
+    const nextDay = Date.UTC(2026, 0, 16, 8, 0, 0);
 
     const first = await applyPracticeAnswer(userId, id, true, morning);
-    expect(first).toMatchObject({ cleanStreak: 1, streakCredited: true, practiceStage: 1 });
+    expect(first).toMatchObject({ advanced: true, srsStage: 1 });
 
+    // Same calendar day: the schedule is left untouched.
     const second = await applyPracticeAnswer(userId, id, true, evening);
-    expect(second).toMatchObject({ cleanStreak: 1, streakCredited: false, practiceStage: 2 });
+    expect(second).toMatchObject({ advanced: false, srsStage: 1 });
+    let item = await getBankItemById(userId, id);
+    expect(item?.nextDueAt).toBe(morning + 1 * DAY);
 
+    // Next calendar day: it climbs again.
+    const third = await applyPracticeAnswer(userId, id, true, nextDay);
+    expect(third).toMatchObject({ advanced: true, srsStage: 2 });
+    item = await getBankItemById(userId, id);
+    expect(item?.nextDueAt).toBe(nextDay + 3 * DAY);
+  });
+
+  it("graduates a top-rung word to learned on a correct answer", async () => {
+    const { SRS_MAX_STAGE } = await import("../src/domain/srs.js");
+    const id = await seedItem({ lemma: "graduada", srsStage: SRS_MAX_STAGE });
+    const now = Date.UTC(2026, 0, 20, 9, 0, 0);
+    const res = await applyPracticeAnswer(userId, id, true, now);
+    expect(res).toMatchObject({ advanced: true, status: "learned" });
     const item = await getBankItemById(userId, id);
-    // Streak held at 1, but the SRS timer advanced to stage 2 (3-day interval).
-    expect(item?.cleanStreak).toBe(1);
-    expect(item?.nextPracticeAt).toBe(evening + 3 * DAY);
+    expect(item?.status).toBe("learned");
+  });
+
+  it("resets a top-rung word instead of graduating it on a wrong answer", async () => {
+    const { SRS_MAX_STAGE } = await import("../src/domain/srs.js");
+    const id = await seedItem({ lemma: "casigraduada", srsStage: SRS_MAX_STAGE });
+    const now = Date.UTC(2026, 0, 21, 9, 0, 0);
+    const res = await applyPracticeAnswer(userId, id, false, now);
+    expect(res).toMatchObject({ advanced: false, srsStage: 0, status: "active" });
   });
 });

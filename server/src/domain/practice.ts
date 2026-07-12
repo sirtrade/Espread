@@ -1,101 +1,11 @@
 /**
- * Spaced-repetition practice over bank items. Practice now feeds the same
- * learning pipeline as reading: a first-try-correct answer counts as a clean
- * encounter (see nextStreakState), so drilling a word can promote it to
- * "learned" just like clean reading exposures do. The SRS ladder
- * (practiceStage/nextPracticeAt) is orthogonal and always advances.
+ * Practice card construction (cloze / recall multiple-choice) over bank items.
+ * The spaced-repetition schedule that decides WHEN a word is drilled or woven
+ * lives in ./srs.ts and is applied in the bank repository; this module only
+ * turns a due item into a safe, answerable card.
  */
 
-import { LEARNED_STREAK_THRESHOLD, type BankStatus, type PartOfSpeech } from "./bank.js";
-
-export const PRACTICE_INTERVALS_DAYS = [1, 3, 7, 14, 30] as const;
-
-/** A wrong answer sends the item back to stage 0 and makes it due again shortly. */
-const RETRY_AFTER_MS = 10 * 60 * 1000;
-
-export interface PracticeState {
-  practiceStage: number;
-  nextPracticeAt: number;
-}
-
-export function nextPracticeState(currentStage: number, correct: boolean, now: number): PracticeState {
-  if (!correct) {
-    return { practiceStage: 0, nextPracticeAt: now + RETRY_AFTER_MS };
-  }
-  const stage = Math.min(currentStage + 1, PRACTICE_INTERVALS_DAYS.length);
-  const days = PRACTICE_INTERVALS_DAYS[stage - 1]!;
-  return { practiceStage: stage, nextPracticeAt: now + days * 24 * 60 * 60 * 1000 };
-}
-
-/** Two timestamps fall on the same calendar day (UTC). */
-function isSameUtcDay(a: number, b: number): boolean {
-  const da = new Date(a);
-  const db = new Date(b);
-  return (
-    da.getUTCFullYear() === db.getUTCFullYear() &&
-    da.getUTCMonth() === db.getUTCMonth() &&
-    da.getUTCDate() === db.getUTCDate()
-  );
-}
-
-export interface StreakInput {
-  cleanStreak: number;
-  status: BankStatus;
-  /** when this item last earned a practice streak credit (anti-farm) */
-  lastStreakCreditAt: number | null;
-}
-
-export interface StreakResult {
-  cleanStreak: number;
-  status: BankStatus;
-  lastStreakCreditAt: number | null;
-  /** the streak actually moved up this answer (a "clean encounter" landed) */
-  streakCredited: boolean;
-  /** this answer crossed the threshold and promoted the item to "learned" */
-  becameLearned: boolean;
-}
-
-/**
- * Learning effect of one practice answer, mirroring the reading-exposure rule:
- *  - a first-try-correct answer is a clean encounter: cleanStreak+1, and at
- *    LEARNED_STREAK_THRESHOLD the item becomes "learned";
- *  - a wrong answer resets the streak to 0 (no daily limit on resets);
- *  - anti-farm: at most one streak credit per item per calendar day (UTC).
- *    Extra correct answers the same day still move SRS but not the streak.
- *  - already-learned items are never re-credited.
- */
-export function nextStreakState(input: StreakInput, correct: boolean, now: number): StreakResult {
-  if (!correct) {
-    return {
-      cleanStreak: 0,
-      status: input.status,
-      lastStreakCreditAt: input.lastStreakCreditAt,
-      streakCredited: false,
-      becameLearned: false,
-    };
-  }
-
-  const alreadyCreditedToday = input.lastStreakCreditAt != null && isSameUtcDay(input.lastStreakCreditAt, now);
-  if (input.status === "learned" || alreadyCreditedToday) {
-    return {
-      cleanStreak: input.cleanStreak,
-      status: input.status,
-      lastStreakCreditAt: input.lastStreakCreditAt,
-      streakCredited: false,
-      becameLearned: false,
-    };
-  }
-
-  const cleanStreak = input.cleanStreak + 1;
-  const becameLearned = cleanStreak >= LEARNED_STREAK_THRESHOLD;
-  return {
-    cleanStreak,
-    status: becameLearned ? "learned" : input.status,
-    lastStreakCreditAt: now,
-    streakCredited: true,
-    becameLearned,
-  };
-}
+import { type PartOfSpeech } from "./bank.js";
 
 /**
  * POS-aware padding words, used only as a last resort when the user's bank

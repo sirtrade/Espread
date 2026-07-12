@@ -5,14 +5,9 @@ import {
   buildClozeCard,
   buildOptions,
   isPhraseText,
-  nextPracticeState,
-  nextStreakState,
   parseStoredDistractors,
-  PRACTICE_INTERVALS_DAYS,
   type CardSource,
 } from "../src/domain/practice.js";
-
-const DAY = 24 * 60 * 60 * 1000;
 
 /** Deterministic PRNG so shuffles are reproducible in assertions. */
 function seeded(seed: number): () => number {
@@ -22,77 +17,6 @@ function seeded(seed: number): () => number {
     return s / 0xffffffff;
   };
 }
-
-describe("nextPracticeState", () => {
-  it("walks up the interval ladder on correct answers", () => {
-    const now = 1_000_000;
-    let stage = 0;
-    for (const [i, days] of PRACTICE_INTERVALS_DAYS.entries()) {
-      const next = nextPracticeState(stage, true, now);
-      expect(next.practiceStage).toBe(i + 1);
-      expect(next.nextPracticeAt).toBe(now + days * DAY);
-      stage = next.practiceStage;
-    }
-  });
-
-  it("caps the stage at the last interval", () => {
-    const now = 0;
-    const top = PRACTICE_INTERVALS_DAYS.length;
-    const next = nextPracticeState(top, true, now);
-    expect(next.practiceStage).toBe(top);
-    expect(next.nextPracticeAt).toBe(PRACTICE_INTERVALS_DAYS[top - 1]! * DAY);
-  });
-
-  it("resets to stage 0 with a short retry on a wrong answer", () => {
-    const now = 5_000_000;
-    const next = nextPracticeState(3, false, now);
-    expect(next.practiceStage).toBe(0);
-    expect(next.nextPracticeAt).toBeGreaterThan(now);
-    expect(next.nextPracticeAt).toBeLessThan(now + DAY);
-  });
-});
-
-describe("nextStreakState", () => {
-  // A fixed day used as the "today" for the anti-farm cap.
-  const day1 = Date.UTC(2026, 0, 10, 9, 0, 0);
-  const day1Later = Date.UTC(2026, 0, 10, 20, 0, 0);
-  const day2 = Date.UTC(2026, 0, 11, 9, 0, 0);
-
-  it("credits a clean encounter on a first-try-correct answer", () => {
-    const r = nextStreakState({ cleanStreak: 0, status: "active", lastStreakCreditAt: null }, true, day1);
-    expect(r).toMatchObject({ cleanStreak: 1, streakCredited: true, becameLearned: false });
-    expect(r.lastStreakCreditAt).toBe(day1);
-  });
-
-  it("promotes to learned on the 3rd credited answer", () => {
-    const r = nextStreakState({ cleanStreak: 2, status: "active", lastStreakCreditAt: null }, true, day1);
-    expect(r).toMatchObject({ cleanStreak: 3, status: "learned", streakCredited: true, becameLearned: true });
-  });
-
-  it("resets the streak on a wrong answer without touching the daily cap", () => {
-    const r = nextStreakState({ cleanStreak: 2, status: "active", lastStreakCreditAt: day1 }, false, day1Later);
-    expect(r).toMatchObject({ cleanStreak: 0, streakCredited: false, becameLearned: false });
-    // A wrong answer does not restamp the credit clock.
-    expect(r.lastStreakCreditAt).toBe(day1);
-  });
-
-  it("does not credit a second correct answer the same day", () => {
-    const r = nextStreakState({ cleanStreak: 1, status: "active", lastStreakCreditAt: day1 }, true, day1Later);
-    expect(r).toMatchObject({ cleanStreak: 1, streakCredited: false, becameLearned: false });
-    expect(r.lastStreakCreditAt).toBe(day1);
-  });
-
-  it("credits again on the next calendar day", () => {
-    const r = nextStreakState({ cleanStreak: 1, status: "active", lastStreakCreditAt: day1 }, true, day2);
-    expect(r).toMatchObject({ cleanStreak: 2, streakCredited: true });
-    expect(r.lastStreakCreditAt).toBe(day2);
-  });
-
-  it("never re-credits an already-learned item", () => {
-    const r = nextStreakState({ cleanStreak: 3, status: "learned", lastStreakCreditAt: null }, true, day1);
-    expect(r).toMatchObject({ cleanStreak: 3, status: "learned", streakCredited: false, becameLearned: false });
-  });
-});
 
 describe("buildOptions", () => {
   it("contains the correct answer exactly once among 4 distinct options", () => {

@@ -1,3 +1,6 @@
+import type { ThemeId } from "../lib/theme.js";
+import type { FontSizeId } from "../lib/fontSize.js";
+
 export type Level = "A2" | "B1" | "B2" | "C1";
 export type ExplainLang = "ru" | "en" | "es";
 export type BankStatus = "active" | "learned" | "ignored" | "queued";
@@ -9,6 +12,9 @@ export interface Profile {
   level: Level;
   explainLang: ExplainLang;
   timezone: string;
+  /** display preferences stored on the profile; null = client default */
+  theme: ThemeId | null;
+  fontSize: FontSizeId | null;
   topics: string[];
   dailyEnabled: boolean;
   dailyTime: string;
@@ -68,9 +74,9 @@ export interface ReviewItem {
 /** How one of the article's woven bank words fared this reading. */
 export interface WovenTerm {
   lemma: string;
-  /** clean-exposure streak before this session is completed */
-  cleanStreak: number;
-  /** the reader marked it again -> its streak resets on completion */
+  /** SRS ladder rung before this session is completed */
+  srsStage: number;
+  /** the reader marked it again -> its schedule resets on completion */
   markedAgain: boolean;
 }
 
@@ -126,7 +132,6 @@ export function isArchivedReviewResult(
 }
 
 export interface CompleteResult {
-  newlyLearned: string[];
   /** lemmas parked in the queue because the active pool was full */
   queued: string[];
   articlesRead: number;
@@ -141,7 +146,6 @@ export interface BankItem {
   gender: "m" | "f" | null;
   status: BankStatus;
   exposures: number;
-  cleanStreak: number;
   translation: string | null;
   note: string | null;
   firstContext: string | null;
@@ -150,9 +154,9 @@ export interface BankItem {
   freqBand: FreqBand | null;
   updatedAt: number;
   /** SRS repetition timer, emitted by `serializeBankItem`. Optional because
-   *  legacy rows may not have practiced yet (`nextPracticeAt` null). */
-  nextPracticeAt?: number | null;
-  practiceStage?: number;
+   *  a word may not have been scheduled yet (`nextDueAt` null). */
+  nextDueAt?: number | null;
+  srsStage?: number;
 }
 
 export interface HistoryItem {
@@ -195,18 +199,15 @@ export interface PracticeCard {
   contextTranslation: string | null;
 }
 
-/** New learning + SRS state returned after a practice/quiz answer, used to
- *  build the end-of-session summary (which words advanced or reset). */
+/** New SRS state returned after a practice/quiz answer, used to build the
+ *  end-of-session summary (which words advanced or reset). */
 export interface PracticeAnswerResult {
   ok: true;
-  practiceStage: number;
-  nextPracticeAt: number;
-  cleanStreak: number;
+  srsStage: number;
+  nextDueAt: number;
   status: BankStatus;
-  /** the streak moved up (a clean encounter landed, within the daily cap) */
-  streakCredited: boolean;
-  /** this answer promoted the word to "learned" */
-  becameLearned: boolean;
+  /** the word climbed a rung this answer (within the daily cap) */
+  advanced: boolean;
 }
 
 export interface SentenceCheckResult {

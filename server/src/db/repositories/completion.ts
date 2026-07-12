@@ -16,7 +16,6 @@ export async function applyCompletion(params: {
   marks: string;
   reviewResult: string;
   changedItems: readonly BankItemRecord[];
-  newlyLearnedCount: number;
 }): Promise<void> {
   const now = Date.now();
   db.transaction((trx) => {
@@ -31,7 +30,9 @@ export async function applyCompletion(params: {
           isPhrase: item.isPhrase,
           status: item.status,
           exposures: item.exposures,
-          cleanStreak: item.cleanStreak,
+          srsStage: item.srsStage,
+          nextDueAt: item.nextDueAt,
+          lastCreditAt: item.lastCreditAt,
           translation: item.translation,
           firstContext: item.firstContext,
           surfaceForm: item.surfaceForm,
@@ -48,7 +49,9 @@ export async function applyCompletion(params: {
           set: {
             status: item.status,
             exposures: item.exposures,
-            cleanStreak: item.cleanStreak,
+            srsStage: item.srsStage,
+            nextDueAt: item.nextDueAt,
+            lastCreditAt: item.lastCreditAt,
             translation: item.translation,
             firstContext: item.firstContext,
             surfaceForm: item.surfaceForm,
@@ -66,10 +69,7 @@ export async function applyCompletion(params: {
 
     trx
       .update(userStats)
-      .set({
-        articlesRead: sql`${userStats.articlesRead} + 1`,
-        itemsLearned: sql`${userStats.itemsLearned} + ${params.newlyLearnedCount}`,
-      })
+      .set({ articlesRead: sql`${userStats.articlesRead} + 1` })
       .where(eq(userStats.userId, params.userId))
       .run();
 

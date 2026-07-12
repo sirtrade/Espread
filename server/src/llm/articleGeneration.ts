@@ -70,10 +70,12 @@ async function runWriteStep(params: {
 }): Promise<ArticleStepResult> {
   const targetTermsBlock =
     params.targetTerms.length > 0
-      ? `Vocabulario del estudiante — incorpora de forma NATURAL y sin marcarlas ni destacarlas estas palabras/frases ` +
-        `españolas donde tenga sentido (no fuerces todas si no encajan bien). Son lemas: ` +
-        `usa estas palabras en cualquier forma flexionada que suene natural (conjugada, en plural, etc.): ` +
-        `${params.targetTerms.join(", ")}.`
+      ? `Vocabulario del estudiante (OPCIONAL) — intenta incorporar de forma NATURAL, sin marcarlas ni destacarlas, ` +
+        `estas palabras/frases españolas SOLO donde encajen bien en el tema. No las fuerces: si alguna no queda ` +
+        `natural, simplemente OMÍTELA (mejor pocas y bien puestas que todas metidas a la fuerza). Son lemas: ` +
+        `úsalas en cualquier forma flexionada que suene natural (conjugada, en plural, etc.): ` +
+        `${params.targetTerms.join(", ")}. ` +
+        `En el JSON, en "usedTerms" lista exactamente cuáles de esos lemas usaste realmente (puede ser una lista vacía).`
       : "";
 
   const factsBlock = params.facts
@@ -87,7 +89,7 @@ async function runWriteStep(params: {
     `El artículo debe tener entre 250 y 320 palabras, párrafos cortos, vocabulario y gramática apropiados para el nivel ${params.level}. ` +
     `${frequencyInstruction(params.level)} ` +
     `${targetTermsBlock}\n` +
-    `Responde ÚNICAMENTE con JSON: {"title": string, "body": string}.`;
+    `Responde ÚNICAMENTE con JSON: {"title": string, "body": string, "usedTerms": string[]}.`;
 
   return callJsonLLM({
     system,

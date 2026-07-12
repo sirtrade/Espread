@@ -10,14 +10,12 @@ import { useT, t, type Lang } from "../lib/i18n.js";
 
 const TAB_VALUES: BankStatus[] = ["active", "queued", "learned", "ignored"];
 
-const LEARNED_STREAK = 3;
-
 /** Show the search box only once a tab holds enough words to warrant it. */
 const SEARCH_THRESHOLD = 10;
 
-/** SRS timer -> a short human line. The server may not send `nextPracticeAt`
+/** SRS timer -> a short human line. The server may not send `nextDueAt`
  *  yet, so `undefined`/`null` both read as "coming soon". */
-function nextPracticeLabel(lang: Lang, at: number | null | undefined): string {
+function nextDueLabel(lang: Lang, at: number | null | undefined): string {
   if (at == null) return t(lang, "bank.nextPractice.soon");
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -149,16 +147,6 @@ export function Bank() {
                     <span className="mt-0.5 block truncate text-sm text-subtext">{item.translation}</span>
                   )}
                 </span>
-                {tab === "active" && (
-                  <span className="flex shrink-0 gap-0.5" title={t("bank.cleanStreakTitle", { n: item.cleanStreak, total: LEARNED_STREAK })}>
-                    {[0, 1, 2].map((i) => (
-                      <span
-                        key={i}
-                        className={`h-1.5 w-1.5 rounded-full ${i < item.cleanStreak ? "bg-amber" : "dot-empty"}`}
-                      />
-                    ))}
-                  </span>
-                )}
               </button>
 
               {openId === item.id && (
@@ -202,17 +190,11 @@ function BankDetail({
         </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between text-xs text-subtext">
-        <span className="flex items-center gap-1.5">
-          {t("bank.encounters", { n: Math.min(item.cleanStreak, LEARNED_STREAK), total: LEARNED_STREAK })}
-          <span className="flex gap-0.5">
-            {Array.from({ length: LEARNED_STREAK }, (_, i) => (
-              <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < item.cleanStreak ? "bg-amber" : "dot-empty"}`} />
-            ))}
-          </span>
-        </span>
-        {item.status === "active" && <span>{nextPracticeLabel(lang, item.nextPracticeAt)}</span>}
-      </div>
+      {item.status === "active" && (
+        <div className="mt-4 text-xs text-subtext">
+          <span>{nextDueLabel(lang, item.nextDueAt)}</span>
+        </div>
+      )}
 
       {item.status === "queued" && <p className="mt-3 text-xs text-subtext">{t("bank.queuedNote")}</p>}
 

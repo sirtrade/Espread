@@ -2,6 +2,8 @@ import { useState } from "react";
 import { FONT_SIZES, currentFontSize, setFontSize, type FontSizeId } from "../lib/fontSize.js";
 import { hapticSelect } from "../telegram/telegram.js";
 import { useT } from "../lib/i18n.js";
+import { api } from "../api/client.js";
+import { useAuth } from "../state/AuthContext.js";
 
 // A Spanish line, on purpose: it previews how article text (learning content)
 // will look at each size, so it stays Spanish regardless of the chrome language.
@@ -10,12 +12,19 @@ const SAMPLE = "Los científicos anunciaron un hallazgo relevante en la región.
 /** Font-size switcher with a live sample paragraph rendered at the chosen size. */
 export function FontSizePicker() {
   const { t } = useT();
+  const { setProfile } = useAuth();
   const [active, setActive] = useState<FontSizeId>(() => currentFontSize());
 
   function pick(id: FontSizeId) {
     hapticSelect();
     setFontSize(id);
     setActive(id);
+    // Persist on the profile so the choice follows the user across devices.
+    // The size is already applied locally, so a failed save is non-fatal.
+    api
+      .patchMe({ fontSize: id })
+      .then(setProfile)
+      .catch(() => {});
   }
 
   const activeCss = FONT_SIZES.find((s) => s.id === active)!.css;

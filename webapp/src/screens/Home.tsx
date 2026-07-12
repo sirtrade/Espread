@@ -12,7 +12,7 @@ import { useT } from "../lib/i18n.js";
 export function Home() {
   const { t } = useT();
   const navigate = useNavigate();
-  const location = useLocation() as { state?: { newlyLearned?: string[]; queued?: string[] } };
+  const location = useLocation() as { state?: { queued?: string[] } };
   const [stats, setStats] = useState<Stats | null>(null);
   const [bank, setBank] = useState<BankItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,12 +76,6 @@ export function Home() {
           </button>
         </div>
       </div>
-
-      {location.state?.newlyLearned && location.state.newlyLearned.length > 0 && (
-        <div className="banner-success mb-4 rounded-xl px-4 py-3 text-sm text-text">
-          {t("home.newlyLearned", { count: location.state.newlyLearned.length })}
-        </div>
-      )}
 
       {location.state?.queued && location.state.queued.length > 0 && (
         <div className="mb-4 rounded-xl bg-surface px-4 py-3 text-sm text-subtext">

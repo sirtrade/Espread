@@ -3,10 +3,11 @@ import type { PracticeAnswerResult } from "../api/types.js";
 import type { SessionCard } from "../lib/cards.js";
 import { Button } from "./Button.js";
 import { hapticSelect, hapticSuccess } from "../telegram/telegram.js";
+import { intervalDaysForStage } from "../lib/srs.js";
 import { useT } from "../lib/i18n.js";
 
 /** Server outcome of an answer; `void` when the write was best-effort and lost. */
-export type AnswerOutcome = Pick<PracticeAnswerResult, "cleanStreak" | "status" | "streakCredited" | "becameLearned">;
+export type AnswerOutcome = Pick<PracticeAnswerResult, "srsStage" | "status" | "advanced">;
 
 interface RecordedAnswer {
   card: SessionCard;
@@ -22,7 +23,7 @@ interface QuizSessionProps {
   /** Sends the answer to the server; returns the new learning state (or void). */
   onAnswer: (card: SessionCard, correct: boolean) => Promise<AnswerOutcome | void>;
   /** Called from the final summary's button. */
-  onFinish: (summary: { correct: number; total: number; learned: string[] }) => void;
+  onFinish: (summary: { correct: number; total: number }) => void;
   finishLabel?: string;
   /** Optional per-card extra UI (e.g. Práctica's free-writing exercise). */
   renderExtra?: (card: SessionCard, chosen: boolean) => ReactNode;
@@ -82,9 +83,8 @@ export function QuizSession({
 
   if (done) {
     const correctCount = answers.filter((a) => a.correct).length;
-    const advanced = answers.filter((a) => a.outcome?.streakCredited || a.outcome?.becameLearned);
+    const advanced = answers.filter((a) => a.outcome?.advanced);
     const reset = answers.filter((a) => !a.correct);
-    const learned = answers.filter((a) => a.outcome?.becameLearned).map((a) => a.card.lemma);
 
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-28">
@@ -104,9 +104,11 @@ export function QuizSession({
                 <li key={a.card.key} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
                   <span className="font-medium">{a.card.lemma}</span>
                   <span className="text-xs text-subtext">
-                    {a.outcome?.becameLearned
-                      ? t("quizSession.mastered")
-                      : t("quizSession.streak", { n: a.outcome?.cleanStreak ?? "" })}
+                    {a.outcome
+                      ? a.outcome.status === "learned"
+                        ? t("quizSession.mastered")
+                        : t("review.wovenNextIn", { days: intervalDaysForStage(a.outcome.srsStage) })
+                      : ""}
                   </span>
                 </li>
               ))}
@@ -130,7 +132,7 @@ export function QuizSession({
 
         <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
           <div className="mx-auto max-w-md">
-            <Button className="w-full" onClick={() => onFinish({ correct: correctCount, total: cards.length, learned })}>
+            <Button className="w-full" onClick={() => onFinish({ correct: correctCount, total: cards.length })}>
               {finishLabel ?? t("common.backHome")}
             </Button>
           </div>

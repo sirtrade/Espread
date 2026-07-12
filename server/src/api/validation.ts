@@ -14,6 +14,8 @@ export const patchMeSchema = z.object({
     .max(64)
     .refine(isValidTimezone, "Zona horaria inválida (se espera un identificador IANA, p. ej. Europe/Madrid)")
     .optional(),
+  theme: z.enum(["claro", "sepia", "oscuro", "ambar"]).optional(),
+  fontSize: z.enum(["sm", "md", "lg", "xl"]).optional(),
   topics: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
   dailyEnabled: z.boolean().optional(),
   dailyTime: z

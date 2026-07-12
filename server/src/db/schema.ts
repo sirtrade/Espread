@@ -12,6 +12,11 @@ export const users = sqliteTable("users", {
     .notNull()
     .default("ru"),
   timezone: text("timezone").notNull().default("UTC"),
+  // Display preferences live on the profile (not the device) so they survive
+  // re-opening the Mini App from another device or origin. Null = follow the
+  // client default (Telegram color scheme / "md").
+  theme: text("theme", { enum: ["claro", "sepia", "oscuro", "ambar"] }),
+  fontSize: text("font_size", { enum: ["sm", "md", "lg", "xl"] }),
   dailyEnabled: integer("daily_enabled", { mode: "boolean" }).notNull().default(false),
   dailyTime: text("daily_time").notNull().default("08:00"),
   // In-chat vocabulary quizzes: how many per day the user wants (0 = off).
@@ -21,6 +26,10 @@ export const users = sqliteTable("users", {
   // free up. 0 = no limit (every accepted word goes straight to active).
   activePoolLimit: integer("active_pool_limit").notNull().default(20),
   lastBotQuizAt: integer("last_bot_quiz_at"),
+  // In-chat typed quiz awaiting a free-text answer: the bank item being asked
+  // and when it was sent (stale pendings expire so old texts aren't graded).
+  pendingQuizItemId: integer("pending_quiz_item_id"),
+  pendingQuizSentAt: integer("pending_quiz_sent_at"),
   onboardedAt: integer("onboarded_at"),
   lastDailyDeliveredDate: text("last_daily_delivered_date"),
   lastPrefetchDate: text("last_prefetch_date"),
@@ -51,12 +60,13 @@ export const bankItems = sqliteTable(
     // -se, noun singular, adjective masculine singular).
     lemma: text("lemma").notNull(),
     isPhrase: integer("is_phrase", { mode: "boolean" }).notNull().default(false),
-    // "queued" is reserved for the upcoming intake queue; nothing sets it yet.
+    // "active" words circulate through articles/practice on the SRS ladder;
+    // "queued" waits for a free active slot; "learned"/"ignored" are set
+    // manually by the reader (there is no automatic promotion any more).
     status: text("status", { enum: ["active", "learned", "ignored", "queued"] })
       .notNull()
       .default("active"),
     exposures: integer("exposures").notNull().default(1),
-    cleanStreak: integer("clean_streak").notNull().default(0),
     // Short translation of the lemma (no parentheses, no Spanish inside).
     translation: text("translation"),
     // The sentence in which the word was marked.
@@ -72,15 +82,17 @@ export const bankItems = sqliteTable(
     // JSON array of 3 same-POS Spanish words, for quiz options.
     distractors: text("distractors"),
     freqBand: text("freq_band", { enum: ["top1000", "top3000", "top5000", "rare"] }),
-    // Spaced-repetition ladder for the practice mode. Orthogonal to the
-    // learning streak below: it controls WHEN an item comes up for review,
-    // while cleanStreak controls promotion to "learned".
-    practiceStage: integer("practice_stage").notNull().default(0),
-    nextPracticeAt: integer("next_practice_at"),
-    // Anti-farm guard: a first-try-correct practice answer counts as a clean
-    // encounter (cleanStreak+1, like a reading exposure), but only once per
-    // calendar day per item. This stamps the last credited answer.
-    lastStreakCreditAt: integer("last_streak_credit_at"),
+    // Spaced-repetition ladder shared by reading and practice. `srsStage` is
+    // the rung on SRS_INTERVALS_DAYS; `nextDueAt` is when the word next comes
+    // up (for weaving into an article and for practice). A clean reading
+    // exposure or a correct quiz answer climbs a rung; re-marking / a wrong
+    // answer drops back to stage 0.
+    srsStage: integer("srs_stage").notNull().default(0),
+    nextDueAt: integer("next_due_at"),
+    // Anti-farm guard: a word advances at most once per calendar day, no
+    // matter how many times it's seen (reading + practice). Stamps the last
+    // credited encounter.
+    lastCreditAt: integer("last_credit_at"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch('now') * 1000)`),

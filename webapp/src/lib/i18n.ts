@@ -65,7 +65,6 @@ export interface Dict {
 
   "home.settings": string;
   "home.history": string;
-  "home.newlyLearned": (p: { count: number }) => string;
   "home.queuedBanner": (p: { count: number }) => string;
   "home.stat.articles": string;
   "home.stat.inProgress": string;
@@ -102,9 +101,11 @@ export interface Dict {
   "review.skip": string;
   "review.yourWords": string;
   "review.wovenHint": (p: { streak: number }) => string;
+  "review.wovenHintSrs": string;
   "review.markedAgain": string;
   "review.readyToMaster": string;
   "review.streakProgress": (p: { filled: number; total: number }) => string;
+  "review.wovenNextIn": (p: { days: number }) => string;
   "review.continue": string;
   "review.analyzeError": string;
   "review.saveError": string;
@@ -122,7 +123,6 @@ export interface Dict {
   "bank.empty.ignored": string;
   "bank.noMatch": (p: { query: string }) => string;
   "bank.encounters": (p: { n: number; total: number }) => string;
-  "bank.cleanStreakTitle": (p: { n: number; total: number }) => string;
   "bank.nextPractice.soon": string;
   "bank.nextPractice.today": string;
   "bank.nextPractice.tomorrow": string;
@@ -149,6 +149,8 @@ export interface Dict {
   "historyArticle.words": string;
   "historyArticle.phrases": string;
 
+  "settings.language": string;
+  "settings.languageNote": string;
   "settings.readingTheme": string;
   "settings.textSize": string;
   "settings.level": string;
@@ -247,8 +249,6 @@ const es: Dict = {
 
   "home.settings": "Ajustes",
   "home.history": "Historial",
-  "home.newlyLearned": ({ count }) =>
-    `🎉 ¡Aprendiste ${count} ${plural("es", count, ["palabra nueva", "palabras nuevas"])}!`,
   "home.queuedBanner": ({ count }) =>
     `🗂️ ${count} ${plural("es", count, ["palabra", "palabras"])} en cola. ${
       count === 1 ? "Entrará" : "Entrarán"
@@ -290,9 +290,11 @@ const es: Dict = {
   "review.yourWords": "Tus palabras en este artículo",
   "review.wovenHint": ({ streak }) =>
     `Cada lectura sin volver a marcarlas te acerca a dominarlas (${streak} de ${streak}).`,
-  "review.markedAgain": "Vuelta a marcar · progreso reiniciado",
+  "review.wovenHintSrs": "Cada lectura sin volver a marcarlas las espacia más en el tiempo.",
+  "review.markedAgain": "Vuelta a marcar · vuelve pronto",
   "review.readyToMaster": "¡Lista para dominar!",
   "review.streakProgress": ({ filled, total }) => `${filled} / ${total} para dominarla`,
+  "review.wovenNextIn": ({ days }) => (days <= 1 ? "Vuelve mañana" : `Vuelve en ${days} días`),
   "review.continue": "Continuar",
   "review.analyzeError": "No se pudo analizar tu lectura",
   "review.saveError": "No se pudo guardar tu progreso",
@@ -310,7 +312,6 @@ const es: Dict = {
   "bank.empty.ignored": "No hay palabras descartadas.",
   "bank.noMatch": ({ query }) => `No hay palabras que coincidan con «${query}».`,
   "bank.encounters": ({ n, total }) => `Encuentros ${n}/${total}`,
-  "bank.cleanStreakTitle": ({ n, total }) => `${n}/${total} encuentros limpios`,
   "bank.nextPractice.soon": "Repaso pronto",
   "bank.nextPractice.today": "Repaso hoy",
   "bank.nextPractice.tomorrow": "Repaso mañana",
@@ -338,6 +339,8 @@ const es: Dict = {
   "historyArticle.words": "Palabras",
   "historyArticle.phrases": "Frases",
 
+  "settings.language": "Idioma",
+  "settings.languageNote": "Idioma de la interfaz y de las explicaciones. Los artículos siempre están en español.",
   "settings.readingTheme": "Tema de lectura",
   "settings.textSize": "Tamaño del texto",
   "settings.level": "Nivel",
@@ -440,8 +443,6 @@ const ru: Dict = {
 
   "home.settings": "Настройки",
   "home.history": "История",
-  "home.newlyLearned": ({ count }) =>
-    `🎉 Выучено ${count} ${plural("ru", count, ["новое слово", "новых слова", "новых слов"])}!`,
   "home.queuedBanner": ({ count }) =>
     `🗂️ ${count} ${plural("ru", count, ["слово", "слова", "слов"])} в очереди. ${
       plural("ru", count, ["Оно войдёт", "Они войдут", "Они войдут"])
@@ -483,9 +484,11 @@ const ru: Dict = {
   "review.yourWords": "Ваши слова в этой статье",
   "review.wovenHint": ({ streak }) =>
     `Каждое чтение без повторной отметки приближает вас к их освоению (${streak} из ${streak}).`,
-  "review.markedAgain": "Отмечено снова · прогресс сброшен",
+  "review.wovenHintSrs": "Каждое чтение без повторной отметки отодвигает слово дальше по времени.",
+  "review.markedAgain": "Отмечено снова · скоро вернётся",
   "review.readyToMaster": "Готово к освоению!",
   "review.streakProgress": ({ filled, total }) => `${filled} / ${total} до освоения`,
+  "review.wovenNextIn": ({ days }) => (days <= 1 ? "Вернётся завтра" : `Вернётся через ${days} дн.`),
   "review.continue": "Продолжить",
   "review.analyzeError": "Не удалось проанализировать ваше чтение",
   "review.saveError": "Не удалось сохранить ваш прогресс",
@@ -503,7 +506,6 @@ const ru: Dict = {
   "bank.empty.ignored": "Нет отклонённых слов.",
   "bank.noMatch": ({ query }) => `Нет слов, совпадающих с «${query}».`,
   "bank.encounters": ({ n, total }) => `Встречи ${n}/${total}`,
-  "bank.cleanStreakTitle": ({ n, total }) => `${n}/${total} чистых встреч`,
   "bank.nextPractice.soon": "Повтор скоро",
   "bank.nextPractice.today": "Повтор сегодня",
   "bank.nextPractice.tomorrow": "Повтор завтра",
@@ -532,6 +534,8 @@ const ru: Dict = {
   "historyArticle.words": "Слова",
   "historyArticle.phrases": "Фразы",
 
+  "settings.language": "Язык",
+  "settings.languageNote": "Язык интерфейса и объяснений. Статьи всегда на испанском.",
   "settings.readingTheme": "Тема чтения",
   "settings.textSize": "Размер текста",
   "settings.level": "Уровень",
@@ -634,8 +638,6 @@ const en: Dict = {
 
   "home.settings": "Settings",
   "home.history": "History",
-  "home.newlyLearned": ({ count }) =>
-    `🎉 You learned ${count} new ${plural("en", count, ["word", "words"])}!`,
   "home.queuedBanner": ({ count }) =>
     `🗂️ ${count} ${plural("en", count, ["word", "words"])} queued. ${
       count === 1 ? "It will enter" : "They will enter"
@@ -677,9 +679,11 @@ const en: Dict = {
   "review.yourWords": "Your words in this article",
   "review.wovenHint": ({ streak }) =>
     `Each reading without marking them again brings you closer to mastering them (${streak} of ${streak}).`,
-  "review.markedAgain": "Marked again · progress reset",
+  "review.wovenHintSrs": "Each reading without re-marking spaces the word out further.",
+  "review.markedAgain": "Marked again · back soon",
   "review.readyToMaster": "Ready to master!",
   "review.streakProgress": ({ filled, total }) => `${filled} / ${total} to master it`,
+  "review.wovenNextIn": ({ days }) => (days <= 1 ? "Back tomorrow" : `Back in ${days} days`),
   "review.continue": "Continue",
   "review.analyzeError": "Couldn't analyze your reading",
   "review.saveError": "Couldn't save your progress",
@@ -697,7 +701,6 @@ const en: Dict = {
   "bank.empty.ignored": "No discarded words.",
   "bank.noMatch": ({ query }) => `No words match «${query}».`,
   "bank.encounters": ({ n, total }) => `Encounters ${n}/${total}`,
-  "bank.cleanStreakTitle": ({ n, total }) => `${n}/${total} clean encounters`,
   "bank.nextPractice.soon": "Review soon",
   "bank.nextPractice.today": "Review today",
   "bank.nextPractice.tomorrow": "Review tomorrow",
@@ -726,6 +729,8 @@ const en: Dict = {
   "historyArticle.words": "Words",
   "historyArticle.phrases": "Phrases",
 
+  "settings.language": "Language",
+  "settings.languageNote": "Language of the interface and explanations. Articles are always in Spanish.",
   "settings.readingTheme": "Reading theme",
   "settings.textSize": "Text size",
   "settings.level": "Level",
