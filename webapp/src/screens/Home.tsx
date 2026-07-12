@@ -10,7 +10,7 @@ import { hapticImpact } from "../telegram/telegram.js";
 
 export function Home() {
   const navigate = useNavigate();
-  const location = useLocation() as { state?: { newlyLearned?: string[] } };
+  const location = useLocation() as { state?: { newlyLearned?: string[]; queued?: string[] } };
   const [stats, setStats] = useState<Stats | null>(null);
   const [bank, setBank] = useState<BankItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,12 +81,30 @@ export function Home() {
         </div>
       )}
 
+      {location.state?.queued && location.state.queued.length > 0 && (
+        <div className="mb-4 rounded-xl bg-surface px-4 py-3 text-sm text-subtext">
+          🗂️ {location.state.queued.length} palabra(s) en cola. Entrarán en estudio al liberarse un lugar.
+        </div>
+      )}
+
       {stats && (
         <div className="mb-6 grid grid-cols-3 gap-3">
           <StatTile label="Artículos" value={stats.articlesRead} />
-          <StatTile label="En progreso" value={stats.itemsInProgress} />
+          <StatTile
+            label="En progreso"
+            value={stats.activePoolLimit > 0 ? `${stats.itemsInProgress} / ${stats.activePoolLimit}` : stats.itemsInProgress}
+          />
           <StatTile label="Aprendidas" value={stats.itemsLearned} />
         </div>
+      )}
+
+      {stats && stats.itemsQueued > 0 && (
+        <button
+          onClick={() => navigate("/bank")}
+          className="mb-6 -mt-3 self-start text-xs text-subtext underline"
+        >
+          🗂️ {stats.itemsQueued} en cola
+        </button>
       )}
 
       <div className="mb-6">
@@ -124,7 +142,7 @@ export function Home() {
   );
 }
 
-function StatTile({ label, value }: { label: string; value: number }) {
+function StatTile({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-xl bg-surface px-3 py-4 text-center">
       <p className="text-2xl font-semibold">{value}</p>

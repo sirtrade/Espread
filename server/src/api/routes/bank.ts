@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth.js";
-import { getBankItems, setBankItemStatus } from "../../db/repositories/bank.js";
+import { getBankItems, rebalanceActivePool, setBankItemStatus } from "../../db/repositories/bank.js";
+import { getUserById } from "../../db/repositories/users.js";
 import { Errors } from "../errors.js";
 import { serializeBankItem } from "../serializers.js";
 import { bankQuerySchema, patchBankItemSchema } from "../validation.js";
@@ -29,5 +30,12 @@ bankRoutes.patch("/:id", async (c) => {
 
   const updated = await setBankItemStatus(userId, itemId, body.data.status);
   if (!updated) throw Errors.notFound("Palabra");
+
+  // A manual change to learned/ignored/queued may free a slot; refill the
+  // active pool from the queue. Promoting straight to active (e.g. "Estudiar
+  // ahora") can push past the cap — rebalance never demotes, so that stands.
+  const user = await getUserById(userId);
+  if (user) await rebalanceActivePool(userId, user.activePoolLimit);
+
   return c.json({ item: serializeBankItem(updated) });
 });

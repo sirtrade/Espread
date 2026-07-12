@@ -16,6 +16,10 @@ export const users = sqliteTable("users", {
   dailyTime: text("daily_time").notNull().default("08:00"),
   // In-chat vocabulary quizzes: how many per day the user wants (0 = off).
   botQuizzesPerDay: integer("bot_quizzes_per_day").notNull().default(0),
+  // Cap on how many words may be "active" (in study) at once. New accepted
+  // words beyond the cap are parked as "queued" and promoted FIFO as slots
+  // free up. 0 = no limit (every accepted word goes straight to active).
+  activePoolLimit: integer("active_pool_limit").notNull().default(20),
   lastBotQuizAt: integer("last_bot_quiz_at"),
   onboardedAt: integer("onboarded_at"),
   lastDailyDeliveredDate: text("last_daily_delivered_date"),

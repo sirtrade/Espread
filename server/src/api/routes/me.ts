@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth.js";
 import { getUserById, updateUser, type UserPatch } from "../../db/repositories/users.js";
+import { rebalanceActivePool } from "../../db/repositories/bank.js";
 import { getUserTopics, setUserTopics } from "../../db/repositories/topics.js";
 import { resetUserProgress } from "../../db/repositories/reset.js";
 import { Errors } from "../errors.js";
@@ -29,11 +30,25 @@ meRoutes.patch("/", async (c) => {
   const patch: UserPatch = { ...rest };
   if (markOnboarded) patch.onboardedAt = Date.now();
 
+  // Raising the cap frees slots, so drain the queue afterwards. Lowering it
+  // never demotes: the pool just deflates as words are learned/ignored.
+  // Capacity comparison treats 0 as "unlimited" (∞), so 20 -> 0 is a raise
+  // and 0 -> 20 is not.
+  const previous = await getUserById(userId);
+  if (!previous) throw Errors.notFound("Usuario");
+  const capacity = (limit: number) => (limit === 0 ? Infinity : limit);
+  const raisesLimit =
+    patch.activePoolLimit !== undefined &&
+    capacity(patch.activePoolLimit) > capacity(previous.activePoolLimit);
+
   if (Object.keys(patch).length > 0) {
     await updateUser(userId, patch);
   }
   if (topics) {
     await setUserTopics(userId, topics);
+  }
+  if (raisesLimit) {
+    await rebalanceActivePool(userId, patch.activePoolLimit!);
   }
 
   const user = await getUserById(userId);

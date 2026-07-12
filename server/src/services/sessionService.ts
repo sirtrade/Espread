@@ -10,7 +10,7 @@ import { withUserLock } from "../lib/locks.js";
 import { Errors } from "../api/errors.js";
 import { getArticleById } from "../db/repositories/articles.js";
 import { getUserById } from "../db/repositories/users.js";
-import { getBankItemsMap } from "../db/repositories/bank.js";
+import { getBankItemsMap, rebalanceActivePool } from "../db/repositories/bank.js";
 import { applyCompletion } from "../db/repositories/completion.js";
 import { countRecentCalls } from "../db/repositories/llmCalls.js";
 import { getUserStats } from "../db/repositories/stats.js";
@@ -96,6 +96,8 @@ export async function reviewSession(userId: number): Promise<ReviewView> {
 
 export interface CompleteResult {
   newlyLearned: string[];
+  /** lemmas this completion parked in the queue (active pool was full) */
+  queued: string[];
   articlesRead: number;
 }
 
@@ -155,8 +157,9 @@ export async function completeSession(userId: number, choices: CompletionChoices
       throw Errors.badRequest("La sesión aún no fue analizada. Llama a /session/review primero.");
     }
 
-    const article = await getArticleById(session.articleId);
+    const [article, user] = await Promise.all([getArticleById(session.articleId), getUserById(userId)]);
     if (!article) throw Errors.notFound("Artículo");
+    if (!user) throw Errors.notFound("Usuario");
 
     const review = reviewSchema.parse(JSON.parse(session.reviewResult));
     const marks = JSON.parse(session.marks) as Mark[];
@@ -193,7 +196,7 @@ export async function completeSession(userId: number, choices: CompletionChoices
     const overrides = { accepted: normalizeChoice(choices.accepted), rejected: normalizeChoice(choices.rejected) };
 
     const before = await getBankItemsMap(userId);
-    const after = applyReviewToBank(before, exposedLemmas, reviewedItems, overrides);
+    const after = applyReviewToBank(before, exposedLemmas, reviewedItems, overrides, user.activePoolLimit);
 
     // Only rows that actually changed get written — a completion typically
     // touches a handful of lemmas, not the user's whole bank.
@@ -201,6 +204,10 @@ export async function completeSession(userId: number, choices: CompletionChoices
 
     const newlyLearned = changedItems
       .filter((item) => item.status === "learned" && before.get(item.lemma)?.status !== "learned")
+      .map((item) => item.lemma);
+
+    const newlyQueued = changedItems
+      .filter((item) => item.status === "queued" && before.get(item.lemma)?.status !== "queued")
       .map((item) => item.lemma);
 
     await applyCompletion({
@@ -213,7 +220,14 @@ export async function completeSession(userId: number, choices: CompletionChoices
       newlyLearnedCount: newlyLearned.length,
     });
 
+    // Words that became learned/ignored this session freed slots; refill the
+    // pool from any pre-existing queue (FIFO). A word we just queued may get
+    // promoted right back if enough slots opened — so report only what
+    // actually stayed in the queue.
+    const promoted = new Set(await rebalanceActivePool(userId, user.activePoolLimit));
+    const queued = newlyQueued.filter((lemma) => !promoted.has(lemma));
+
     const stats = await getUserStats(userId);
-    return { newlyLearned, articlesRead: stats?.articlesRead ?? 0 };
+    return { newlyLearned, queued, articlesRead: stats?.articlesRead ?? 0 };
   });
 }

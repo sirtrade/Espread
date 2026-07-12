@@ -8,6 +8,7 @@ import { QuizSession } from "../components/QuizSession.js";
 interface QuizState {
   items?: ReviewItem[];
   newlyLearned?: string[];
+  queued?: string[];
 }
 
 /** Immediate post-reading reinforcement over the words just accepted into the
@@ -18,13 +19,14 @@ export function Quiz() {
   const location = useLocation() as { state?: QuizState };
   const items = location.state?.items ?? [];
   const newlyLearned = location.state?.newlyLearned ?? [];
+  const queued = location.state?.queued ?? [];
 
   const cards = useMemo<SessionCard[]>(() => buildQuizCards(items), [items]);
 
   function goHome(learned: string[] = []) {
     // Merge words promoted during reading with any promoted by the quiz itself.
     const allLearned = Array.from(new Set([...newlyLearned, ...learned]));
-    navigate("/", { replace: true, state: { newlyLearned: allLearned } });
+    navigate("/", { replace: true, state: { newlyLearned: allLearned, queued } });
   }
 
   useEffect(() => {

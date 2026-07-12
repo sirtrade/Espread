@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `active_pool_limit` integer DEFAULT 20 NOT NULL;

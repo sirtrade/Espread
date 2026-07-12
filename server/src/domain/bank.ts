@@ -93,6 +93,11 @@ function updateCardFields(item: BankItemRecord, mark: ReviewedItem): void {
  *   Ones marked again reset the streak and follow the fresh verdict.
  * - Any other marked item (new or already tracked) is upserted per its
  *   frequency band: top1000..top5000 -> active, rare -> ignored.
+ * - `poolLimit` caps the active pool (0 = no limit). A word that WOULD become
+ *   active but isn't already active is parked as "queued" once the final map
+ *   already holds `poolLimit` active words. New words are considered in the
+ *   order they appear in `reviewed`, so earlier cards claim free slots first.
+ *   A word that was already active keeps its slot regardless of the cap.
  *
  * Pure function: no DB/IO. Returns a new map (does not mutate `existing`).
  */
@@ -101,6 +106,7 @@ export function applyReviewToBank(
   exposedLemmas: readonly string[],
   reviewed: readonly ReviewedItem[],
   overrides?: StatusOverrides,
+  poolLimit = 0,
 ): Map<string, BankItemRecord> {
   const result = new Map<string, BankItemRecord>();
   for (const [lemma, item] of existing) {
@@ -129,20 +135,38 @@ export function applyReviewToBank(
     }
   }
 
+  const limited = poolLimit > 0;
+  // Live count of active words in the map we're building — the same "итоговая
+  // карта" the cap is measured against. Words the exposed pass turned into
+  // "learned" are already excluded, so their freed slots are up for grabs.
+  let activeCount = 0;
+  for (const item of result.values()) if (item.status === "active") activeCount++;
+
   for (const mark of reviewed) {
     if (exposedSet.has(mark.lemma) && existing.has(mark.lemma)) continue;
 
-    const item = result.get(mark.lemma);
-    if (item) {
-      item.exposures += 1;
-      item.cleanStreak = 0;
-      item.status = statusForItem(mark.lemma, mark.freqBand, overrides);
-      updateCardFields(item, mark);
+    const desired = statusForItem(mark.lemma, mark.freqBand, overrides);
+    // A word already active holds its slot; only a NEW active word (rare
+    // accepted, a queued/learned word re-marked, or a first-seen word) has to
+    // compete for a free slot under the cap.
+    const wasActive = existing.get(mark.lemma)?.status === "active";
+    let status = desired;
+    if (desired === "active" && !wasActive && limited && activeCount >= poolLimit) {
+      status = "queued";
+    }
+
+    const prior = result.get(mark.lemma);
+    const priorActive = prior?.status === "active";
+    if (prior) {
+      prior.exposures += 1;
+      prior.cleanStreak = 0;
+      prior.status = status;
+      updateCardFields(prior, mark);
     } else {
       result.set(mark.lemma, {
         lemma: mark.lemma,
         isPhrase: mark.isPhrase,
-        status: statusForItem(mark.lemma, mark.freqBand, overrides),
+        status,
         exposures: 1,
         cleanStreak: 0,
         translation: mark.translation,
@@ -156,9 +180,20 @@ export function applyReviewToBank(
         freqBand: mark.freqBand,
       });
     }
+    activeCount += (status === "active" ? 1 : 0) - (priorActive ? 1 : 0);
   }
 
   return result;
+}
+
+/**
+ * How many of the user's queued words to promote so the active pool refills
+ * toward the cap. `poolLimit` 0 = no limit, so the whole queue drains. Pure:
+ * the caller pulls the oldest `n` queued rows (createdAt ASC) and activates them.
+ */
+export function queuedPromotionCount(activeCount: number, queuedCount: number, poolLimit: number): number {
+  if (poolLimit <= 0) return queuedCount;
+  return Math.max(0, Math.min(poolLimit - activeCount, queuedCount));
 }
 
 /** Picks up to `limit` active items with the fewest exposures, for weaving into the next article. */

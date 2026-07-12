@@ -63,16 +63,18 @@ export function Review() {
     try {
       const accepted = result.items.filter((it) => decisions[it.lemma] === "bank");
       const rejected = result.items.filter((it) => decisions[it.lemma] === "skip");
-      const { newlyLearned } = await api.completeSession({
+      const { newlyLearned, queued } = await api.completeSession({
         accepted: accepted.map((it) => it.lemma),
         rejected: rejected.map((it) => it.lemma),
       });
       if (newlyLearned.length > 0) hapticSuccess();
       // Reinforce right away with a quick recall quiz over the accepted words.
+      // Queued words aren't in study yet, so they're not quizzed — but the
+      // count still rides along to the Home banner.
       if (accepted.length > 0) {
-        navigate("/quiz", { state: { items: accepted, newlyLearned } });
+        navigate("/quiz", { state: { items: accepted, newlyLearned, queued } });
       } else {
-        navigate("/", { state: { newlyLearned } });
+        navigate("/", { state: { newlyLearned, queued } });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar tu progreso");
