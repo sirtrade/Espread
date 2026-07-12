@@ -68,11 +68,15 @@ export const bankItems = sqliteTable(
     // JSON array of 3 same-POS Spanish words, for quiz options.
     distractors: text("distractors"),
     freqBand: text("freq_band", { enum: ["top1000", "top3000", "top5000", "rare"] }),
-    // Spaced-repetition state for the practice mode. Deliberately separate
-    // from status/cleanStreak: practice reinforces memory but only clean
-    // reading exposures can promote an item to "learned".
+    // Spaced-repetition ladder for the practice mode. Orthogonal to the
+    // learning streak below: it controls WHEN an item comes up for review,
+    // while cleanStreak controls promotion to "learned".
     practiceStage: integer("practice_stage").notNull().default(0),
     nextPracticeAt: integer("next_practice_at"),
+    // Anti-farm guard: a first-try-correct practice answer counts as a clean
+    // encounter (cleanStreak+1, like a reading exposure), but only once per
+    // calendar day per item. This stamps the last credited answer.
+    lastStreakCreditAt: integer("last_streak_credit_at"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch('now') * 1000)`),

@@ -6,6 +6,7 @@ import type {
   CompleteResult,
   HistoryItem,
   Mark,
+  PracticeAnswerResult,
   PracticeCard,
   Profile,
   ReadArticle,
@@ -128,8 +129,13 @@ export const api = {
     request<{ items: HistoryItem[]; total: number }>(`/articles?limit=${limit}&offset=${offset}`),
   getReadArticle: (id: number) => request<{ article: ReadArticle }>(`/articles/${id}`),
   getPracticeQueue: (limit = 10) => request<{ cards: PracticeCard[]; due: number }>(`/practice/queue?limit=${limit}`),
-  postPracticeAnswer: (itemId: number, correct: boolean) =>
-    request<{ ok: true }>("/practice/answer", { method: "POST", body: JSON.stringify({ itemId, correct }) }),
+  // Práctica answers carry an itemId; the post-reading Quiz carries a lemma
+  // (it never sees bank item ids). Both drive the same learning + SRS update.
+  postPracticeAnswer: (target: { itemId: number } | { lemma: string }, correct: boolean) =>
+    request<PracticeAnswerResult>("/practice/answer", {
+      method: "POST",
+      body: JSON.stringify({ ...target, correct }),
+    }),
   checkPracticeSentence: (itemId: number, sentence: string) =>
     request<SentenceCheckResult>("/practice/sentence", { method: "POST", body: JSON.stringify({ itemId, sentence }) }),
 };

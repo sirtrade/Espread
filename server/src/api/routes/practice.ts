@@ -6,12 +6,13 @@ import {
   applyPracticeAnswer,
   countDueForPractice,
   getBankItemById,
+  getBankItemByLemma,
   getDistractorPool,
   getDueForPractice,
 } from "../../db/repositories/bank.js";
 import { getUserById } from "../../db/repositories/users.js";
 import { countRecentCalls } from "../../db/repositories/llmCalls.js";
-import { buildClozeCard, buildOptions, parseStoredDistractors } from "../../domain/practice.js";
+import { buildCard, parseStoredDistractors, type CardType } from "../../domain/practice.js";
 import { checkPracticeSentence } from "../../llm/sentenceCheck.js";
 import { practiceAnswerSchema, practiceSentenceSchema } from "../validation.js";
 import type { AppEnv } from "../context.js";
@@ -26,11 +27,15 @@ export interface PracticeCard {
   isPhrase: boolean;
   translation: string | null;
   /** "cloze": fill the blank in the original context; "recall": pick the word for a translation. */
-  type: "cloze" | "recall";
+  type: CardType;
   prompt: string;
   /** the option that is correct: the blanked surface form for cloze, the lemma for recall */
   answer: string;
   options: string[];
+  /** the article sentence, shown as after-answer feedback */
+  context: string | null;
+  /** translation of the context sentence, shown as a cloze hint */
+  contextTranslation: string | null;
 }
 
 practiceRoutes.get("/queue", async (c) => {
@@ -42,41 +47,41 @@ practiceRoutes.get("/queue", async (c) => {
 
   const cards: PracticeCard[] = [];
   for (const item of dueItems) {
-    // Options are always Spanish words (recall direction), so distractors
-    // work regardless of the user's explanation language. Same-POS
-    // distractors stored on the item come first; the user's other bank
-    // lemmas pad the list when they're missing.
-    const pool = [
-      ...parseStoredDistractors(item.distractors),
-      ...(await getDistractorPool(userId, item.id)).map((d) => d.lemma),
-    ];
+    const poolLemmas = (await getDistractorPool(userId, item.id, { pos: item.pos, isPhrase: item.isPhrase })).map(
+      (d) => d.lemma,
+    );
 
-    const cloze = buildClozeCard(item.firstContext, item.lemma, item.surfaceForm);
-    if (cloze) {
-      cards.push({
-        itemId: item.id,
+    // Alternate cloze/recall for variety; the builder degrades a leaking
+    // recall into a cloze and skips items it can't turn into a safe card.
+    const prefer: CardType = cards.length % 2 === 0 ? "cloze" : "recall";
+    const card = buildCard(
+      {
         lemma: item.lemma,
         isPhrase: item.isPhrase,
         translation: item.translation,
-        type: "cloze",
-        prompt: cloze.prompt,
-        answer: cloze.answer,
-        options: buildOptions(cloze.answer, pool),
-      });
-    } else if (item.translation) {
-      cards.push({
-        itemId: item.id,
-        lemma: item.lemma,
-        isPhrase: item.isPhrase,
-        translation: item.translation,
-        type: "recall",
-        prompt: item.translation,
-        answer: item.lemma,
-        options: buildOptions(item.lemma, pool),
-      });
-    }
-    // Items with neither a usable context nor a translation are skipped —
-    // there is nothing to build a question from.
+        firstContext: item.firstContext,
+        surfaceForm: item.surfaceForm,
+        contextTranslation: item.contextTranslation,
+        pos: item.pos,
+        storedDistractors: parseStoredDistractors(item.distractors),
+        poolLemmas,
+      },
+      prefer,
+    );
+    if (!card) continue;
+
+    cards.push({
+      itemId: item.id,
+      lemma: item.lemma,
+      isPhrase: item.isPhrase,
+      translation: card.translation,
+      type: card.type,
+      prompt: card.prompt,
+      answer: card.answer,
+      options: card.options,
+      context: card.context,
+      contextTranslation: card.contextTranslation,
+    });
   }
 
   return c.json({ cards, due });
@@ -87,9 +92,27 @@ practiceRoutes.post("/answer", async (c) => {
   const body = practiceAnswerSchema.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest(body.error.issues[0]?.message ?? "Datos inválidos");
 
-  const item = await applyPracticeAnswer(userId, body.data.itemId, body.data.correct);
-  if (!item) throw Errors.notFound("Palabra");
-  return c.json({ ok: true, practiceStage: item.practiceStage, nextPracticeAt: item.nextPracticeAt });
+  // Práctica sends an itemId; the post-reading Quiz sends a lemma (it never
+  // sees item ids). Both drive the same learning + SRS update.
+  let itemId = body.data.itemId;
+  if (itemId == null && body.data.lemma) {
+    const item = await getBankItemByLemma(userId, body.data.lemma);
+    if (!item) throw Errors.notFound("Palabra");
+    itemId = item.id;
+  }
+  if (itemId == null) throw Errors.badRequest("Falta itemId o lemma");
+
+  const result = await applyPracticeAnswer(userId, itemId, body.data.correct);
+  if (!result) throw Errors.notFound("Palabra");
+  return c.json({
+    ok: true,
+    practiceStage: result.practiceStage,
+    nextPracticeAt: result.nextPracticeAt,
+    cleanStreak: result.cleanStreak,
+    status: result.status,
+    streakCredited: result.streakCredited,
+    becameLearned: result.becameLearned,
+  });
 });
 
 practiceRoutes.post("/sentence", async (c) => {
