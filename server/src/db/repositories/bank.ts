@@ -8,7 +8,7 @@ import {
   type BankStatus,
   type PartOfSpeech,
 } from "../../domain/bank.js";
-import { advanceSrs, creditAllowedToday, graduatesOnSuccess, PRACTICE_RETRY_MS, resetSrs } from "../../domain/srs.js";
+import { advanceSrs, creditAllowedToday, graduatesOnSuccess, lapseSrs, PRACTICE_RETRY_MS, resetSrs } from "../../domain/srs.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -57,12 +57,14 @@ export async function getActiveItemsForSelection(
 }
 
 export async function setBankItemStatus(userId: number, itemId: number, status: BankStatus): Promise<BankItemRow | undefined> {
-  // A manual status change restarts the schedule: the word is due right away
-  // (relevant when moving it back into study) and sits at the bottom rung.
+  // A manual status change is the one place a full reset is intended: the word
+  // restarts at the bottom rung, due right away (relevant when moving it back
+  // into study). Ordinary failures soft-lapse instead (see `lapseSrs`).
   const now = Date.now();
+  const s = resetSrs(now);
   const [row] = await db
     .update(bankItems)
-    .set({ status, srsStage: 0, nextDueAt: now, lastCreditAt: null, updatedAt: now })
+    .set({ status, srsStage: s.srsStage, nextDueAt: s.nextDueAt, lastCreditAt: null, updatedAt: now })
     .where(and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)))
     .returning();
   return row;
@@ -121,7 +123,8 @@ export interface PracticeAnswerResult {
  *  - a correct answer given after revealing the translation hint (`usedHint`)
  *    earns no credit: the schedule is left untouched so the word stays due and
  *    must be retrieved again unaided (retrieval effort was scaffolded away);
- *  - a wrong answer drops the word back to stage 0, due again after a short retry.
+ *  - a wrong answer is a soft lapse: the word drops a couple rungs (`lapseSrs`,
+ *    not a full reset to stage 0) and is due again after a short retry.
  * Practice and reading share this ladder, so drilling a word pushes out its
  * next appearance in articles too.
  */
@@ -144,7 +147,7 @@ export async function applyPracticeAnswer(
   let advanced = false;
 
   if (!correct) {
-    const s = resetSrs(now, PRACTICE_RETRY_MS);
+    const s = lapseSrs(item.srsStage, now, PRACTICE_RETRY_MS);
     srsStage = s.srsStage;
     nextDueAt = s.nextDueAt;
   } else if (usedHint) {

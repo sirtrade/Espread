@@ -3,6 +3,8 @@ import {
   advanceSrs,
   creditAllowedToday,
   intervalDaysForStage,
+  LAPSE_STAGE_DROP,
+  lapseSrs,
   PRACTICE_RETRY_MS,
   resetSrs,
   SRS_INTERVALS_DAYS,
@@ -41,6 +43,40 @@ describe("resetSrs", () => {
     const now = 5_000_000;
     const next = resetSrs(now, PRACTICE_RETRY_MS);
     expect(next.srsStage).toBe(0);
+    expect(next.nextDueAt).toBe(now + PRACTICE_RETRY_MS);
+    expect(next.nextDueAt).toBeLessThan(now + DAY);
+  });
+});
+
+describe("lapseSrs", () => {
+  const now = 5_000_000;
+
+  it("drops LAPSE_STAGE_DROP rungs instead of resetting to 0", () => {
+    expect(LAPSE_STAGE_DROP).toBe(2);
+    // A word deep on the ladder only steps back a couple rungs.
+    expect(lapseSrs(5, now).srsStage).toBe(3);
+    expect(lapseSrs(7, now).srsStage).toBe(5);
+  });
+
+  it("walks the whole ladder back two rungs at a time", () => {
+    expect(lapseSrs(0, now).srsStage).toBe(0);
+    expect(lapseSrs(1, now).srsStage).toBe(0);
+    expect(lapseSrs(2, now).srsStage).toBe(0);
+    expect(lapseSrs(3, now).srsStage).toBe(1);
+  });
+
+  it("never goes below stage 0", () => {
+    expect(lapseSrs(0, now).srsStage).toBe(0);
+    expect(lapseSrs(1, now).srsStage).toBe(0);
+  });
+
+  it("is due immediately by default (re-marked while reading)", () => {
+    expect(lapseSrs(4, now)).toEqual({ srsStage: 2, nextDueAt: now });
+  });
+
+  it("uses a short retry delay for a wrong quiz answer", () => {
+    const next = lapseSrs(5, now, PRACTICE_RETRY_MS);
+    expect(next.srsStage).toBe(3);
     expect(next.nextDueAt).toBe(now + PRACTICE_RETRY_MS);
     expect(next.nextDueAt).toBeLessThan(now + DAY);
   });

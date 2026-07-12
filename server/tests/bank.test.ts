@@ -124,20 +124,22 @@ describe("applyReviewToBank", () => {
     expect(result.get("casa")?.status).toBe("active");
   });
 
-  it("resets a top-rung word instead of graduating it when re-marked", () => {
+  it("soft-lapses a top-rung word instead of graduating it when re-marked", () => {
     const existing = new Map([["casa", item({ srsStage: SRS_INTERVALS_DAYS.length })]]);
     const result = applyReviewToBank(existing, ["casa"], [
       reviewed({ lemma: "casa", pos: "noun", gender: "f", translation: "house", freqBand: "top1000" }),
     ], undefined, 0, NOW);
-    expect(result.get("casa")).toMatchObject({ srsStage: 0, status: "active" });
+    // Drops two rungs (7 - 2), not a full reset to 0.
+    expect(result.get("casa")).toMatchObject({ srsStage: SRS_INTERVALS_DAYS.length - 2, status: "active" });
   });
 
-  it("resets the schedule when an active item is re-marked", () => {
+  it("soft-lapses the schedule when an active item is re-marked", () => {
     const existing = new Map([["casa", item({ exposures: 3, srsStage: 4, nextDueAt: NOW + 30 * DAY })]]);
     const result = applyReviewToBank(existing, ["casa"], [
       reviewed({ lemma: "casa", pos: "noun", gender: "f", translation: "house", freqBand: "top1000" }),
     ], undefined, 0, NOW);
-    expect(result.get("casa")).toMatchObject({ exposures: 4, srsStage: 0, nextDueAt: NOW, status: "active" });
+    // stage 4 - 2 = 2, due immediately for the next article.
+    expect(result.get("casa")).toMatchObject({ exposures: 4, srsStage: 2, nextDueAt: NOW, status: "active" });
   });
 
   it("moves an exposed active item to ignored if re-marked as rare", () => {
@@ -157,7 +159,8 @@ describe("applyReviewToBank", () => {
     const result = applyReviewToBank(existing, [], [
       reviewed({ lemma: "perro", pos: "noun", gender: "m", translation: "dog", freqBand: "top1000" }),
     ], undefined, 0, NOW);
-    expect(result.get("perro")).toMatchObject({ exposures: 2, srsStage: 0, nextDueAt: NOW, status: "active" });
+    // Re-marked: soft lapse from stage 3 to 1 (not a full reset), due now.
+    expect(result.get("perro")).toMatchObject({ exposures: 2, srsStage: 1, nextDueAt: NOW, status: "active" });
   });
 
   it("keeps existing surfaceForm/firstContext/contextTranslation when the new verdict has empty ones", () => {

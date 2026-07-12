@@ -291,7 +291,7 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
 | 1 | Выход из сессии + BackButton | P0 | готово (ветка `claude/retention-stages-1-3-6c6fss`) |
 | 2 | Подсказка по запросу + без кредита | P0 | готово (ветка `claude/retention-stages-1-3-6c6fss`) |
 | 3 | Повтор ошибок в сессии | P0 | готово (ветка `claude/retention-stages-1-3-6c6fss`) |
-| 4 | Мягкий откат вместо сброса | P1 | не начат |
+| 4 | Мягкий откат вместо сброса | P1 | готово (ветка `claude/retention-roadmap-stage-n-fn70m6`) |
 | 5 | Typed recall в webapp | P1 | не начат |
 | 6 | Понизить вес чтения | P1 | не начат |
 | 7 | Interleaving + анти-утечка | P2 | не начат |
