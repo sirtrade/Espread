@@ -1,7 +1,7 @@
-import { and, asc, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { bankItems, userStats } from "../schema.js";
-import type { BankItemRecord, BankStatus, PartOfSpeech } from "../../domain/bank.js";
+import { queuedPromotionCount, type BankItemRecord, type BankStatus, type PartOfSpeech } from "../../domain/bank.js";
 import { nextPracticeState, nextStreakState } from "../../domain/practice.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
@@ -111,6 +111,13 @@ export interface PracticeAnswerResult {
  * one credit per day; a wrong answer resets it). Promotion to "learned" bumps
  * userStats.itemsLearned in the same transaction — the same accounting as a
  * clean reading exposure in applyCompletion.
+ *
+ * A `becameLearned` here frees an active slot, but we deliberately do NOT
+ * rebalance the queue from this path: practice runs card-by-card with no
+ * queued-count surface to report back to the client. The freed slot is picked
+ * up by the next completeSession / bank PATCH / limit raise, all of which call
+ * rebalanceActivePool. Queued words never surface for practice anyway
+ * (getDueForPractice filters status=active), so nothing is lost by waiting.
  */
 export async function applyPracticeAnswer(
   userId: number,
@@ -240,4 +247,39 @@ export async function countBankByStatus(userId: number, status: BankStatus): Pro
     .from(bankItems)
     .where(and(eq(bankItems.userId, userId), eq(bankItems.status, status)));
   return row?.count ?? 0;
+}
+
+/**
+ * Refills the active pool from the queue: while there's room under `poolLimit`
+ * (0 = no limit), promotes the oldest queued words (createdAt ASC) to active.
+ * Idempotent and safe to call after anything that may free a slot (a word
+ * learned/ignored, a manual status change, a raised limit). Never demotes:
+ * an over-limit pool (e.g. after "Estudiar ahora") just promotes nothing.
+ * Returns the promoted lemmas, oldest first.
+ */
+export async function rebalanceActivePool(userId: number, poolLimit: number): Promise<string[]> {
+  const [activeCount, queuedCount] = await Promise.all([
+    countBankByStatus(userId, "active"),
+    countBankByStatus(userId, "queued"),
+  ]);
+  const promote = queuedPromotionCount(activeCount, queuedCount, poolLimit);
+  if (promote <= 0) return [];
+
+  const oldest = await db.query.bankItems.findMany({
+    where: and(eq(bankItems.userId, userId), eq(bankItems.status, "queued")),
+    orderBy: [asc(bankItems.createdAt), asc(bankItems.id)],
+    limit: promote,
+  });
+  if (oldest.length === 0) return [];
+
+  await db
+    .update(bankItems)
+    .set({ status: "active", updatedAt: Date.now() })
+    .where(
+      inArray(
+        bankItems.id,
+        oldest.map((r) => r.id),
+      ),
+    );
+  return oldest.map((r) => r.lemma);
 }

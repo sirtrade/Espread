@@ -11,6 +11,7 @@ export type UserPatch = Partial<{
   dailyEnabled: boolean;
   dailyTime: string;
   botQuizzesPerDay: number;
+  activePoolLimit: number;
   onboardedAt: number;
 }>;
 

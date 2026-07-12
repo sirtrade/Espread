@@ -9,6 +9,13 @@ import { ThemePicker } from "../components/ThemePicker.js";
 import { FontSizePicker } from "../components/FontSizePicker.js";
 
 const LEVELS: Level[] = ["A2", "B1", "B2", "C1"];
+const POOL_PRESETS: { value: number; label: string }[] = [
+  { value: 10, label: "10" },
+  { value: 20, label: "20" },
+  { value: 30, label: "30" },
+  { value: 50, label: "50" },
+  { value: 0, label: "Sin límite" },
+];
 const LANGS: { value: ExplainLang; label: string }[] = [
   { value: "ru", label: "Русский" },
   { value: "en", label: "English" },
@@ -25,6 +32,7 @@ export function Settings() {
   const [dailyEnabled, setDailyEnabled] = useState(profile!.dailyEnabled);
   const [dailyTime, setDailyTime] = useState(profile!.dailyTime);
   const [botQuizzesPerDay, setBotQuizzesPerDay] = useState(profile!.botQuizzesPerDay);
+  const [activePoolLimit, setActivePoolLimit] = useState(profile!.activePoolLimit);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -52,6 +60,7 @@ export function Settings() {
         dailyEnabled,
         dailyTime,
         botQuizzesPerDay,
+        activePoolLimit,
         timezone: deviceTimezone(),
       });
       setProfile(updated);
@@ -218,6 +227,28 @@ export function Settings() {
                 : `El bot te enviará ${botQuizzesPerDay} quiz(zes) entre las 09:00 y las 21:00.`}
             </p>
           </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-medium">Palabras en estudio</p>
+          <div className="grid grid-cols-5 gap-2">
+            {POOL_PRESETS.map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setActivePoolLimit(p.value)}
+                className={`rounded-xl px-2 py-3 text-sm font-medium ${
+                  p.value === activePoolLimit ? "bg-accent text-white" : "bg-surface"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-subtext">
+            {activePoolLimit === 0
+              ? "Sin límite: todas las palabras que guardes entran en estudio."
+              : `Mantendrás hasta ${activePoolLimit} palabras en estudio a la vez. Las demás esperan en cola y entran a medida que dominas o descartas otras.`}
+          </p>
         </div>
 
         {message && <p className="text-sm text-teal">{message}</p>}

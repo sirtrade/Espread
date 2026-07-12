@@ -22,6 +22,8 @@ export const patchMeSchema = z.object({
     .optional(),
   markOnboarded: z.boolean().optional(),
   botQuizzesPerDay: z.number().int().min(0).max(12).optional(),
+  // Active-pool cap: 0 = no limit, otherwise how many words may be in study.
+  activePoolLimit: z.number().int().min(0).max(200).optional(),
 });
 
 // Práctica answers carry an itemId; the post-reading Quiz carries a lemma
@@ -67,9 +69,9 @@ export const completeSessionSchema = z.object({
 });
 
 export const bankQuerySchema = z.object({
-  status: z.enum(["active", "learned", "ignored"]).optional(),
+  status: z.enum(["active", "learned", "ignored", "queued"]).optional(),
 });
 
 export const patchBankItemSchema = z.object({
-  status: z.enum(["active", "learned", "ignored"]),
+  status: z.enum(["active", "learned", "ignored", "queued"]),
 });

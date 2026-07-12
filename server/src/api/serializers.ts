@@ -16,6 +16,7 @@ export function serializeProfile(user: UserRow, topics: string[]) {
     dailyEnabled: user.dailyEnabled,
     dailyTime: user.dailyTime,
     botQuizzesPerDay: user.botQuizzesPerDay,
+    activePoolLimit: user.activePoolLimit,
     onboarded: user.onboardedAt !== null,
   };
 }
@@ -78,6 +79,8 @@ export function serializeBankItem(item: BankItemRow) {
     contextTranslation: item.contextTranslation,
     distractors: item.distractors ? (JSON.parse(item.distractors) as string[]) : null,
     freqBand: item.freqBand,
+    nextPracticeAt: item.nextPracticeAt,
+    practiceStage: item.practiceStage,
     updatedAt: item.updatedAt,
   };
 }

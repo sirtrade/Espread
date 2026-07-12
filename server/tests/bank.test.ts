@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyReviewToBank,
+  queuedPromotionCount,
   selectTargetTerms,
   statusForFreqBand,
   type BankItemRecord,
@@ -158,6 +159,89 @@ describe("applyReviewToBank", () => {
       firstContext: "vive en una casa azul",
       contextTranslation: "lives in a blue house",
     });
+  });
+});
+
+describe("applyReviewToBank with an active-pool limit", () => {
+  /** A bank map preloaded with `n` distinct active words (a0..a{n-1}). */
+  function activeBank(n: number): Map<string, BankItemRecord> {
+    const map = new Map<string, BankItemRecord>();
+    for (let i = 0; i < n; i++) map.set(`a${i}`, item({ lemma: `a${i}` }));
+    return map;
+  }
+
+  it("keeps every accepted word active when the limit is 0 (no limit)", () => {
+    const result = applyReviewToBank(activeBank(30), [], [reviewed({ lemma: "nuevo" })], undefined, 0);
+    expect(result.get("nuevo")?.status).toBe("active");
+  });
+
+  it("queues a new frequent word once the active pool is full", () => {
+    const result = applyReviewToBank(activeBank(20), [], [reviewed({ lemma: "nuevo" })], undefined, 20);
+    expect(result.get("nuevo")?.status).toBe("queued");
+    // The queued word still gets its full card so it's ready to study later.
+    expect(result.get("nuevo")).toMatchObject({ translation: "to get up early", freqBand: "top5000", exposures: 1 });
+  });
+
+  it("still activates a new word when there is exactly one free slot", () => {
+    const result = applyReviewToBank(activeBank(19), [], [reviewed({ lemma: "nuevo" })], undefined, 20);
+    expect(result.get("nuevo")?.status).toBe("active");
+  });
+
+  it("fills the last free slots in reviewed order, queuing the overflow", () => {
+    const result = applyReviewToBank(
+      activeBank(18),
+      [],
+      [reviewed({ lemma: "first" }), reviewed({ lemma: "second" }), reviewed({ lemma: "third" })],
+      undefined,
+      20,
+    );
+    expect(result.get("first")?.status).toBe("active");
+    expect(result.get("second")?.status).toBe("active");
+    expect(result.get("third")?.status).toBe("queued");
+  });
+
+  it("lets an already-active word keep its slot when re-marked at the limit", () => {
+    const bank = activeBank(20);
+    // Re-mark one of the existing active words; it must NOT be pushed to queue.
+    const result = applyReviewToBank(bank, [], [reviewed({ lemma: "a0", freqBand: "top1000" })], undefined, 20);
+    expect(result.get("a0")?.status).toBe("active");
+  });
+
+  it("gives a slot freed by a same-session promotion to a new word", () => {
+    // a0 is on its 3rd clean exposure -> becomes learned, freeing one slot.
+    const bank = activeBank(20);
+    bank.set("a0", item({ lemma: "a0", exposures: 3, cleanStreak: 2 }));
+    const result = applyReviewToBank(bank, ["a0"], [reviewed({ lemma: "nuevo" })], undefined, 20);
+    expect(result.get("a0")?.status).toBe("learned");
+    expect(result.get("nuevo")?.status).toBe("active");
+  });
+
+  it("ignores rejected/rare words regardless of the limit", () => {
+    const result = applyReviewToBank(
+      activeBank(20),
+      [],
+      [reviewed({ lemma: "raro", freqBand: "rare" }), reviewed({ lemma: "frecuente", freqBand: "top1000" })],
+      { accepted: new Set<string>(), rejected: new Set(["frecuente"]) },
+      20,
+    );
+    expect(result.get("raro")?.status).toBe("ignored");
+    expect(result.get("frecuente")?.status).toBe("ignored");
+  });
+});
+
+describe("queuedPromotionCount", () => {
+  it("promotes only up to the free slots under the limit", () => {
+    expect(queuedPromotionCount(18, 5, 20)).toBe(2);
+    expect(queuedPromotionCount(20, 5, 20)).toBe(0);
+    expect(queuedPromotionCount(19, 0, 20)).toBe(0);
+  });
+
+  it("never promotes when the pool is over the limit (no demotion)", () => {
+    expect(queuedPromotionCount(25, 3, 20)).toBe(0);
+  });
+
+  it("drains the whole queue when there is no limit", () => {
+    expect(queuedPromotionCount(50, 7, 0)).toBe(7);
   });
 });
 

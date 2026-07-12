@@ -1,6 +1,6 @@
 export type Level = "A2" | "B1" | "B2" | "C1";
 export type ExplainLang = "ru" | "en" | "es";
-export type BankStatus = "active" | "learned" | "ignored";
+export type BankStatus = "active" | "learned" | "ignored" | "queued";
 
 export interface Profile {
   id: number;
@@ -13,6 +13,8 @@ export interface Profile {
   dailyEnabled: boolean;
   dailyTime: string;
   botQuizzesPerDay: number;
+  /** cap on words in study at once (0 = no limit) */
+  activePoolLimit: number;
   onboarded: boolean;
 }
 
@@ -125,6 +127,8 @@ export function isArchivedReviewResult(
 
 export interface CompleteResult {
   newlyLearned: string[];
+  /** lemmas parked in the queue because the active pool was full */
+  queued: string[];
   articlesRead: number;
 }
 
@@ -145,10 +149,8 @@ export interface BankItem {
   distractors: string[] | null;
   freqBand: FreqBand | null;
   updatedAt: number;
-  /** SRS repetition timer. NOTE: `serializeBankItem` on the server does not
-   *  currently emit these, so they arrive `undefined` and the detail card
-   *  falls back to "Repaso pronto". Optional until the server serializes them
-   *  (raised in the PR rather than changing the server here). */
+  /** SRS repetition timer, emitted by `serializeBankItem`. Optional because
+   *  legacy rows may not have practiced yet (`nextPracticeAt` null). */
   nextPracticeAt?: number | null;
   practiceStage?: number;
 }
@@ -172,6 +174,9 @@ export interface Stats {
   articlesRead: number;
   itemsInProgress: number;
   itemsLearned: number;
+  itemsQueued: number;
+  /** cap on words in study at once (0 = no limit) */
+  activePoolLimit: number;
 }
 
 export interface PracticeCard {

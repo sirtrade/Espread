@@ -54,10 +54,12 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
   let reviewSession: typeof import("../src/services/sessionService.js").reviewSession;
   let completeSession: typeof import("../src/services/sessionService.js").completeSession;
   let findOrCreateUser: typeof import("../src/db/repositories/users.js").findOrCreateUser;
+  let updateUser: typeof import("../src/db/repositories/users.js").updateUser;
   let setUserTopics: typeof import("../src/db/repositories/topics.js").setUserTopics;
   let updateSessionMarks: typeof import("../src/db/repositories/sessions.js").updateSessionMarks;
   let getBankItems: typeof import("../src/db/repositories/bank.js").getBankItems;
   let setBankItemStatus: typeof import("../src/db/repositories/bank.js").setBankItemStatus;
+  let rebalanceActivePool: typeof import("../src/db/repositories/bank.js").rebalanceActivePool;
   let getArticleById: typeof import("../src/db/repositories/articles.js").getArticleById;
   let listReadArticles: typeof import("../src/db/repositories/articles.js").listReadArticles;
 
@@ -68,10 +70,10 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
 
     ({ startReading } = await import("../src/services/articleService.js"));
     ({ reviewSession, completeSession } = await import("../src/services/sessionService.js"));
-    ({ findOrCreateUser } = await import("../src/db/repositories/users.js"));
+    ({ findOrCreateUser, updateUser } = await import("../src/db/repositories/users.js"));
     ({ setUserTopics } = await import("../src/db/repositories/topics.js"));
     ({ updateSessionMarks } = await import("../src/db/repositories/sessions.js"));
-    ({ getBankItems, setBankItemStatus } = await import("../src/db/repositories/bank.js"));
+    ({ getBankItems, setBankItemStatus, rebalanceActivePool } = await import("../src/db/repositories/bank.js"));
     ({ getArticleById, listReadArticles } = await import("../src/db/repositories/articles.js"));
 
     const user = await findOrCreateUser(999001, "smoketest");
@@ -385,6 +387,112 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     expect(active.map((i) => i.lemma)).toEqual(["bioluminiscencia"]);
     const ignored = await getBankItems(user.id, "ignored");
     expect(ignored).toHaveLength(0);
+  });
+
+  it("queues accepted words past the active-pool limit and reports them", async () => {
+    const user = await findOrCreateUser(999008, "pooltest");
+    await setUserTopics(user.id, ["Sociedad"]);
+    await updateUser(user.id, { activePoolLimit: 1 });
+
+    const sentence = "El gobierno anunció una reforma tras un largo debate.";
+    mockSearchAndWrite("Política al día", `${sentence} Las reacciones no se hicieron esperar.`);
+    const { session } = await startReading(user.id);
+
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "reforma",
+            lemma: "reforma",
+            pos: "noun",
+            gender: "f",
+            translation: "reform",
+            note: null,
+            contextTranslation: "The government announced a reform.",
+            freqBand: "top1000",
+            distractors: ["ley", "norma", "medida"],
+          },
+          {
+            surface: "debate",
+            lemma: "debate",
+            pos: "noun",
+            gender: "m",
+            translation: "debate",
+            note: null,
+            contextTranslation: "after a long debate",
+            freqBand: "top1000",
+            distractors: ["charla", "discurso", "acuerdo"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(session.id, [
+      { text: "reforma", sentence, kind: "word" },
+      { text: "debate", sentence, kind: "word" },
+    ]);
+    await reviewSession(user.id);
+    const result = await completeSession(user.id);
+
+    // Limit 1: the first accepted word (reviewed order) takes the slot, the
+    // second is parked in the queue and surfaced in the result.
+    expect(result.queued).toEqual(["debate"]);
+    const active = await getBankItems(user.id, "active");
+    expect(active.map((i) => i.lemma)).toEqual(["reforma"]);
+    const queued = await getBankItems(user.id, "queued");
+    expect(queued.map((i) => i.lemma)).toEqual(["debate"]);
+  });
+
+  it("promotes the queued word once the active one is learned or discarded", async () => {
+    const user = await findOrCreateUser(999009, "promotetest");
+    await setUserTopics(user.id, ["Sociedad"]);
+    await updateUser(user.id, { activePoolLimit: 1 });
+
+    const sentence = "La empresa lanzó un producto y ganó un premio importante.";
+    mockSearchAndWrite("Negocios", `${sentence} El mercado respondió bien.`);
+    const { session } = await startReading(user.id);
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "producto",
+            lemma: "producto",
+            pos: "noun",
+            gender: "m",
+            translation: "product",
+            note: null,
+            contextTranslation: "launched a product",
+            freqBand: "top1000",
+            distractors: ["servicio", "objeto", "bien"],
+          },
+          {
+            surface: "premio",
+            lemma: "premio",
+            pos: "noun",
+            gender: "m",
+            translation: "prize",
+            note: null,
+            contextTranslation: "won a prize",
+            freqBand: "top1000",
+            distractors: ["regalo", "trofeo", "honor"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(session.id, [
+      { text: "producto", sentence, kind: "word" },
+      { text: "premio", sentence, kind: "word" },
+    ]);
+    await reviewSession(user.id);
+    await completeSession(user.id);
+    expect((await getBankItems(user.id, "queued")).map((i) => i.lemma)).toEqual(["premio"]);
+
+    // Discard the active word manually — the queue should refill on rebalance.
+    const producto = (await getBankItems(user.id, "active")).find((i) => i.lemma === "producto")!;
+    await setBankItemStatus(user.id, producto.id, "ignored");
+    const promoted = await rebalanceActivePool(user.id, 1);
+    expect(promoted).toEqual(["premio"]);
+    expect((await getBankItems(user.id, "active")).map((i) => i.lemma)).toEqual(["premio"]);
+    expect(await getBankItems(user.id, "queued")).toHaveLength(0);
   });
 
   it("reports woven-word progress: clean streak untouched, re-marked word flagged", async () => {

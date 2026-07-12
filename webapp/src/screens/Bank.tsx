@@ -9,6 +9,7 @@ import { POS_LABEL, displayLemma, highlightSurface } from "../lib/vocab.js";
 
 const TABS: { value: BankStatus; label: string }[] = [
   { value: "active", label: "En progreso" },
+  { value: "queued", label: "En cola" },
   { value: "learned", label: "Aprendidas" },
   { value: "ignored", label: "Descartadas" },
 ];
@@ -97,7 +98,7 @@ export function Bank() {
         <h1 className="text-xl font-semibold">Tu banco de palabras</h1>
       </div>
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
             key={t.value}
@@ -127,6 +128,7 @@ export function Bank() {
       ) : items.length === 0 ? (
         <p className="text-sm text-subtext">
           {tab === "active" && "No hay palabras en progreso. ¡Marca palabras mientras lees!"}
+          {tab === "queued" && "No hay palabras en cola. Se llena al superar tu límite de palabras en estudio."}
           {tab === "learned" && "Aún no hay palabras aprendidas. Llegarán con la práctica."}
           {tab === "ignored" && "No hay palabras descartadas."}
         </p>
@@ -217,8 +219,14 @@ function BankDetail({
         {item.status === "active" && <span>{nextPracticeLabel(item.nextPracticeAt)}</span>}
       </div>
 
+      {item.status === "queued" && (
+        <p className="mt-3 text-xs text-subtext">
+          En cola: entrará en estudio automáticamente cuando se libere un lugar, o actívala ahora mismo.
+        </p>
+      )}
+
       <div className="mt-4 flex gap-2">
-        {item.status === "active" ? (
+        {item.status === "active" && (
           <>
             <DetailButton disabled={busy} onClick={() => onChangeStatus(item, "learned")}>
               Ya la sé
@@ -227,7 +235,13 @@ function BankDetail({
               Descartar
             </DetailButton>
           </>
-        ) : (
+        )}
+        {item.status === "queued" && (
+          <DetailButton disabled={busy} onClick={() => onChangeStatus(item, "active")}>
+            Estudiar ahora
+          </DetailButton>
+        )}
+        {(item.status === "learned" || item.status === "ignored") && (
           <DetailButton disabled={busy} onClick={() => onChangeStatus(item, "active")}>
             Practicar de nuevo
           </DetailButton>
