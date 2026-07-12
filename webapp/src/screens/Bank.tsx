@@ -5,14 +5,10 @@ import type { BankItem, BankStatus } from "../api/types.js";
 import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { hapticSelect } from "../telegram/telegram.js";
-import { POS_LABEL, displayLemma, highlightSurface } from "../lib/vocab.js";
+import { posLabel, displayLemma, highlightSurface } from "../lib/vocab.js";
+import { useT, t, type Lang } from "../lib/i18n.js";
 
-const TABS: { value: BankStatus; label: string }[] = [
-  { value: "active", label: "En progreso" },
-  { value: "queued", label: "En cola" },
-  { value: "learned", label: "Aprendidas" },
-  { value: "ignored", label: "Descartadas" },
-];
+const TAB_VALUES: BankStatus[] = ["active", "queued", "learned", "ignored"];
 
 const LEARNED_STREAK = 3;
 
@@ -21,19 +17,20 @@ const SEARCH_THRESHOLD = 10;
 
 /** SRS timer -> a short human line. The server may not send `nextPracticeAt`
  *  yet, so `undefined`/`null` both read as "coming soon". */
-function nextPracticeLabel(at: number | null | undefined): string {
-  if (at == null) return "Repaso pronto";
+function nextPracticeLabel(lang: Lang, at: number | null | undefined): string {
+  if (at == null) return t(lang, "bank.nextPractice.soon");
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const target = new Date(at);
   const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
   const days = Math.round((startOfTarget - startOfToday) / 86_400_000);
-  if (days <= 0) return "Repaso hoy";
-  if (days === 1) return "Repaso mañana";
-  return `Repaso en ${days} días`;
+  if (days <= 0) return t(lang, "bank.nextPractice.today");
+  if (days === 1) return t(lang, "bank.nextPractice.tomorrow");
+  return t(lang, "bank.nextPractice.inDays", { count: days });
 }
 
 export function Bank() {
+  const { t } = useT();
   const navigate = useNavigate();
   const [tab, setTab] = useState<BankStatus>("active");
   const [items, setItems] = useState<BankItem[]>([]);
@@ -50,7 +47,7 @@ export function Bank() {
       const { items: rows } = await api.getBank(status);
       setItems(rows);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar tu banco");
+      setError(err instanceof Error ? err.message : t("bank.loadError"));
     } finally {
       setLoading(false);
     }
@@ -70,7 +67,7 @@ export function Bank() {
       setItems((prev) => prev.filter((i) => i.id !== item.id));
       setOpenId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo actualizar la palabra");
+      setError(err instanceof Error ? err.message : t("bank.updateError"));
     } finally {
       setBusyId(null);
     }
@@ -95,19 +92,19 @@ export function Bank() {
         <button onClick={() => navigate(-1)} className="text-subtext">
           ←
         </button>
-        <h1 className="text-xl font-semibold">Tu banco de palabras</h1>
+        <h1 className="text-xl font-semibold">{t("bank.title")}</h1>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {TABS.map((t) => (
+        {TAB_VALUES.map((value) => (
           <button
-            key={t.value}
-            onClick={() => setTab(t.value)}
+            key={value}
+            onClick={() => setTab(value)}
             className={`rounded-full px-4 py-1.5 text-xs font-medium ${
-              tab === t.value ? "bg-accent text-white" : "bg-surface text-subtext"
+              tab === value ? "bg-accent text-white" : "bg-surface text-subtext"
             }`}
           >
-            {t.label}
+            {t(`bank.tab.${value}`)}
           </button>
         ))}
       </div>
@@ -116,24 +113,19 @@ export function Bank() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar palabra o traducción"
+          placeholder={t("bank.search")}
           className="mb-3 w-full rounded-xl bg-surface px-4 py-2 text-sm outline-none placeholder:text-subtext"
         />
       )}
 
       {loading ? (
-        <Spinner label="Cargando palabras..." />
+        <Spinner label={t("bank.loading")} />
       ) : error && items.length === 0 ? (
         <ErrorState message={error} onRetry={() => load(tab)} />
       ) : items.length === 0 ? (
-        <p className="text-sm text-subtext">
-          {tab === "active" && "No hay palabras en progreso. ¡Marca palabras mientras lees!"}
-          {tab === "queued" && "No hay palabras en cola. Se llena al superar tu límite de palabras en estudio."}
-          {tab === "learned" && "Aún no hay palabras aprendidas. Llegarán con la práctica."}
-          {tab === "ignored" && "No hay palabras descartadas."}
-        </p>
+        <p className="text-sm text-subtext">{t(`bank.empty.${tab}`)}</p>
       ) : filtered.length === 0 ? (
-        <p className="text-sm text-subtext">No hay palabras que coincidan con «{query}».</p>
+        <p className="text-sm text-subtext">{t("bank.noMatch", { query })}</p>
       ) : (
         <ul className="flex flex-col gap-1.5 pb-8">
           {error && <p className="text-xs text-red-500">{error}</p>}
@@ -148,7 +140,9 @@ export function Bank() {
                   <span className="flex items-baseline gap-2">
                     <span className="truncate font-medium">{displayLemma(item)}</span>
                     {item.pos === "phrase" && (
-                      <span className="shrink-0 text-[0.65rem] uppercase tracking-wide text-subtext">frase</span>
+                      <span className="shrink-0 text-[0.65rem] uppercase tracking-wide text-subtext">
+                        {t("pos.phrase")}
+                      </span>
                     )}
                   </span>
                   {item.translation && (
@@ -156,7 +150,7 @@ export function Bank() {
                   )}
                 </span>
                 {tab === "active" && (
-                  <span className="flex shrink-0 gap-0.5" title={`${item.cleanStreak}/${LEARNED_STREAK} encuentros limpios`}>
+                  <span className="flex shrink-0 gap-0.5" title={t("bank.cleanStreakTitle", { n: item.cleanStreak, total: LEARNED_STREAK })}>
                     {[0, 1, 2].map((i) => (
                       <span
                         key={i}
@@ -187,13 +181,14 @@ function BankDetail({
   busy: boolean;
   onChangeStatus: (item: BankItem, status: BankStatus) => void;
 }) {
+  const { t, lang } = useT();
   return (
     <div className="border-subtle-light border-t px-4 py-4">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-lg font-semibold">{displayLemma(item)}</span>
-        <span className="text-sm text-subtext">· {POS_LABEL[item.pos] ?? "palabra"}</span>
+        <span className="text-sm text-subtext">· {posLabel(lang, item.pos)}</span>
         {item.freqBand === "rare" && (
-          <span className="badge-amber rounded-full px-2 py-0.5 text-xs font-medium text-text">poco frecuente</span>
+          <span className="badge-amber rounded-full px-2 py-0.5 text-xs font-medium text-text">{t("review.rare")}</span>
         )}
       </div>
 
@@ -209,41 +204,37 @@ function BankDetail({
 
       <div className="mt-4 flex items-center justify-between text-xs text-subtext">
         <span className="flex items-center gap-1.5">
-          Encuentros {Math.min(item.cleanStreak, LEARNED_STREAK)}/{LEARNED_STREAK}
+          {t("bank.encounters", { n: Math.min(item.cleanStreak, LEARNED_STREAK), total: LEARNED_STREAK })}
           <span className="flex gap-0.5">
             {Array.from({ length: LEARNED_STREAK }, (_, i) => (
               <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < item.cleanStreak ? "bg-amber" : "dot-empty"}`} />
             ))}
           </span>
         </span>
-        {item.status === "active" && <span>{nextPracticeLabel(item.nextPracticeAt)}</span>}
+        {item.status === "active" && <span>{nextPracticeLabel(lang, item.nextPracticeAt)}</span>}
       </div>
 
-      {item.status === "queued" && (
-        <p className="mt-3 text-xs text-subtext">
-          En cola: entrará en estudio automáticamente cuando se libere un lugar, o actívala ahora mismo.
-        </p>
-      )}
+      {item.status === "queued" && <p className="mt-3 text-xs text-subtext">{t("bank.queuedNote")}</p>}
 
       <div className="mt-4 flex gap-2">
         {item.status === "active" && (
           <>
             <DetailButton disabled={busy} onClick={() => onChangeStatus(item, "learned")}>
-              Ya la sé
+              {t("bank.knowIt")}
             </DetailButton>
             <DetailButton disabled={busy} onClick={() => onChangeStatus(item, "ignored")}>
-              Descartar
+              {t("bank.discard")}
             </DetailButton>
           </>
         )}
         {item.status === "queued" && (
           <DetailButton disabled={busy} onClick={() => onChangeStatus(item, "active")}>
-            Estudiar ahora
+            {t("bank.studyNow")}
           </DetailButton>
         )}
         {(item.status === "learned" || item.status === "ignored") && (
           <DetailButton disabled={busy} onClick={() => onChangeStatus(item, "active")}>
-            Practicar de nuevo
+            {t("bank.practiceAgain")}
           </DetailButton>
         )}
       </div>

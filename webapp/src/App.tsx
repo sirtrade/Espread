@@ -12,11 +12,14 @@ import { History } from "./screens/History.js";
 import { HistoryArticle } from "./screens/HistoryArticle.js";
 import { Quiz } from "./screens/Quiz.js";
 import { Practice } from "./screens/Practice.js";
+import { t } from "./lib/i18n.js";
+import { initialLang } from "./telegram/telegram.js";
 
 function Gate() {
   const { profile, loading, error, retry } = useAuth();
+  const lang = profile?.explainLang ?? initialLang();
 
-  if (loading) return <Spinner label="Conectando con Telegram..." />;
+  if (loading) return <Spinner label={t(lang, "gate.connecting")} />;
   if (error) return <ErrorState message={error} onRetry={retry} />;
   if (!profile) return null;
   if (!profile.onboarded) return <Onboarding />;

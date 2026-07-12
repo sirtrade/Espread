@@ -1,4 +1,5 @@
 import type { Pos } from "../api/types.js";
+import { t, type Lang } from "./i18n.js";
 
 /** The minimal shape needed to render a lemma with its article/part of speech.
  *  Shared by the Review, Bank and reading-history screens so they read alike. */
@@ -8,14 +9,12 @@ export interface LemmaLike {
   gender: "m" | "f" | null;
 }
 
-export const POS_LABEL: Record<Pos, string> = {
-  verb: "verbo",
-  noun: "sustantivo",
-  adj: "adjetivo",
-  adv: "adverbio",
-  phrase: "frase",
-  other: "palabra",
-};
+/** Grammatical term shown on cards ("verbo" / "глагол" / "verb"), localized to
+ *  the chrome language. The el/la article on the lemma itself stays Spanish —
+ *  that's learning content, not chrome. */
+export function posLabel(lang: Lang, pos: Pos): string {
+  return t(lang, `pos.${pos}`);
+}
 
 /** Big lemma line: nouns carry their article so gender reads at a glance
  *  ("el lanzamiento" / "la expectativa"); everything else shows the plain

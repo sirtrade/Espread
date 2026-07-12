@@ -1,4 +1,6 @@
 import { retrieveRawInitData } from "@telegram-apps/sdk-react";
+import { t } from "../lib/i18n.js";
+import { initialLang } from "../telegram/telegram.js";
 import type {
   Article,
   BankItem,
@@ -85,7 +87,7 @@ async function request<T>(path: string, opts: RequestInit = {}, isRetry = false)
   try {
     res = await fetch(`/api${path}`, { ...opts, headers: { ...headers, ...(opts.headers as Record<string, string>) } });
   } catch {
-    throw new ApiRequestError("No se pudo conectar con el servidor. Revisa tu conexión.", "network_error", 0);
+    throw new ApiRequestError(t(initialLang(), "error.network"), "network_error", 0);
   }
 
   if (res.status === 401 && !isRetry && !path.startsWith("/auth/") && (await reauthWithTelegram())) {
@@ -95,7 +97,7 @@ async function request<T>(path: string, opts: RequestInit = {}, isRetry = false)
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new ApiRequestError(
-      body?.error?.message ?? "Ocurrió un error inesperado",
+      body?.error?.message ?? t(initialLang(), "error.unexpected"),
       body?.error?.code ?? "unknown",
       res.status,
     );

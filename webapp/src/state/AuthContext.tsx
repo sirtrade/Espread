@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { retrieveRawInitData } from "@telegram-apps/sdk-react";
 import { api, loadStoredToken, setToken } from "../api/client.js";
 import type { Profile } from "../api/types.js";
+import { t } from "../lib/i18n.js";
+import { initialLang } from "../telegram/telegram.js";
 
 interface AuthState {
   profile: Profile | null;
@@ -45,13 +47,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           rawInitData = undefined;
         }
         if (!rawInitData) {
-          throw new Error("No se pudo obtener la sesión de Telegram. Abre la app desde el bot @Lector.");
+          throw new Error(t(initialLang(), "auth.noSession"));
         }
         const { token, profile: fresh } = await api.authTelegram(rawInitData);
         setToken(token);
         if (!cancelled) setProfile(fresh);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Error de autenticación");
+        if (!cancelled) setError(err instanceof Error ? err.message : t(initialLang(), "auth.failed"));
       } finally {
         if (!cancelled) setLoading(false);
       }

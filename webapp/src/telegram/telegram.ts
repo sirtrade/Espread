@@ -10,7 +10,9 @@ import {
   hapticFeedbackNotificationOccurred,
   showPopup,
   isPopupSupported,
+  retrieveLaunchParams,
 } from "@telegram-apps/sdk-react";
+import type { ExplainLang } from "../api/types.js";
 
 /** True once bootstrapTelegram() ran inside an actual Telegram WebView. */
 let inTelegram = false;
@@ -47,6 +49,22 @@ function safeIsDark(): boolean {
   } catch {
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
+}
+
+/** Best-effort UI language before the user has picked one (Onboarding, the
+ *  auth gate, network errors): derived from Telegram's `user.language_code`.
+ *  Russian and Spanish map to themselves; everything else falls back to English. */
+export function initialLang(): ExplainLang {
+  let code: string | undefined;
+  try {
+    code = retrieveLaunchParams(true).tgWebAppData?.user?.languageCode;
+  } catch {
+    code = undefined;
+  }
+  const base = (code ?? "").slice(0, 2).toLowerCase();
+  if (base === "ru") return "ru";
+  if (base === "es") return "es";
+  return "en";
 }
 
 export function hapticSelect(): void {

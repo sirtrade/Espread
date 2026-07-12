@@ -4,15 +4,15 @@ import { api } from "../api/client.js";
 import type { HistoryItem } from "../api/types.js";
 import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
+import { useT, locale } from "../lib/i18n.js";
 
 const PAGE_SIZE = 20;
 
-function formatDate(ts: number): string {
-  return new Date(ts).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" });
-}
-
 export function History() {
+  const { t, lang } = useT();
   const navigate = useNavigate();
+  const formatDate = (ts: number) =>
+    new Date(ts).toLocaleDateString(locale(lang), { day: "numeric", month: "short", year: "numeric" });
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -27,7 +27,7 @@ export function History() {
       setItems(page);
       setTotal(t);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar tu historial");
+      setError(err instanceof Error ? err.message : t("history.loadError"));
     } finally {
       setLoading(false);
     }
@@ -51,20 +51,20 @@ export function History() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (loading) return <Spinner label="Cargando tu historial..." />;
+  if (loading) return <Spinner label={t("history.loading")} />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Historial</h1>
-        <button onClick={() => navigate("/")} className="text-sm text-subtext" aria-label="Volver">
-          ← Inicio
+        <h1 className="text-xl font-semibold">{t("home.history")}</h1>
+        <button onClick={() => navigate("/")} className="text-sm text-subtext" aria-label={t("history.backHome")}>
+          {t("history.backHome")}
         </button>
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-subtext">Aún no terminaste ninguna lectura. ¡Tu historial aparecerá aquí!</p>
+        <p className="text-sm text-subtext">{t("history.empty")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {items.map((item) => (
@@ -75,8 +75,9 @@ export function History() {
               >
                 <p className="font-medium">{item.title}</p>
                 <p className="mt-1 text-xs text-subtext">
-                  {item.topic} · {formatDate(item.readAt)} · {item.markedWordsCount} palabras ·{" "}
-                  {item.markedSentsCount} frases
+                  {item.topic} · {formatDate(item.readAt)} ·{" "}
+                  {t("history.wordsCount", { count: item.markedWordsCount })} ·{" "}
+                  {t("history.sentsCount", { count: item.markedSentsCount })}
                 </p>
               </button>
             </li>
@@ -86,7 +87,7 @@ export function History() {
 
       {items.length < total && (
         <button onClick={loadMore} disabled={loadingMore} className="mt-4 text-sm text-subtext underline">
-          {loadingMore ? "Cargando..." : "Mostrar más"}
+          {loadingMore ? t("common.loading") : t("history.loadMore")}
         </button>
       )}
     </div>

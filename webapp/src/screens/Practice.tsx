@@ -8,11 +8,13 @@ import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { hapticSuccess } from "../telegram/telegram.js";
+import { useT } from "../lib/i18n.js";
 
 /** Spaced-repetition practice: cloze/recall cards over due bank items, with
  *  an optional free-writing exercise (LLM-checked) after each card. Answers
  *  count toward the learning streak like the post-reading quiz. */
 export function Practice() {
+  const { t } = useT();
   const navigate = useNavigate();
   const [rawCards, setRawCards] = useState<PracticeCard[]>([]);
   const [due, setDue] = useState(0);
@@ -36,7 +38,7 @@ export function Practice() {
       setRawCards(c);
       setDue(d);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar la práctica");
+      setError(err instanceof Error ? err.message : t("practice.loadError"));
     } finally {
       setLoading(false);
     }
@@ -62,31 +64,29 @@ export function Practice() {
       setCheckResult(result);
       if (result.ok) hapticSuccess();
     } catch (err) {
-      setCheckError(err instanceof Error ? err.message : "No se pudo revisar la frase");
+      setCheckError(err instanceof Error ? err.message : t("practice.checkError"));
     } finally {
       setChecking(false);
     }
   }
 
-  if (loading) return <Spinner label="Preparando tu práctica..." />;
+  if (loading) return <Spinner label={t("practice.loading")} />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   if (cards.length === 0) {
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-5 py-6 text-center">
         <p className="mb-2 text-4xl">🌵</p>
-        <p className="mb-1 font-medium">Nada que practicar por ahora</p>
-        <p className="mb-6 text-sm text-subtext">
-          Las palabras aparecen aquí cuando les toca repaso. ¡Sigue leyendo para llenar tu banco!
-        </p>
-        <Button onClick={() => navigate("/")}>Volver al inicio</Button>
+        <p className="mb-1 font-medium">{t("practice.emptyTitle")}</p>
+        <p className="mb-6 text-sm text-subtext">{t("practice.emptyBody")}</p>
+        <Button onClick={() => navigate("/")}>{t("common.backHome")}</Button>
       </div>
     );
   }
 
   return (
     <QuizSession
-      title="Práctica"
+      title={t("practice.title")}
       cards={cards}
       pendingCount={due}
       onAnswer={(card, correct) => api.postPracticeAnswer({ itemId: card.itemId! }, correct)}
@@ -98,7 +98,7 @@ export function Practice() {
           <>
             {!showWriting && (
               <button onClick={() => setShowWriting(true)} className="mt-4 text-left text-sm text-subtext underline">
-                ✍️ Escribir una frase con «{card.lemma}»
+                {t("practice.writeSentence", { lemma: card.lemma })}
               </button>
             )}
             {showWriting && (
@@ -106,7 +106,7 @@ export function Practice() {
                 <textarea
                   value={sentence}
                   onChange={(e) => setSentence(e.target.value)}
-                  placeholder={`Escribe una frase usando «${card.lemma}»...`}
+                  placeholder={t("practice.writePlaceholder", { lemma: card.lemma })}
                   rows={3}
                   className="border-subtle w-full rounded-xl border bg-surface px-3 py-2 text-sm outline-none"
                 />
@@ -116,7 +116,7 @@ export function Practice() {
                     onClick={() => checkSentence(card.itemId!)}
                     disabled={checking || sentence.trim().length < 3}
                   >
-                    {checking ? "Revisando..." : "Revisar"}
+                    {checking ? t("practice.checking") : t("practice.check")}
                   </Button>
                   {checkError && <p className="text-xs text-red-500">{checkError}</p>}
                 </div>
@@ -128,7 +128,7 @@ export function Practice() {
                     </p>
                     {checkResult.corrected && (
                       <p className="mt-1 text-subtext">
-                        Mejor: <span className="font-medium text-text">{checkResult.corrected}</span>
+                        {t("practice.better")} <span className="font-medium text-text">{checkResult.corrected}</span>
                       </p>
                     )}
                   </div>

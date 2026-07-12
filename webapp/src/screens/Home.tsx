@@ -7,8 +7,10 @@ import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { BankChip } from "../components/BankChip.js";
 import { hapticImpact } from "../telegram/telegram.js";
+import { useT } from "../lib/i18n.js";
 
 export function Home() {
+  const { t } = useT();
   const navigate = useNavigate();
   const location = useLocation() as { state?: { newlyLearned?: string[]; queued?: string[] } };
   const [stats, setStats] = useState<Stats | null>(null);
@@ -33,7 +35,7 @@ export function Home() {
       setBank(b.items);
       setPracticeDue(p.due);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudieron cargar tus datos");
+      setError(err instanceof Error ? err.message : t("home.loadError"));
     } finally {
       setLoading(false);
     }
@@ -52,13 +54,13 @@ export function Home() {
       await api.createArticle();
       navigate("/read");
     } catch (err) {
-      setStartError(err instanceof ApiRequestError ? err.message : "No se pudo generar la lectura");
+      setStartError(err instanceof ApiRequestError ? err.message : t("home.startError"));
     } finally {
       setStarting(false);
     }
   }
 
-  if (loading) return <Spinner label="Cargando tu progreso..." />;
+  if (loading) return <Spinner label={t("home.progressLoading")} />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
@@ -66,35 +68,35 @@ export function Home() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-semibold">Lector</h1>
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate("/history")} className="text-sm text-subtext" aria-label="Historial">
-            🕘 Historial
+          <button onClick={() => navigate("/history")} className="text-sm text-subtext" aria-label={t("home.history")}>
+            🕘 {t("home.history")}
           </button>
-          <button onClick={() => navigate("/settings")} className="text-sm text-subtext" aria-label="Ajustes">
-            ⚙ Ajustes
+          <button onClick={() => navigate("/settings")} className="text-sm text-subtext" aria-label={t("home.settings")}>
+            ⚙ {t("home.settings")}
           </button>
         </div>
       </div>
 
       {location.state?.newlyLearned && location.state.newlyLearned.length > 0 && (
         <div className="banner-success mb-4 rounded-xl px-4 py-3 text-sm text-text">
-          🎉 ¡Aprendiste {location.state.newlyLearned.length} palabra(s)/frase(s) nueva(s)!
+          {t("home.newlyLearned", { count: location.state.newlyLearned.length })}
         </div>
       )}
 
       {location.state?.queued && location.state.queued.length > 0 && (
         <div className="mb-4 rounded-xl bg-surface px-4 py-3 text-sm text-subtext">
-          🗂️ {location.state.queued.length} palabra(s) en cola. Entrarán en estudio al liberarse un lugar.
+          {t("home.queuedBanner", { count: location.state.queued.length })}
         </div>
       )}
 
       {stats && (
         <div className="mb-6 grid grid-cols-3 gap-3">
-          <StatTile label="Artículos" value={stats.articlesRead} />
+          <StatTile label={t("home.stat.articles")} value={stats.articlesRead} />
           <StatTile
-            label="En progreso"
+            label={t("home.stat.inProgress")}
             value={stats.activePoolLimit > 0 ? `${stats.itemsInProgress} / ${stats.activePoolLimit}` : stats.itemsInProgress}
           />
-          <StatTile label="Aprendidas" value={stats.itemsLearned} />
+          <StatTile label={t("home.stat.learned")} value={stats.itemsLearned} />
         </div>
       )}
 
@@ -103,19 +105,19 @@ export function Home() {
           onClick={() => navigate("/bank")}
           className="mb-6 -mt-3 self-start text-xs text-subtext underline"
         >
-          🗂️ {stats.itemsQueued} en cola
+          {t("home.queuedLink", { count: stats.itemsQueued })}
         </button>
       )}
 
       <div className="mb-6">
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-sm font-medium text-subtext">Tu banco activo</p>
+          <p className="text-sm font-medium text-subtext">{t("home.activeBank")}</p>
           <button onClick={() => navigate("/bank")} className="text-xs text-subtext underline">
-            Ver todo →
+            {t("home.seeAll")}
           </button>
         </div>
         {bank.length === 0 ? (
-          <p className="text-sm text-subtext">Aún no marcaste palabras. ¡Empieza a leer!</p>
+          <p className="text-sm text-subtext">{t("home.emptyBank")}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {bank.map((item) => (
@@ -130,13 +132,13 @@ export function Home() {
       <div className="mt-auto flex flex-col gap-2 pt-6">
         {practiceDue > 0 && (
           <Button variant="secondary" className="w-full" onClick={() => navigate("/practice")}>
-            🧠 Practicar ({practiceDue})
+            {t("home.practice", { count: practiceDue })}
           </Button>
         )}
         <Button className="w-full" onClick={startReading} disabled={starting}>
-          {starting ? "Generando..." : "Nueva lectura"}
+          {starting ? t("home.generating") : t("home.newReading")}
         </Button>
-        {starting && <p className="mt-2 text-center text-xs text-subtext">Puede tardar hasta 30 segundos...</p>}
+        {starting && <p className="mt-2 text-center text-xs text-subtext">{t("home.generatingHint")}</p>}
       </div>
     </div>
   );
