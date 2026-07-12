@@ -5,6 +5,7 @@ import type {
   BankStatus,
   CompleteResult,
   HistoryItem,
+  Mark,
   PracticeCard,
   Profile,
   ReadArticle,
@@ -113,8 +114,8 @@ export const api = {
   resetProgress: () => request<{ ok: true }>("/me/progress", { method: "DELETE" }),
   createArticle: () => request<{ article: Article; session: Session }>("/articles", { method: "POST" }),
   getSession: () => request<{ session: Session | null; article: Article | null }>("/session"),
-  putSession: (markedWords: string[], markedSents: string[]) =>
-    request<{ ok: true }>("/session", { method: "PUT", body: JSON.stringify({ markedWords, markedSents }) }),
+  putSession: (marks: Mark[]) =>
+    request<{ ok: true }>("/session", { method: "PUT", body: JSON.stringify({ marks }) }),
   deleteSession: () => request<{ ok: true }>("/session", { method: "DELETE" }),
   reviewSession: () => request<ReviewResult>("/session/review", { method: "POST" }),
   completeSession: () => request<CompleteResult>("/session/complete", { method: "POST" }),

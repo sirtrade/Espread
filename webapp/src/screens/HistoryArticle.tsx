@@ -34,8 +34,39 @@ export function HistoryArticle() {
   }, [id]);
 
   const paragraphs = useMemo(() => (article ? tokenizeArticle(article.body) : []), [article]);
-  const markedWords = useMemo(() => new Set(article?.markedWords ?? []), [article]);
-  const markedSents = useMemo(() => new Set(article?.markedSents ?? []), [article]);
+
+  // Highlights restore by occurrence (pos) when available. Legacy archived
+  // marks may have no pos: those fall back to plain text matching, which can't
+  // pin a single occurrence — an accepted degradation for old readings.
+  const highlight = useMemo(() => {
+    const ranges = new Map<string, [number, number][]>();
+    const posSents = new Set<string>();
+    const legacyWords = new Set<string>();
+    const legacySents = new Set<string>();
+    for (const m of article?.marks ?? []) {
+      if (m.pos) {
+        const key = `${m.pos.p}:${m.pos.s}`;
+        if (m.kind === "sentence") posSents.add(key);
+        else (ranges.get(key) ?? ranges.set(key, []).get(key)!).push(m.pos.t);
+      } else if (m.kind === "sentence") {
+        legacySents.add((m.sentence || m.text).trim());
+      } else {
+        legacyWords.add(m.text.toLowerCase());
+      }
+    }
+    return { ranges, posSents, legacyWords, legacySents };
+  }, [article]);
+
+  function tokenMarked(p: number, s: number, ti: number, text: string): boolean {
+    const rs = highlight.ranges.get(`${p}:${s}`);
+    if (rs?.some(([a, b]) => ti >= a && ti <= b)) return true;
+    return highlight.legacyWords.has(text.toLowerCase());
+  }
+
+  function sentMarked(p: number, s: number, text: string): boolean {
+    return highlight.posSents.has(`${p}:${s}`) || highlight.legacySents.has(text.trim());
+  }
+
   const review = article?.reviewResult;
 
   if (loading) return <Spinner label="Cargando artículo..." />;
@@ -71,14 +102,16 @@ export function HistoryArticle() {
         {paragraphs.map((p, pi) => (
           <p key={pi}>
             {p.sentences.map((s, si) => (
-              <span key={si} className={markedSents.has(s.text) ? "sent-marked" : ""}>
+              <span key={si} className={sentMarked(pi, si, s.text) ? "sent-marked" : ""}>
                 {s.tokens.map((t, ti) =>
                   t.type === "word" ? (
-                    <span key={ti} className={markedWords.has(t.text.toLowerCase()) ? "word-marked" : undefined}>
+                    <span key={ti} className={tokenMarked(pi, si, ti, t.text) ? "word-marked" : undefined}>
                       {t.text}
                     </span>
                   ) : (
-                    <span key={ti}>{t.text}</span>
+                    <span key={ti} className={tokenMarked(pi, si, ti, t.text) ? "word-marked" : undefined}>
+                      {t.text}
+                    </span>
                   ),
                 )}{" "}
               </span>

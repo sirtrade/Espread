@@ -26,11 +26,21 @@ export interface Article {
   createdAt: number;
 }
 
+/** A single highlight made while reading. `text` is the exact article text,
+ *  `sentence` the full sentence it lives in, and `pos` locates the occurrence
+ *  (paragraph, sentence, inclusive token range) so highlights restore exactly.
+ *  Legacy archived marks may lack `pos` and carry an empty `sentence`. */
+export interface Mark {
+  text: string;
+  sentence: string;
+  kind: "word" | "span" | "sentence";
+  pos?: { p: number; s: number; t: [number, number] };
+}
+
 export interface Session {
   id: number;
   articleId: number;
-  markedWords: string[];
-  markedSents: string[];
+  marks: Mark[];
   state: "reading" | "reviewed";
   updatedAt: number;
 }
@@ -80,8 +90,7 @@ export interface HistoryItem {
 
 export interface ReadArticle extends Article {
   readAt: number;
-  markedWords: string[];
-  markedSents: string[];
+  marks: Mark[];
   reviewResult: ReviewResult | null;
 }
 
