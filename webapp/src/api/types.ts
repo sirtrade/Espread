@@ -96,6 +96,33 @@ export interface LegacyReviewResult {
   phrases: ReviewPhrase[];
 }
 
+/** New archived review shape (`{ items }`) saved on articles read after the
+ *  lemma refactor. It's a `ReviewItem` without the view-only `contextSentence`
+ *  (the sentence isn't stored, so history renders the card without context). */
+export interface ArchivedReviewItem {
+  surface: string;
+  lemma: string;
+  pos: Pos;
+  gender: "m" | "f" | null;
+  translation: string;
+  note: string | null;
+  contextTranslation: string | null;
+  freqBand: FreqBand;
+  distractors: string[];
+}
+
+export interface ArchivedReviewResult {
+  items: ArchivedReviewItem[];
+}
+
+/** Distinguishes the two archived formats: the new one carries `items`, the
+ *  legacy one carries `words`/`phrases`. Narrows a possibly-null value. */
+export function isArchivedReviewResult(
+  r: LegacyReviewResult | ArchivedReviewResult | null,
+): r is ArchivedReviewResult {
+  return r != null && "items" in r;
+}
+
 export interface CompleteResult {
   newlyLearned: string[];
   articlesRead: number;
@@ -103,14 +130,27 @@ export interface CompleteResult {
 
 export interface BankItem {
   id: number;
-  term: string;
+  lemma: string;
+  surfaceForm: string | null;
   isPhrase: boolean;
+  pos: Pos;
+  gender: "m" | "f" | null;
   status: BankStatus;
   exposures: number;
   cleanStreak: number;
   translation: string | null;
+  note: string | null;
   firstContext: string | null;
+  contextTranslation: string | null;
+  distractors: string[] | null;
+  freqBand: FreqBand | null;
   updatedAt: number;
+  /** SRS repetition timer. NOTE: `serializeBankItem` on the server does not
+   *  currently emit these, so they arrive `undefined` and the detail card
+   *  falls back to "Repaso pronto". Optional until the server serializes them
+   *  (raised in the PR rather than changing the server here). */
+  nextPracticeAt?: number | null;
+  practiceStage?: number;
 }
 
 export interface HistoryItem {
@@ -125,7 +165,7 @@ export interface HistoryItem {
 export interface ReadArticle extends Article {
   readAt: number;
   marks: Mark[];
-  reviewResult: LegacyReviewResult | null;
+  reviewResult: LegacyReviewResult | ArchivedReviewResult | null;
 }
 
 export interface Stats {

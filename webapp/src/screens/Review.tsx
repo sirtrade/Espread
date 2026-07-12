@@ -6,6 +6,7 @@ import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { hapticSelect, hapticSuccess } from "../telegram/telegram.js";
+import { POS_LABEL, displayLemma, highlightSurface } from "../lib/vocab.js";
 
 const LEARNED_STREAK = 3;
 
@@ -15,37 +16,6 @@ type Decision = "bank" | "skip";
  *  override either on the card. */
 function defaultDecision(item: ReviewItem): Decision {
   return item.freqBand === "rare" ? "skip" : "bank";
-}
-
-/** Big lemma line: nouns carry their article so gender reads at a glance
- *  ("el lanzamiento"), everything else shows the plain dictionary form. */
-function displayLemma(item: ReviewItem): string {
-  if (item.pos === "noun" && item.gender) {
-    return `${item.gender === "m" ? "el" : "la"} ${item.lemma}`;
-  }
-  return item.lemma;
-}
-
-const POS_LABEL: Record<ReviewItem["pos"], string> = {
-  verb: "verbo",
-  noun: "sustantivo",
-  adj: "adjetivo",
-  adv: "adverbio",
-  phrase: "frase",
-  other: "palabra",
-};
-
-/** Renders the marked sentence with the surface form highlighted. */
-function highlightSurface(sentence: string, surface: string) {
-  const idx = surface ? sentence.toLowerCase().indexOf(surface.toLowerCase()) : -1;
-  if (idx === -1) return sentence;
-  return (
-    <>
-      {sentence.slice(0, idx)}
-      <span className="word-marked">{sentence.slice(idx, idx + surface.length)}</span>
-      {sentence.slice(idx + surface.length)}
-    </>
-  );
 }
 
 export function Review() {

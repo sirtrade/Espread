@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client.js";
-import type { ReadArticle } from "../api/types.js";
+import type { ArchivedReviewResult, LegacyReviewResult, ReadArticle } from "../api/types.js";
+import { isArchivedReviewResult } from "../api/types.js";
 import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { tokenizeArticle } from "../lib/tokenize.js";
+import { displayLemma } from "../lib/vocab.js";
 
 /** Read-only view of a past reading: the article with the words and phrases
  *  the user had marked at the time, plus the saved LLM review below. */
@@ -120,43 +122,73 @@ export function HistoryArticle() {
         ))}
       </article>
 
-      {review && (review.words.length > 0 || review.phrases.length > 0) ? (
-        <>
-          <h2 className="mb-4 text-lg font-semibold">Lo que marcaste</h2>
-
-          {review.words.length > 0 && (
-            <section className="mb-6">
-              <p className="mb-2 text-sm font-medium text-subtext">Palabras</p>
-              <ul className="flex flex-col gap-2">
-                {review.words.map((w, i) => (
-                  <li key={i} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
-                    <div>
-                      <p className="font-medium">{w.term}</p>
-                      <p className="text-sm text-subtext">{w.translation}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {review.phrases.length > 0 && (
-            <section className="mb-6">
-              <p className="mb-2 text-sm font-medium text-subtext">Frases</p>
-              <ul className="flex flex-col gap-2">
-                {review.phrases.map((p, i) => (
-                  <li key={i} className="rounded-xl bg-surface px-4 py-3">
-                    <p className="mb-1 font-medium">{p.term}</p>
-                    <p className="text-sm text-subtext">{p.explanation}</p>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </>
-      ) : (
-        <p className="text-sm text-subtext">No marcaste nada en esta lectura. ¡Buen trabajo!</p>
-      )}
+      <ReviewArchive review={review ?? null} />
     </div>
+  );
+}
+
+/** Renders the saved review below the article, handling both archived formats
+ *  (new `{ items }` and legacy `{ words, phrases }`) and a missing review. */
+function ReviewArchive({ review }: { review: ReadArticle["reviewResult"] }) {
+  if (isArchivedReviewResult(review)) return <NewReviewArchive review={review} />;
+  if (review && (review.words.length > 0 || review.phrases.length > 0))
+    return <LegacyReviewArchive review={review} />;
+  return <p className="text-sm text-subtext">No marcaste nada en esta lectura. ¡Buen trabajo!</p>;
+}
+
+function NewReviewArchive({ review }: { review: ArchivedReviewResult }) {
+  if (review.items.length === 0)
+    return <p className="text-sm text-subtext">No marcaste nada en esta lectura. ¡Buen trabajo!</p>;
+  return (
+    <>
+      <h2 className="mb-4 text-lg font-semibold">Lo que marcaste</h2>
+      <ul className="flex flex-col gap-2">
+        {review.items.map((item, i) => (
+          <li key={i} className="rounded-xl bg-surface px-4 py-3">
+            <p className="font-medium">{displayLemma(item)}</p>
+            {item.translation && <p className="text-sm text-subtext">{item.translation}</p>}
+            {item.note && <p className="mt-1 text-xs text-subtext">{item.note}</p>}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function LegacyReviewArchive({ review }: { review: LegacyReviewResult }) {
+  return (
+    <>
+      <h2 className="mb-4 text-lg font-semibold">Lo que marcaste</h2>
+
+      {review.words.length > 0 && (
+        <section className="mb-6">
+          <p className="mb-2 text-sm font-medium text-subtext">Palabras</p>
+          <ul className="flex flex-col gap-2">
+            {review.words.map((w, i) => (
+              <li key={i} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
+                <div>
+                  <p className="font-medium">{w.term}</p>
+                  <p className="text-sm text-subtext">{w.translation}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {review.phrases.length > 0 && (
+        <section className="mb-6">
+          <p className="mb-2 text-sm font-medium text-subtext">Frases</p>
+          <ul className="flex flex-col gap-2">
+            {review.phrases.map((p, i) => (
+              <li key={i} className="rounded-xl bg-surface px-4 py-3">
+                <p className="mb-1 font-medium">{p.term}</p>
+                <p className="text-sm text-subtext">{p.explanation}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
   );
 }
