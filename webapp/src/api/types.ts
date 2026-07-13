@@ -183,20 +183,27 @@ export interface Stats {
   activePoolLimit: number;
 }
 
+/** How a typed-recall answer was graded (mirrors the server's `TypedVerdict`). */
+export type TypedVerdict = "exact" | "spelling" | "wrong";
+
 export interface PracticeCard {
   itemId: number;
   lemma: string;
   isPhrase: boolean;
   translation: string | null;
-  type: "cloze" | "recall";
+  /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
+   *  word (graded on the server, so `answer` is empty and `options` is `[]`). */
+  type: "cloze" | "recall" | "typed";
   prompt: string;
-  /** the correct option: blanked surface form (cloze) or lemma (recall) */
+  /** the correct option: blanked surface form (cloze) or lemma (recall); empty for typed */
   answer: string;
   options: string[];
   /** the article sentence, shown as after-answer feedback */
   context: string | null;
   /** translation of the context sentence, shown as a cloze hint */
   contextTranslation: string | null;
+  /** typed cards: the blanked sentence shown as a hint while answering (null for MC) */
+  contextHint: string | null;
 }
 
 /** New SRS state returned after a practice/quiz answer, used to build the
@@ -208,6 +215,12 @@ export interface PracticeAnswerResult {
   status: BankStatus;
   /** the word climbed a rung this answer (within the daily cap) */
   advanced: boolean;
+  /** typed answers only: the server's grading verdict */
+  verdict?: TypedVerdict;
+  /** typed answers only: whether the server judged the answer correct */
+  correct?: boolean;
+  /** typed answers only: the proper form to show as feedback */
+  answer?: string;
 }
 
 export interface SentenceCheckResult {

@@ -201,6 +201,12 @@ export interface Dict {
   "quizSession.showHint": string;
   "quizSession.retry": string;
   "quizSession.exit": string;
+  "quizSession.typeWord": string;
+  "quizSession.typePlaceholder": string;
+  "quizSession.submit": string;
+  "quizSession.verdictExact": string;
+  "quizSession.verdictSpelling": (p: { form: string }) => string;
+  "quizSession.verdictWrong": string;
 
   "pos.verb": string;
   "pos.noun": string;
@@ -398,6 +404,12 @@ const es: Dict = {
   "quizSession.showHint": "Mostrar traducción",
   "quizSession.retry": "repaso",
   "quizSession.exit": "Terminar",
+  "quizSession.typeWord": "Escribe la palabra en español:",
+  "quizSession.typePlaceholder": "Tu respuesta...",
+  "quizSession.submit": "Responder",
+  "quizSession.verdictExact": "✅ ¡Correcto!",
+  "quizSession.verdictSpelling": ({ form }) => `✅ ¡Correcto! Ojo con la ortografía: «${form}»`,
+  "quizSession.verdictWrong": "❌ La respuesta correcta era:",
 
   "pos.verb": "verbo",
   "pos.noun": "sustantivo",
@@ -596,6 +608,12 @@ const ru: Dict = {
   "quizSession.showHint": "Показать перевод",
   "quizSession.retry": "повтор",
   "quizSession.exit": "Завершить",
+  "quizSession.typeWord": "Напишите слово по-испански:",
+  "quizSession.typePlaceholder": "Ваш ответ...",
+  "quizSession.submit": "Ответить",
+  "quizSession.verdictExact": "✅ Верно!",
+  "quizSession.verdictSpelling": ({ form }) => `✅ Верно! Обратите внимание на написание: «${form}»`,
+  "quizSession.verdictWrong": "❌ Правильный ответ был:",
 
   "pos.verb": "глагол",
   "pos.noun": "сущ.",
@@ -794,6 +812,12 @@ const en: Dict = {
   "quizSession.showHint": "Show translation",
   "quizSession.retry": "retry",
   "quizSession.exit": "Finish",
+  "quizSession.typeWord": "Type the word in Spanish:",
+  "quizSession.typePlaceholder": "Your answer...",
+  "quizSession.submit": "Answer",
+  "quizSession.verdictExact": "✅ Correct!",
+  "quizSession.verdictSpelling": ({ form }) => `✅ Correct! Watch the spelling: «${form}»`,
+  "quizSession.verdictWrong": "❌ The correct answer was:",
 
   "pos.verb": "verb",
   "pos.noun": "noun",

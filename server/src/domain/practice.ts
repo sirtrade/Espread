@@ -6,6 +6,7 @@
  */
 
 import { type PartOfSpeech } from "./bank.js";
+import { buildTypedQuizCard, TYPED_QUIZ_MIN_STAGE } from "./typedQuiz.js";
 
 /**
  * POS-aware padding words, used only as a last resort when the user's bank
@@ -242,4 +243,66 @@ export function buildCard(src: CardSource, prefer: CardType = "cloze", random: (
   const recall = buildRecallVariant(src, pool, random);
   const [first, second] = prefer === "cloze" ? [cloze, recall] : [recall, cloze];
   return first ?? second ?? null;
+}
+
+/** The card kinds a practice queue can serve: multiple-choice (cloze/recall) or
+ *  a typed-recall prompt the user answers by typing the word. */
+export type QueueCardType = CardType | "typed";
+
+/** A practice-queue card. For `typed` cards `answer` is empty and `options` is
+ *  `[]`: the answer is graded on the server (the client is never told it), and
+ *  `contextHint` carries the blanked sentence shown while answering. */
+export interface QueueCard {
+  type: QueueCardType;
+  prompt: string;
+  answer: string;
+  options: string[];
+  translation: string | null;
+  context: string | null;
+  contextTranslation: string | null;
+  /** blanked context sentence shown as a typed-card hint; null for MC cards */
+  contextHint: string | null;
+}
+
+/** A due item plus its SRS rung, which decides typed vs multiple-choice. */
+export interface QueueItemSource extends CardSource {
+  srsStage: number;
+}
+
+/**
+ * Chooses the practice card for one due item. From `TYPED_QUIZ_MIN_STAGE` up the
+ * word is asked as a typed-recall card (produce the Spanish word from its
+ * translation — stronger retrieval than recognition); below that rung, or when a
+ * safe typed card can't be built (no translation, or the translation echoes the
+ * answer), it falls back to the multiple-choice cloze/recall card. Returns null
+ * when no safe card of any kind can be made.
+ */
+export function buildQueueCard(
+  src: QueueItemSource,
+  prefer: CardType = "cloze",
+  random: () => number = Math.random,
+): QueueCard | null {
+  if (src.srsStage >= TYPED_QUIZ_MIN_STAGE) {
+    const typed = buildTypedQuizCard({
+      lemma: src.lemma,
+      translation: src.translation,
+      firstContext: src.firstContext,
+      surfaceForm: src.surfaceForm,
+    });
+    if (typed) {
+      return {
+        type: "typed",
+        prompt: typed.prompt,
+        answer: "",
+        options: [],
+        translation: src.translation,
+        context: src.firstContext,
+        contextTranslation: src.contextTranslation,
+        contextHint: typed.contextHint,
+      };
+    }
+  }
+  const mc = buildCard(src, prefer, random);
+  if (!mc) return null;
+  return { ...mc, contextHint: null };
 }

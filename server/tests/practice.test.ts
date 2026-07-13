@@ -4,10 +4,13 @@ import {
   buildCloze,
   buildClozeCard,
   buildOptions,
+  buildQueueCard,
   isPhraseText,
   parseStoredDistractors,
   type CardSource,
+  type QueueItemSource,
 } from "../src/domain/practice.js";
+import { TYPED_QUIZ_MIN_STAGE } from "../src/domain/typedQuiz.js";
 
 /** Deterministic PRNG so shuffles are reproducible in assertions. */
 function seeded(seed: number): () => number {
@@ -153,6 +156,58 @@ describe("buildCard", () => {
         expect(card.prompt.toLowerCase()).not.toContain(card.answer.toLowerCase());
       }
     }
+  });
+});
+
+describe("buildQueueCard", () => {
+  function source(overrides: Partial<QueueItemSource> = {}): QueueItemSource {
+    return {
+      lemma: "abarcar",
+      isPhrase: false,
+      translation: "охватывать",
+      firstContext: "Los planes abarcan varios sectores.",
+      surfaceForm: "abarcan",
+      contextTranslation: "Планы охватывают несколько секторов.",
+      pos: "verb",
+      storedDistractors: ["quedarse", "ponerse", "irse"],
+      poolLemmas: ["establecer", "generar"],
+      srsStage: TYPED_QUIZ_MIN_STAGE,
+      ...overrides,
+    };
+  }
+
+  it("serves a typed card from TYPED_QUIZ_MIN_STAGE up (no options, answer graded server-side)", () => {
+    const card = buildQueueCard(source(), "cloze", seeded(1))!;
+    expect(card.type).toBe("typed");
+    expect(card.prompt).toBe("охватывать");
+    expect(card.answer).toBe("");
+    expect(card.options).toEqual([]);
+    // The blanked context sentence is a safe hint (the answer is masked).
+    expect(card.contextHint).toBe("Los planes _____ varios sectores.");
+    expect(card.contextHint!.toLowerCase()).not.toContain("abarcan");
+  });
+
+  it("keeps multiple choice below TYPED_QUIZ_MIN_STAGE (recognition for fresh words)", () => {
+    const card = buildQueueCard(source({ srsStage: TYPED_QUIZ_MIN_STAGE - 1 }), "cloze", seeded(1))!;
+    expect(card.type).toBe("cloze");
+    expect(card.options.length).toBeGreaterThanOrEqual(3);
+    expect(card.contextHint).toBeNull();
+  });
+
+  it("falls back to multiple choice at a high stage when no safe typed card exists", () => {
+    // No translation -> buildTypedQuizCard returns null, so it degrades to MC.
+    const card = buildQueueCard(source({ translation: null, srsStage: 5 }), "cloze", seeded(1))!;
+    expect(card.type).toBe("cloze");
+    expect(card.contextHint).toBeNull();
+  });
+
+  it("returns null at a high stage when neither a typed nor an MC card can be built", () => {
+    const card = buildQueueCard(
+      source({ translation: null, firstContext: null, surfaceForm: null, srsStage: 5 }),
+      "cloze",
+      seeded(1),
+    );
+    expect(card).toBeNull();
   });
 });
 
