@@ -34,12 +34,17 @@ export const practiceAnswerSchema = z
   .object({
     itemId: z.number().int().positive().optional(),
     lemma: z.string().trim().min(1).max(80).optional(),
-    correct: z.boolean(),
+    // Multiple-choice answers report their own correctness; typed-recall answers
+    // send the raw text and the server grades it (`typedAnswer`) — one or the
+    // other is required. When `typedAnswer` is present `correct` is ignored.
+    correct: z.boolean().optional(),
+    typedAnswer: z.string().trim().min(1).max(120).optional(),
     // The reader revealed the context translation before answering: a correct
     // answer then earns no SRS credit (retrieval was scaffolded, not recalled).
     usedHint: z.boolean().optional(),
   })
-  .refine((d) => d.itemId != null || d.lemma != null, "Se requiere itemId o lemma");
+  .refine((d) => d.itemId != null || d.lemma != null, "Se requiere itemId o lemma")
+  .refine((d) => d.correct != null || d.typedAnswer != null, "Se requiere correct o typedAnswer");
 
 export const practiceSentenceSchema = z.object({
   itemId: z.number().int().positive(),

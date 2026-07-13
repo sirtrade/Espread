@@ -397,13 +397,30 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
 - `getDueForPractice(userId, now, limit)` — активные due-слова по `nextDueAt ASC`
   (NULL/новые — первыми) + `countDueForPractice` для счётчика `due`.
 - Для каждого — пул дистракторов `getDistractorPool` (той же части речи/формы) и
-  сборка карточки `buildCard` (`server/src/domain/practice.ts`) с чередованием
-  предпочтения по чётности индекса (even→cloze, odd→recall). Защита от утечки:
-  утекающий recall деградирует в cloze; невозможные карточки пропускаются.
+  сборка карточки `buildQueueCard` (`server/src/domain/practice.ts`):
+  - слова со `srsStage >= TYPED_QUIZ_MIN_STAGE` (=2) отдаются **typed**-карточкой
+    (`buildTypedQuizCard`, §11): ввод с клавиатуры вместо кнопок — более сильное
+    извлечение. Для typed `answer=""` и `options=[]` (ответ грейдится на сервере,
+    клиенту не передаётся), а `contextHint` несёт предложение с пропуском как
+    безопасную подсказку;
+  - слова ниже ступени 2, либо когда безопасная typed-карточка не строится (нет
+    перевода / перевод содержит ответ), — множественный выбор `buildCard` с
+    чередованием предпочтения по чётности индекса (even→cloze, odd→recall).
+    Защита от утечки: утекающий recall деградирует в cloze; невозможные карточки
+    пропускаются.
 - Карточка: `{ itemId, lemma, isPhrase, translation, type, prompt, answer,
-  options[], context, contextTranslation }`.
+  options[], context, contextTranslation, contextHint }`, где `type` —
+  `cloze | recall | typed`.
 
 ### 10.2 Применение ответа (`applyPracticeAnswer`, `server/src/db/repositories/bank.ts`)
+`POST /practice/answer` принимает либо `correct` (множественный выбор — клиент
+сам знает верность), либо `typedAnswer` (typed recall — сырой текст). Для
+`typedAnswer` сервер сам грейдит ответ через `gradeTypedAnswer` по accepted-
+формам слова (`surfaceForm`, `lemma`), игнорируя присланный `correct` (клиенту не
+доверяем), и возвращает дополнительно `verdict` (`exact | spelling | wrong`),
+вычисленный `correct` и правильную форму `answer` для показа фидбэка. Далее —
+общий `applyPracticeAnswer`:
+
 `applyPracticeAnswer(userId, itemId, correct, now, usedHint=false)`:
 - **Неверно** → `lapseSrs(stage, now, PRACTICE_RETRY_MS)` (−2 ступени, due через
   10 мин); `advanced=false`.
@@ -424,6 +441,14 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
   перевод»; факт использования уходит как `usedHint`. После ответа перевод
   показывается всегда.
 - **recall**: prompt — перевод в кавычках.
+- **typed** (только Práctica, слова ступени ≥2): prompt — перевод, `contextHint`
+  (предложение с пропуском) как безопасная подсказка, текстовое поле + кнопка
+  «Ответить». Первая попытка грейдится сервером (`onTypedAnswer` →
+  `POST /practice/answer` с `typedAnswer`); показывается вердикт («верно» /
+  «верно, но пишется …» / «неверно») с правильной формой, переводом и контекстом.
+  Клиентские ретраи ошибочной карточки (§10.3, retry) грейдятся локально зеркалом
+  `webapp/src/lib/typedRecall.ts` против уже раскрытой сервером формы — на сервер
+  не уходят (SRS-исход определяет только первая попытка).
 - После ответа: подсветка правильного, затемнение остальных, обратная связь
   (правильный вариант + перевод + контекст курсивом).
 - **Прерывание сессии**: ✕ в шапке и Telegram BackButton завершают сессию → итог
@@ -445,8 +470,11 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
 ---
 
 ## 11. Продуктивное воспроизведение (typed recall)
-`server/src/domain/typedQuiz.ts` (сейчас используется **только ботом**, см. §12;
-перенос в webapp запланирован — `docs/retention-roadmap.md`, этап 5).
+`server/src/domain/typedQuiz.ts` — общий домен для бота (§12) и тренировки
+Práctica в webapp (§10): слова со ступени 2+ спрашиваются вводом с клавиатуры.
+В webapp сборку карточки делает `buildQueueCard` (§10.1), грейдинг — сервер в
+`POST /practice/answer` (§10.2); post-reading Quiz остаётся на множественном
+выборе (там слова ступени 0).
 - `TYPED_QUIZ_MIN_STAGE = 2`: с этой ступени вместо кнопок спрашивается ввод с
   клавиатуры.
 - `buildTypedQuizCard`: prompt = перевод, `contextHint` = предложение с пропуском
@@ -600,8 +628,8 @@ itemsInProgress, itemsLearned, itemsQueued, activePoolLimit }`.
 | `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100 |
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
-| `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10) |
-| `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint` |
+| `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); typed для stage≥2 |
+| `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint`; `typedAnswer` грейдится сервером |
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
 | `GET /api/stats` | Статистика | |
 | `GET /api/admin/usage` | Расход LLM по юзерам | Только `ADMIN_TG_IDS` (`403` иначе) |
@@ -786,8 +814,6 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 ## 24. Известные ограничения
 
 - Анти-фарм считается по UTC-суткам, не локальным (см. §8.2).
-- В mini-app пока только множественный выбор; typed recall есть только у бота
-  (перенос запланирован).
 - Пассивное чтение засчитывается как полноценный успех SRS (запланировано
   понизить вес).
 - Контекст карточки не ротируется (всегда `firstContext`); слова из одной статьи
@@ -828,12 +854,15 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
   History, HistoryArticle, Settings).
 - `components/` — `QuizSession`, `BankChip`, пикеры темы/шрифта, Button, Spinner,
   ErrorState.
-- `lib/` — зеркала домена и утилиты: `srs.ts`, `cards.ts`, `marks.ts`, `hint.ts`,
-  `tokenize.ts`, `vocab.tsx`, `i18n.ts`, `langs.ts`, `fontSize.ts`, `theme.ts`.
+- `lib/` — зеркала домена и утилиты: `srs.ts`, `cards.ts`, `typedRecall.ts`,
+  `marks.ts`, `hint.ts`, `tokenize.ts`, `vocab.tsx`, `i18n.ts`, `langs.ts`,
+  `fontSize.ts`, `theme.ts`.
 
-> **Синхронность зеркал**: клиентские `webapp/src/lib/srs.ts` и
-> `webapp/src/lib/cards.ts` дублируют серверную логику SRS/карточек — держи их
-> согласованными с `server/src/domain/*` при любых изменениях правил.
+> **Синхронность зеркал**: клиентские `webapp/src/lib/srs.ts`,
+> `webapp/src/lib/cards.ts` и `webapp/src/lib/typedRecall.ts` (грейдинг typed-
+> ретраев, зеркало `gradeTypedAnswer` из `domain/typedQuiz.ts`) дублируют
+> серверную логику SRS/карточек/грейдинга — держи их согласованными с
+> `server/src/domain/*` при любых изменениях правил.
 
 ---
 

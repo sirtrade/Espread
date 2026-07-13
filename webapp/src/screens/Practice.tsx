@@ -89,7 +89,16 @@ export function Practice() {
       title={t("practice.title")}
       cards={cards}
       pendingCount={due}
-      onAnswer={(card, correct, usedHint) => api.postPracticeAnswer({ itemId: card.itemId! }, correct, usedHint)}
+      onAnswer={(card, correct, usedHint) => api.postPracticeAnswer({ itemId: card.itemId! }, { correct, usedHint })}
+      onTypedAnswer={async (card, typedAnswer) => {
+        const res = await api.postPracticeAnswer({ itemId: card.itemId! }, { typedAnswer });
+        return {
+          correct: res.correct ?? false,
+          verdict: res.verdict ?? "wrong",
+          answer: res.answer ?? card.lemma,
+          outcome: res,
+        };
+      }}
       onFinish={() => navigate("/")}
       onNext={resetWriting}
       renderExtra={(card, chosen) => {

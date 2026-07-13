@@ -1,13 +1,30 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { PracticeAnswerResult } from "../api/types.js";
+import type { PracticeAnswerResult, TypedVerdict } from "../api/types.js";
 import type { SessionCard } from "../lib/cards.js";
 import { Button } from "./Button.js";
 import { hapticSelect, hapticSuccess, showBackButton, hideBackButton } from "../telegram/telegram.js";
 import { intervalDaysForStage } from "../lib/srs.js";
+import { gradeTyped } from "../lib/typedRecall.js";
 import { useT } from "../lib/i18n.js";
 
 /** Server outcome of an answer; `void` when the write was best-effort and lost. */
 export type AnswerOutcome = Pick<PracticeAnswerResult, "srsStage" | "status" | "advanced">;
+
+/** Server grading of a typed-recall answer, plus the SRS outcome it produced. */
+export interface TypedAnswerResult {
+  correct: boolean;
+  verdict: TypedVerdict;
+  /** the proper form to show as feedback */
+  answer: string;
+  outcome: AnswerOutcome | null;
+}
+
+/** A typed card's local grade (verdict + the correct form) once answered. */
+interface TypedGradeState {
+  correct: boolean;
+  verdict: TypedVerdict;
+  answer: string;
+}
 
 interface RecordedAnswer {
   card: SessionCard;
@@ -35,9 +52,14 @@ interface QuizSessionProps {
   cards: SessionCard[];
   /** extra items still due beyond this batch (Práctica), for the header. */
   pendingCount?: number;
-  /** Sends the answer to the server; returns the new learning state (or void).
-   *  Only ever called for a card's FIRST attempt — retries stay client-side. */
+  /** Sends a multiple-choice answer to the server; returns the new learning
+   *  state (or void). Only ever called for a card's FIRST attempt — retries
+   *  stay client-side. */
   onAnswer: (card: SessionCard, correct: boolean, usedHint: boolean) => Promise<AnswerOutcome | void>;
+  /** Sends a typed-recall answer to the server, which grades it and returns the
+   *  verdict + correct form. Required when the batch may contain `typed` cards
+   *  (Práctica); only called for a card's FIRST attempt. */
+  onTypedAnswer?: (card: SessionCard, typedAnswer: string) => Promise<TypedAnswerResult | void>;
   /** Called from the final summary's button. */
   onFinish: (summary: { correct: number; total: number }) => void;
   finishLabel?: string;
@@ -57,6 +79,7 @@ export function QuizSession({
   cards,
   pendingCount = 0,
   onAnswer,
+  onTypedAnswer,
   onFinish,
   finishLabel,
   renderExtra,
@@ -69,6 +92,14 @@ export function QuizSession({
   const [pos, setPos] = useState(0);
   const [chosen, setChosen] = useState<string | null>(null);
   const [showHint, setShowHint] = useState(false);
+  // Typed-recall state (Práctica): the text field value, the grade once
+  // answered, and a submit guard. The correct form the server reveals on a
+  // card's first attempt is kept per-card so a later client-only retry can be
+  // graded locally against it (retries never touch the server).
+  const [typedInput, setTypedInput] = useState("");
+  const [typedGrade, setTypedGrade] = useState<TypedGradeState | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const answerByCard = useRef(new Map<SessionCard, string>());
   // One entry per distinct card, recorded on its FIRST attempt only. Drives the
   // summary counts and the server writes; retries never touch it.
   const [firstAttempts, setFirstAttempts] = useState<RecordedAnswer[]>([]);
@@ -132,6 +163,47 @@ export function QuizSession({
     }
   }
 
+  /** Typed-recall answer. The first attempt is graded on the server (the client
+   *  is never told the accepted forms up front); a retry is a client-only
+   *  re-drill graded locally against the form the server already revealed, so a
+   *  word's SRS fate is set once, by its first answer. */
+  async function submitTyped() {
+    if (chosen || submitting) return;
+    const value = typedInput.trim();
+    if (value.length === 0) return;
+    hapticSelect();
+
+    if (entry.isRetry) {
+      const correctForm = answerByCard.current.get(card) ?? "";
+      const grade = gradeTyped(value, correctForm ? [correctForm] : []);
+      setChosen(value);
+      setTypedGrade({ correct: grade.correct, verdict: grade.verdict, answer: correctForm });
+      if (grade.correct) hapticSuccess();
+      else if (entry.retriesLeft > 0) enqueueRetry(entry);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await onTypedAnswer?.(card, value);
+      const correct = res?.correct ?? false;
+      setChosen(value);
+      setTypedGrade(res ? { correct: res.correct, verdict: res.verdict, answer: res.answer } : null);
+      if (res?.answer) answerByCard.current.set(card, res.answer);
+      if (correct) hapticSuccess();
+      if (!correct && entry.retriesLeft > 0) enqueueRetry(entry);
+      setFirstAttempts((a) => [...a, { card, correct, outcome: res?.outcome ?? null }]);
+    } catch {
+      // Best-effort: a lost answer just leaves the word due. Still show feedback
+      // so the session can move on; the word stays due for next time.
+      setChosen(value);
+      setTypedGrade(null);
+      setFirstAttempts((a) => [...a, { card, correct: false, outcome: null }]);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   function next() {
     if (isLast) {
       setDone(true);
@@ -139,6 +211,9 @@ export function QuizSession({
     }
     setChosen(null);
     setShowHint(false);
+    setTypedInput("");
+    setTypedGrade(null);
+    setSubmitting(false);
     onNext?.();
     setPos((i) => i + 1);
   }
@@ -223,7 +298,34 @@ export function QuizSession({
         </div>
       </div>
 
-      {card.type === "cloze" ? (
+      {card.type === "typed" ? (
+        <>
+          <p className="mb-2 text-sm text-subtext">{t("quizSession.typeWord")}</p>
+          <p className="mb-2 text-xl font-medium">«{card.prompt}»</p>
+          {card.contextHint && <p className="article-text mb-4 text-subtext">{card.contextHint}</p>}
+          {!chosen && (
+            <div className="flex flex-col gap-2">
+              <input
+                type="text"
+                value={typedInput}
+                onChange={(e) => setTypedInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submitTyped();
+                }}
+                autoFocus
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder={t("quizSession.typePlaceholder")}
+                className="border-subtle rounded-xl border bg-surface px-4 py-3 text-base outline-none"
+              />
+              <Button onClick={submitTyped} disabled={submitting || typedInput.trim().length === 0}>
+                {submitting ? t("common.saving") : t("quizSession.submit")}
+              </Button>
+            </div>
+          )}
+        </>
+      ) : card.type === "cloze" ? (
         <>
           <p className="mb-2 text-sm text-subtext">{t("quizSession.completa")}</p>
           <p className="article-text mb-2">{card.prompt}</p>
@@ -246,29 +348,48 @@ export function QuizSession({
         </>
       )}
 
-      <div className="flex flex-col gap-2">
-        {card.options.map((option) => {
-          let cls = "bg-surface";
-          if (chosen) {
-            if (option === card.answer) cls = "banner-success";
-            else if (option === chosen) cls = "bg-subtle opacity-60";
-            else cls = "bg-surface opacity-60";
-          }
-          return (
-            <button
-              key={option}
-              onClick={() => pick(option)}
-              disabled={chosen !== null}
-              className={`rounded-xl px-4 py-3 text-left text-sm font-medium ${cls}`}
-            >
-              {option}
-              {chosen && option === card.answer && " ✓"}
-            </button>
-          );
-        })}
-      </div>
+      {card.type !== "typed" && (
+        <div className="flex flex-col gap-2">
+          {card.options.map((option) => {
+            let cls = "bg-surface";
+            if (chosen) {
+              if (option === card.answer) cls = "banner-success";
+              else if (option === chosen) cls = "bg-subtle opacity-60";
+              else cls = "bg-surface opacity-60";
+            }
+            return (
+              <button
+                key={option}
+                onClick={() => pick(option)}
+                disabled={chosen !== null}
+                className={`rounded-xl px-4 py-3 text-left text-sm font-medium ${cls}`}
+              >
+                {option}
+                {chosen && option === card.answer && " ✓"}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-      {chosen && (
+      {chosen && card.type === "typed" && typedGrade && (
+        <div className="mt-4 text-sm">
+          <p className={`rounded-xl px-4 py-3 ${typedGrade.correct ? "banner-success" : "bg-surface"}`}>
+            {typedGrade.verdict === "exact"
+              ? t("quizSession.verdictExact")
+              : typedGrade.verdict === "spelling"
+                ? t("quizSession.verdictSpelling", { form: typedGrade.answer })
+                : t("quizSession.verdictWrong")}
+          </p>
+          <p className="mt-2">
+            <span className="font-medium text-text">{typedGrade.answer}</span>
+            {card.translation ? ` — ${card.translation}` : ""}
+          </p>
+          {card.context && <p className="mt-1 italic text-subtext">{card.context}</p>}
+        </div>
+      )}
+
+      {chosen && card.type !== "typed" && (
         <div className="mt-4 text-sm">
           <p>
             <span className="font-medium text-text">{card.answer}</span>

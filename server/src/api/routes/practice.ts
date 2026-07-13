@@ -12,7 +12,8 @@ import {
 } from "../../db/repositories/bank.js";
 import { getUserById } from "../../db/repositories/users.js";
 import { countRecentCalls } from "../../db/repositories/llmCalls.js";
-import { buildCard, parseStoredDistractors, type CardType } from "../../domain/practice.js";
+import { buildQueueCard, parseStoredDistractors, type CardType, type QueueCardType } from "../../domain/practice.js";
+import { gradeTypedAnswer, type TypedVerdict } from "../../domain/typedQuiz.js";
 import { checkPracticeSentence } from "../../llm/sentenceCheck.js";
 import { practiceAnswerSchema, practiceSentenceSchema } from "../validation.js";
 import type { AppEnv } from "../context.js";
@@ -26,16 +27,19 @@ export interface PracticeCard {
   lemma: string;
   isPhrase: boolean;
   translation: string | null;
-  /** "cloze": fill the blank in the original context; "recall": pick the word for a translation. */
-  type: CardType;
+  /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
+   *  word (graded on the server, so `answer` is empty and `options` is `[]`). */
+  type: QueueCardType;
   prompt: string;
-  /** the option that is correct: the blanked surface form for cloze, the lemma for recall */
+  /** the option that is correct: the blanked surface form for cloze, the lemma for recall; empty for typed */
   answer: string;
   options: string[];
   /** the article sentence, shown as after-answer feedback */
   context: string | null;
   /** translation of the context sentence, shown as a cloze hint */
   contextTranslation: string | null;
+  /** typed cards: the blanked sentence shown as a hint while answering (null for MC) */
+  contextHint: string | null;
 }
 
 practiceRoutes.get("/queue", async (c) => {
@@ -51,10 +55,12 @@ practiceRoutes.get("/queue", async (c) => {
       (d) => d.lemma,
     );
 
-    // Alternate cloze/recall for variety; the builder degrades a leaking
+    // Words from TYPED_QUIZ_MIN_STAGE up are asked as typed recall; below that
+    // (or when a safe typed card can't be built) fall back to multiple choice,
+    // alternating cloze/recall for variety. The builder degrades a leaking
     // recall into a cloze and skips items it can't turn into a safe card.
     const prefer: CardType = cards.length % 2 === 0 ? "cloze" : "recall";
-    const card = buildCard(
+    const card = buildQueueCard(
       {
         lemma: item.lemma,
         isPhrase: item.isPhrase,
@@ -65,6 +71,7 @@ practiceRoutes.get("/queue", async (c) => {
         pos: item.pos,
         storedDistractors: parseStoredDistractors(item.distractors),
         poolLemmas,
+        srsStage: item.srsStage,
       },
       prefer,
     );
@@ -81,6 +88,7 @@ practiceRoutes.get("/queue", async (c) => {
       options: card.options,
       context: card.context,
       contextTranslation: card.contextTranslation,
+      contextHint: card.contextHint,
     });
   }
 
@@ -102,7 +110,25 @@ practiceRoutes.post("/answer", async (c) => {
   }
   if (itemId == null) throw Errors.badRequest("Falta itemId o lemma");
 
-  const result = await applyPracticeAnswer(userId, itemId, body.data.correct, Date.now(), body.data.usedHint ?? false);
+  // Typed-recall answers are graded on the server so the client can't be
+  // trusted to report its own correctness. The verdict + the proper form are
+  // returned so the client can show accent/typo feedback.
+  let correct: boolean;
+  let verdict: TypedVerdict | undefined;
+  let answer: string | undefined;
+  if (body.data.typedAnswer != null) {
+    const item = await getBankItemById(userId, itemId);
+    if (!item) throw Errors.notFound("Palabra");
+    const accepted = [item.surfaceForm, item.lemma].filter((f): f is string => typeof f === "string" && f.length > 0);
+    const grade = gradeTypedAnswer(body.data.typedAnswer, accepted);
+    correct = grade.correct;
+    verdict = grade.verdict;
+    answer = grade.matched;
+  } else {
+    correct = body.data.correct ?? false;
+  }
+
+  const result = await applyPracticeAnswer(userId, itemId, correct, Date.now(), body.data.usedHint ?? false);
   if (!result) throw Errors.notFound("Palabra");
   return c.json({
     ok: true,
@@ -110,6 +136,8 @@ practiceRoutes.post("/answer", async (c) => {
     nextDueAt: result.nextDueAt,
     status: result.status,
     advanced: result.advanced,
+    // Present only for typed answers: the grading verdict and the correct form.
+    ...(verdict ? { verdict, correct, answer } : {}),
   });
 });
 

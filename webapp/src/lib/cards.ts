@@ -12,9 +12,11 @@ export interface SessionCard {
   /** present for Práctica (server cards); absent for Quiz (routed by lemma) */
   itemId?: number;
   lemma: string;
-  type: "cloze" | "recall";
+  /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
+   *  word (Práctica only; the answer is graded on the server). */
+  type: "cloze" | "recall" | "typed";
   prompt: string;
-  /** the correct option: blanked surface form (cloze) or lemma (recall) */
+  /** the correct option: blanked surface form (cloze) or lemma (recall); empty for typed */
   answer: string;
   options: string[];
   translation: string | null;
@@ -22,6 +24,8 @@ export interface SessionCard {
   context: string | null;
   /** translation of the context sentence, shown as a cloze hint */
   contextTranslation: string | null;
+  /** typed cards: the blanked sentence shown as a hint while answering */
+  contextHint?: string | null;
 }
 
 /** POS-aware padding, mirroring the server's last-resort distractor lists. */
@@ -178,5 +182,6 @@ export function fromPracticeCard(card: PracticeCard): SessionCard {
     translation: card.translation,
     context: card.context,
     contextTranslation: card.contextTranslation,
+    contextHint: card.contextHint,
   };
 }
