@@ -344,13 +344,14 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
   память сохраняет storage strength, переучивание быстрее (savings effect).
 - **Полный сброс** (`resetSrs`): в ступень 0, due немедленно — только для
   **ручной** смены статуса.
-- **Анти-фарм** (`creditAllowedToday` + `isSameUtcDay`): слово поднимается по
-  лестнице не чаще **раза в календарные сутки (UTC)**, сколько бы раз ни
-  встретилось; `last_credit_at` фиксирует последний зачтённый подъём.
-
-> ⚠️ Известное ограничение (см. `docs/retention-roadmap.md`, этап 10): анти-фарм
-> считается по UTC-суткам, а не по локальным — для UTC+3 возможны два кредита в
-> одни локальные сутки.
+- **Анти-фарм** (`creditAllowedToday` + `isSameLocalDay`): слово поднимается по
+  лестнице не чаще **раза в календарные сутки по таймзоне пользователя**
+  (`user.timezone`, хелпер `localDayKey` в `lib/timezone.ts`), сколько бы раз ни
+  встретилось; `last_credit_at` фиксирует последний зачтённый подъём. Локальные
+  сутки (не UTC), поэтому пользователь восточнее/западнее UTC не может получить
+  два кредита в одни свои сутки, пересекая полночь UTC. Таймзона прокинута в
+  `applyPracticeAnswer` (repo) и `applyReviewToBank` (domain); при нераспознанной
+  зоне хелпер откатывается на UTC, чтобы не бросить исключение.
 
 ### 8.3 Завершение чтения (`completeSession` + `applyCompletion`)
 `completeSession` (под `withUserLock`) требует состояния `reviewed`, применяет
@@ -421,15 +422,17 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
 вычисленный `correct` и правильную форму `answer` для показа фидбэка. Далее —
 общий `applyPracticeAnswer`:
 
-`applyPracticeAnswer(userId, itemId, correct, now, usedHint=false)`:
+`applyPracticeAnswer(userId, itemId, correct, now, usedHint=false, timeZone="UTC")`:
 - **Неверно** → `lapseSrs(stage, now, PRACTICE_RETRY_MS)` (−2 ступени, due через
   10 мин); `advanced=false`.
 - **Верно, но подсказка была раскрыта** → **без изменений** (нет кредита; слово
   остаётся due для неподсказанного извлечения); `advanced=false`.
 - **Верно, первая попытка, кредит сегодня разрешён** → graduation в `learned` на
   верхней ступени, иначе `advanceSrs`; ставит `last_credit_at`, `advanced=true`.
-- **Верно, но кредит уже был сегодня** → расписание не трогается.
-Возвращает `{ srsStage, nextDueAt, status, advanced }`.
+- **Верно, но кредит уже был сегодня** (по локальным суткам `timeZone`) →
+  расписание не трогается.
+Возвращает `{ srsStage, nextDueAt, status, advanced }`. `timeZone` берётся из
+профиля пользователя (`user.timezone`) на месте вызова.
 
 ### 10.3 Runner викторины (`webapp/src/components/QuizSession.tsx`)
 Общий для Quiz и Práctica.
@@ -813,7 +816,6 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 ## 24. Известные ограничения
 
-- Анти-фарм считается по UTC-суткам, не локальным (см. §8.2).
 - Пассивное чтение засчитывается как полноценный успех SRS (запланировано
   понизить вес).
 - Контекст карточки не ротируется (всегда `firstContext`); слова из одной статьи

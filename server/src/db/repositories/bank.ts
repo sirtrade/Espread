@@ -119,7 +119,7 @@ export interface PracticeAnswerResult {
  *  - a first-try-correct answer climbs a rung (once per calendar day per item);
  *  - a correct answer for a word already at the top rung graduates it to
  *    "learned" instead;
- *  - a repeat correct answer the same day leaves the schedule untouched;
+ *  - a repeat correct answer the same local day (per `timeZone`) leaves the schedule untouched;
  *  - a correct answer given after revealing the translation hint (`usedHint`)
  *    earns no credit: the schedule is left untouched so the word stays due and
  *    must be retrieved again unaided (retrieval effort was scaffolded away);
@@ -134,6 +134,7 @@ export async function applyPracticeAnswer(
   correct: boolean,
   now = Date.now(),
   usedHint = false,
+  timeZone = "UTC",
 ): Promise<PracticeAnswerResult | undefined> {
   const item = await db.query.bankItems.findFirst({
     where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)),
@@ -154,7 +155,7 @@ export async function applyPracticeAnswer(
     // Correct, but the translation was revealed first: no advance, and the
     // schedule (stage/nextDueAt/lastCreditAt) is left as-is so the word stays
     // due for an unaided retrieval later. `advanced` stays false.
-  } else if (creditAllowedToday(item.lastCreditAt, now)) {
+  } else if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
     if (graduatesOnSuccess(item.srsStage)) {
       status = "learned";
       lastCreditAt = now;

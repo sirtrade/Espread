@@ -97,14 +97,51 @@ describe("creditAllowedToday", () => {
   const day2 = Date.UTC(2026, 0, 11, 9, 0, 0);
 
   it("allows a credit when never credited before", () => {
-    expect(creditAllowedToday(null, day1)).toBe(true);
+    expect(creditAllowedToday(null, day1, "UTC")).toBe(true);
   });
 
   it("blocks a second credit the same calendar day", () => {
-    expect(creditAllowedToday(day1, day1Later)).toBe(false);
+    expect(creditAllowedToday(day1, day1Later, "UTC")).toBe(false);
   });
 
   it("allows a credit again on the next day", () => {
-    expect(creditAllowedToday(day1, day2)).toBe(true);
+    expect(creditAllowedToday(day1, day2, "UTC")).toBe(true);
+  });
+
+  // Anti-farm is measured in the user's local day, not UTC. These two moments
+  // straddle UTC midnight but land on the SAME local day, so the second earns
+  // no credit — whereas the old UTC logic would have (wrongly) allowed it.
+  describe("UTC+3 (Europe/Moscow)", () => {
+    // 02:00 and 23:00 local on 2026-01-10 = 2026-01-09 23:00 and 2026-01-10 20:00 UTC.
+    const early = Date.UTC(2026, 0, 9, 23, 0, 0);
+    const late = Date.UTC(2026, 0, 10, 20, 0, 0);
+
+    it("blocks a second credit within one local day even across UTC midnight", () => {
+      expect(creditAllowedToday(early, late, "Europe/Moscow")).toBe(false);
+      // Sanity: under UTC these fall on different calendar days.
+      expect(creditAllowedToday(early, late, "UTC")).toBe(true);
+    });
+
+    it("allows a credit again on the next local day", () => {
+      const nextLocalDay = Date.UTC(2026, 0, 11, 0, 0, 0); // 03:00 local on 2026-01-11
+      expect(creditAllowedToday(early, nextLocalDay, "Europe/Moscow")).toBe(true);
+    });
+  });
+
+  describe("UTC−8 (America/Los_Angeles, PST in January)", () => {
+    // 15:00 and 17:00 local on 2026-01-10 = 2026-01-10 23:00 and 2026-01-11 01:00 UTC.
+    const early = Date.UTC(2026, 0, 10, 23, 0, 0);
+    const late = Date.UTC(2026, 0, 11, 1, 0, 0);
+
+    it("blocks a second credit within one local day even across UTC midnight", () => {
+      expect(creditAllowedToday(early, late, "America/Los_Angeles")).toBe(false);
+      // Sanity: under UTC these fall on different calendar days.
+      expect(creditAllowedToday(early, late, "UTC")).toBe(true);
+    });
+
+    it("allows a credit again on the next local day", () => {
+      const nextLocalDay = Date.UTC(2026, 0, 11, 20, 0, 0); // 12:00 local on 2026-01-11
+      expect(creditAllowedToday(early, nextLocalDay, "America/Los_Angeles")).toBe(true);
+    });
   });
 });

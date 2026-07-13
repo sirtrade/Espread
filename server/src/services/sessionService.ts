@@ -197,7 +197,15 @@ export async function completeSession(userId: number, choices: CompletionChoices
     const overrides = { accepted: normalizeChoice(choices.accepted), rejected: normalizeChoice(choices.rejected) };
 
     const before = await getBankItemsMap(userId);
-    const after = applyReviewToBank(before, exposedLemmas, reviewedItems, overrides, user.activePoolLimit);
+    const after = applyReviewToBank(
+      before,
+      exposedLemmas,
+      reviewedItems,
+      overrides,
+      user.activePoolLimit,
+      Date.now(),
+      user.timezone,
+    );
 
     // Only rows that actually changed get written — a completion typically
     // touches a handful of lemmas, not the user's whole bank.

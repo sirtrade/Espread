@@ -95,6 +95,24 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     expect(item?.nextDueAt).toBe(nextDay + 3 * DAY);
   });
 
+  it("does not climb twice within one LOCAL day even across UTC midnight", async () => {
+    const id = await seedItem({ lemma: "localdia" });
+    // Both moments are 2026-01-10 in Europe/Moscow (UTC+3) but different UTC days:
+    // 02:00 local = 2026-01-09 23:00 UTC, 23:00 local = 2026-01-10 20:00 UTC.
+    const earlyLocal = Date.UTC(2026, 0, 9, 23, 0, 0);
+    const lateLocal = Date.UTC(2026, 0, 10, 20, 0, 0);
+
+    const first = await applyPracticeAnswer(userId, id, true, earlyLocal, false, "Europe/Moscow");
+    expect(first).toMatchObject({ advanced: true, srsStage: 1 });
+
+    // Same local day: no second credit, schedule untouched.
+    const second = await applyPracticeAnswer(userId, id, true, lateLocal, false, "Europe/Moscow");
+    expect(second).toMatchObject({ advanced: false, srsStage: 1 });
+    const item = await getBankItemById(userId, id);
+    expect(item?.nextDueAt).toBe(earlyLocal + 1 * DAY);
+    expect(item?.lastCreditAt).toBe(earlyLocal);
+  });
+
   it("graduates a top-rung word to learned on a correct answer", async () => {
     const { SRS_MAX_STAGE } = await import("../src/domain/srs.js");
     const id = await seedItem({ lemma: "graduada", srsStage: SRS_MAX_STAGE });

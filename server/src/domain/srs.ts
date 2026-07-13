@@ -1,3 +1,5 @@
+import { localDayKey } from "../lib/timezone.js";
+
 /**
  * Spaced-repetition schedule shared by reading and practice. A word climbs the
  * interval ladder on every successful encounter — a clean reading exposure
@@ -74,22 +76,18 @@ export function lapseSrs(currentStage: number, now: number, delayMs = 0): SrsSta
   return { srsStage: Math.max(0, currentStage - LAPSE_STAGE_DROP), nextDueAt: now + delayMs };
 }
 
-/** Two timestamps fall on the same calendar day (UTC). */
-export function isSameUtcDay(a: number, b: number): boolean {
-  const da = new Date(a);
-  const db = new Date(b);
-  return (
-    da.getUTCFullYear() === db.getUTCFullYear() &&
-    da.getUTCMonth() === db.getUTCMonth() &&
-    da.getUTCDate() === db.getUTCDate()
-  );
+/** Two timestamps fall on the same calendar day in the given IANA timezone. */
+export function isSameLocalDay(a: number, b: number, timeZone: string): boolean {
+  return localDayKey(a, timeZone) === localDayKey(b, timeZone);
 }
 
 /**
- * Anti-farm: a word may climb the ladder at most once per calendar day (UTC),
- * no matter how many times it's encountered (reading + several quiz answers).
- * `lastCreditAt` is the timestamp of the last credited advance.
+ * Anti-farm: a word may climb the ladder at most once per calendar day in the
+ * user's timezone, no matter how many times it's encountered (reading + several
+ * quiz answers). Local days (not UTC) so a user east/west of UTC can't earn two
+ * credits in one of their own days by straddling UTC midnight. `lastCreditAt` is
+ * the timestamp of the last credited advance.
  */
-export function creditAllowedToday(lastCreditAt: number | null, now: number): boolean {
-  return lastCreditAt == null || !isSameUtcDay(lastCreditAt, now);
+export function creditAllowedToday(lastCreditAt: number | null, now: number, timeZone: string): boolean {
+  return lastCreditAt == null || !isSameLocalDay(lastCreditAt, now, timeZone);
 }

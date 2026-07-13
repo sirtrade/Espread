@@ -268,9 +268,10 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
 
 ## Этап 10. Мелкие исправления и метрики (низкий приоритет)
 
-1. **Локальные сутки для анти-фарма:** `creditAllowedToday`/`isSameUtcDay`
-   (`domain/srs.ts`) перевести на таймзону пользователя (`user.timezone`,
-   хелперы в `lib/timezone.ts`); прокинуть tz в `applyPracticeAnswer` и
+1. **Локальные сутки для анти-фарма:** ✅ готово (B-2, ветка
+   `claude/backlog-task-impl-15ehkm`). `creditAllowedToday`/`isSameLocalDay`
+   (`domain/srs.ts`) считают по таймзоне пользователя (`user.timezone`, хелпер
+   `localDayKey` в `lib/timezone.ts`); tz прокинута в `applyPracticeAnswer` и
    `applyReviewToBank`.
 2. **Размер сессии:** настройка в Settings (5/10/20, дефолт 10) →
    `GET /practice/queue?limit=`; после этапа 1 менее критично.

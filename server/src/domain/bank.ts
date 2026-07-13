@@ -111,7 +111,7 @@ function occupiesSlot(item: Pick<BankItemRecord, "status" | "srsStage">): boolea
  * Rules:
  * - exposedLemmas are the active bank items that were actually woven into the
  *   article (validated against the body). Ones NOT re-marked earn a clean
- *   exposure and climb the SRS ladder (once per day). Ones re-marked are a soft
+ *   exposure and climb the SRS ladder (once per local day, per `timeZone`). Ones re-marked are a soft
  *   lapse — they drop a couple rungs (`lapseSrs`, not a full reset), stay due
  *   immediately, and follow the fresh verdict.
  * - Any other marked item (new or already tracked) is upserted per its
@@ -133,6 +133,7 @@ export function applyReviewToBank(
   overrides?: StatusOverrides,
   poolLimit = 0,
   now = Date.now(),
+  timeZone = "UTC",
 ): Map<string, BankItemRecord> {
   const result = new Map<string, BankItemRecord>();
   for (const [lemma, item] of existing) {
@@ -159,7 +160,7 @@ export function applyReviewToBank(
     } else {
       // Clean exposure: climb the ladder, but at most once per calendar day.
       item.exposures += 1;
-      if (creditAllowedToday(item.lastCreditAt, now)) {
+      if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
         if (graduatesOnSuccess(item.srsStage)) {
           // Survived the whole ladder plus the final 120-day review — learned.
           item.status = "learned";
