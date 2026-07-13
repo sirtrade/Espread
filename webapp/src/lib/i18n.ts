@@ -95,6 +95,7 @@ export interface Dict {
   "review.nothingMarked": string;
   "review.whatYouMarked": string;
   "review.rare": string;
+  "review.grammarLabel": string;
   "review.showContext": string;
   "review.hideContext": string;
   "review.save": string;
@@ -286,6 +287,7 @@ const es: Dict = {
   "review.nothingMarked": "No marcaste nada en esta lectura. ¡Buen trabajo!",
   "review.whatYouMarked": "Lo que marcaste",
   "review.rare": "poco frecuente",
+  "review.grammarLabel": "Gramática",
   "review.showContext": "Ver en contexto",
   "review.hideContext": "Ocultar el contexto",
   "review.save": "Guardar",
@@ -483,6 +485,7 @@ const ru: Dict = {
   "review.nothingMarked": "Вы ничего не отметили в этом чтении. Отличная работа!",
   "review.whatYouMarked": "Что вы отметили",
   "review.rare": "редкое",
+  "review.grammarLabel": "Грамматика",
   "review.showContext": "Показать в контексте",
   "review.hideContext": "Скрыть контекст",
   "review.save": "Сохранить",
@@ -681,6 +684,7 @@ const en: Dict = {
   "review.nothingMarked": "You didn't mark anything in this reading. Nice work!",
   "review.whatYouMarked": "What you marked",
   "review.rare": "uncommon",
+  "review.grammarLabel": "Grammar",
   "review.showContext": "See in context",
   "review.hideContext": "Hide context",
   "review.save": "Save",

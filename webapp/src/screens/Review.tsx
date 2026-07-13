@@ -135,6 +135,15 @@ export function Review() {
                     </div>
                   )}
 
+                  {item.grammar && (
+                    <div className="bg-subtle mt-3 rounded-xl px-3 py-2">
+                      <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-accent">
+                        {t("review.grammarLabel")} · {item.grammar.label}
+                      </p>
+                      <p className="mt-1 text-sm text-text">{item.grammar.explanation}</p>
+                    </div>
+                  )}
+
                   {item.note && <p className="mt-2 text-xs text-subtext">{item.note}</p>}
 
                   <div className="border-subtle-light mt-3 flex overflow-hidden rounded-full border text-xs font-medium">

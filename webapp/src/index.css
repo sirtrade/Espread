@@ -6,7 +6,9 @@
   --tg-bg: var(--tg-theme-bg-color, #faf6ef);
   --tg-surface: var(--tg-theme-secondary-bg-color, #ffffff);
   --tg-text: var(--tg-theme-text-color, #2a241d);
-  --tg-subtext: var(--tg-theme-hint-color, #8a8074);
+  /* Darkened from #8a8074: the old hint color sat at ~3.9:1 on the paper
+     background, below WCAG AA for the small usage/context text on cards. */
+  --tg-subtext: var(--tg-theme-hint-color, #776e60);
   --tg-accent: var(--tg-theme-button-color, #b5651d);
   --tg-amber: #c68a2e;
   --tg-teal: #3e8f83;
@@ -32,7 +34,7 @@
   --tg-bg: #faf6ef;
   --tg-surface: #ffffff;
   --tg-text: #2a241d;
-  --tg-subtext: #8a8074;
+  --tg-subtext: #776e60;
   --tg-accent: #b5651d;
   --tg-amber: #c68a2e;
   --tg-teal: #3e8f83;
@@ -43,7 +45,7 @@
   --tg-bg: #ecdfc6;
   --tg-surface: #f5ecd9;
   --tg-text: #43351f;
-  --tg-subtext: #8a7757;
+  --tg-subtext: #6f5f42;
   --tg-accent: #a05e1c;
   --tg-amber: #b8862e;
   --tg-teal: #3e8073;
@@ -54,7 +56,7 @@
   --tg-bg: #262220;
   --tg-surface: #322d29;
   --tg-text: #d9d0c1;
-  --tg-subtext: #9c9284;
+  --tg-subtext: #a89e8f;
   --tg-accent: #d99a52;
   --tg-amber: #caa156;
   --tg-teal: #5fb3a9;
@@ -65,7 +67,7 @@
   --tg-bg: #1c1712;
   --tg-surface: #27201a;
   --tg-text: #d8b98c;
-  --tg-subtext: #937f61;
+  --tg-subtext: #a48c68;
   --tg-accent: #e0a35c;
   --tg-amber: #caa156;
   --tg-teal: #7aa79b;

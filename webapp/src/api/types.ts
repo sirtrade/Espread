@@ -56,6 +56,14 @@ export interface Session {
 export type Pos = "verb" | "noun" | "adj" | "adv" | "phrase" | "other";
 export type FreqBand = "top1000" | "top3000" | "top5000" | "rare";
 
+/** Grammatical-mood analysis attached to a card when the marked form is a
+ *  subjunctive verb. `label` is the Spanish tense name ("subjuntivo presente");
+ *  `explanation` says, in the explain language, why the subjunctive is used. */
+export interface GrammarNote {
+  label: string;
+  explanation: string;
+}
+
 /** A structured vocabulary card returned by the review endpoint. `contextSentence`
  *  is the exact sentence from the article the item was marked in. */
 export interface ReviewItem {
@@ -65,6 +73,7 @@ export interface ReviewItem {
   gender: "m" | "f" | null;
   translation: string;
   note: string | null;
+  grammar: GrammarNote | null;
   contextTranslation: string | null;
   freqBand: FreqBand;
   distractors: string[];
@@ -114,6 +123,9 @@ export interface ArchivedReviewItem {
   gender: "m" | "f" | null;
   translation: string;
   note: string | null;
+  /** Optional: archived reviews from before the subjunctive analysis feature
+   *  won't carry it. */
+  grammar?: GrammarNote | null;
   contextTranslation: string | null;
   freqBand: FreqBand;
   distractors: string[];

@@ -157,6 +157,14 @@ function NewReviewArchive({ review }: { review: ArchivedReviewResult }) {
           <li key={i} className="rounded-xl bg-surface px-4 py-3">
             <p className="font-medium">{displayLemma(item)}</p>
             {item.translation && <p className="text-sm text-subtext">{item.translation}</p>}
+            {item.grammar && (
+              <div className="bg-subtle mt-2 rounded-lg px-3 py-2">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-accent">
+                  {t("review.grammarLabel")} · {item.grammar.label}
+                </p>
+                <p className="mt-1 text-sm text-text">{item.grammar.explanation}</p>
+              </div>
+            )}
             {item.note && <p className="mt-1 text-xs text-subtext">{item.note}</p>}
           </li>
         ))}

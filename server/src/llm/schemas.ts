@@ -63,6 +63,17 @@ export const reviewItemSchema = z.object({
     .max(300)
     .nullish()
     .transform((v) => v || null),
+  /** Dedicated grammatical-mood analysis, filled only when the marked form is a
+   *  subjunctive verb: `label` names the tense ("subjuntivo presente"),
+   *  `explanation` says why the subjunctive is used here. Null for everything
+   *  else. Optional so archived reviews from before this field parse cleanly. */
+  grammar: z
+    .object({
+      label: z.string().min(1).max(60),
+      explanation: z.string().min(1).max(400),
+    })
+    .nullish()
+    .transform((v) => v ?? null),
   contextTranslation: z
     .string()
     .max(500)

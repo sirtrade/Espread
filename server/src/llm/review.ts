@@ -35,7 +35,8 @@ export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewRes
     `El estudiante marcó palabras, fragmentos y oraciones que no entendió mientras leía el artículo. ` +
     `Convierte las marcas en fichas de vocabulario. Responde ÚNICAMENTE con JSON: ` +
     `{"items": [{"surface": string, "lemma": string, "pos": "verb"|"noun"|"adj"|"adv"|"phrase"|"other", ` +
-    `"gender": "m"|"f"|null, "translation": string, "note": string|null, "contextTranslation": string|null, ` +
+    `"gender": "m"|"f"|null, "translation": string, "note": string|null, ` +
+    `"grammar": {"label": string, "explanation": string}|null, "contextTranslation": string|null, ` +
     `"freqBand": "top1000"|"top3000"|"top5000"|"rare", "distractors": [string, string, string]}]}.\n` +
     `Reglas para cada ficha:\n` +
     `- "surface": la forma EXACTA tal como aparece en el texto (p. ej. "perfila", "lanzamientos", "se llama").\n` +
@@ -45,8 +46,15 @@ export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewRes
     `- "gender": solo para sustantivos ("m" o "f"); null en los demás casos.\n` +
     `- "translation": traducción CORTA del lemma en ${lang}: máximo 5 palabras, sin paréntesis, sin guiones largos, ` +
     `sin repetir el original español dentro. SOLO la traducción.\n` +
-    `- "note": opcional, en ${lang}: matices de uso, régimen preposicional, por qué se usa así en el texto. ` +
-    `Todo lo que NO sea la traducción va aquí, nunca en "translation".\n` +
+    `- "note": opcional, en ${lang}: matices de uso léxico y régimen preposicional. ` +
+    `Todo lo que NO sea la traducción ni el análisis gramatical de "grammar" va aquí, nunca en "translation".\n` +
+    `- "grammar": objeto {"label", "explanation"} o null. Rellénalo SOLO cuando la forma marcada (surface) sea ` +
+    `un verbo en SUBJUNTIVO. "label": el tiempo del subjuntivo en español ("subjuntivo presente", ` +
+    `"subjuntivo imperfecto", "subjuntivo pretérito perfecto", etc.). "explanation": en ${lang}, explica por qué ` +
+    `se usa el subjuntivo AQUÍ: nombra el disparador concreto de esta oración (la conjunción, el verbo o la ` +
+    `construcción que lo exige: deseo/ojalá, duda o negación, "para que"/"antes de que"/"cuando"+futuro, ` +
+    `antecedente indefinido o hipotético tras "que", etc.) y por qué el indicativo sería incorrecto. 2-3 frases claras. ` +
+    `Para cualquier forma que NO sea subjuntivo (indicativo, sustantivos, adjetivos...), "grammar": null.\n` +
     `- "contextTranslation": traducción en ${lang} de la oración marcada (campo "sentence" de la marca). ` +
     `Null solo si la marca no trae oración.\n` +
     `- "freqBand": banda de frecuencia del lemma en español: "top1000", "top3000", "top5000" (dentro de las ` +

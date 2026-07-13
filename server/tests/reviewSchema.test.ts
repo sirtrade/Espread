@@ -52,6 +52,33 @@ describe("review schema: translation must be a plain short translation", () => {
   });
 });
 
+describe("review schema: grammar (subjunctive) analysis", () => {
+  it("defaults a missing grammar field to null (back-compat with archived reviews)", () => {
+    const parsed = reviewSchema.parse({ items: [validItem()] });
+    expect(parsed.items[0]!.grammar).toBeNull();
+  });
+
+  it("accepts a subjunctive grammar note", () => {
+    const grammar = {
+      label: "subjuntivo presente",
+      explanation:
+        "Se usa el subjuntivo tras «que» con un antecedente hipotético; el indicativo afirmaría que ya existen.",
+    };
+    const parsed = reviewSchema.parse({ items: [validItem({ grammar })] });
+    expect(parsed.items[0]!.grammar).toEqual(grammar);
+  });
+
+  it("normalizes an explicit null grammar to null", () => {
+    const parsed = reviewSchema.parse({ items: [validItem({ grammar: null })] });
+    expect(parsed.items[0]!.grammar).toBeNull();
+  });
+
+  it("rejects a grammar note missing its label or explanation", () => {
+    expect(reviewItemSchema.safeParse(validItem({ grammar: { label: "subjuntivo presente" } })).success).toBe(false);
+    expect(reviewItemSchema.safeParse(validItem({ grammar: { explanation: "porque sí" } })).success).toBe(false);
+  });
+});
+
 describe("article generation frequency frame", () => {
   it("uses the agreed cap per CEFR level", () => {
     expect(LEVEL_FREQ_CAP).toEqual({ A2: 1500, B1: 2500, B2: 3500, C1: 5000 });

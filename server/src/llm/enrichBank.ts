@@ -48,7 +48,8 @@ export async function enrichBankItems(params: {
     `(la oración donde apareció, puede ser null). ` +
     `Para cada entrada devuelve una ficha limpia. Responde ÚNICAMENTE con JSON: ` +
     `{"items": [{"id": number, "lemma": string, "pos": "verb"|"noun"|"adj"|"adv"|"phrase"|"other", ` +
-    `"gender": "m"|"f"|null, "translation": string, "note": string|null, "contextTranslation": string|null, ` +
+    `"gender": "m"|"f"|null, "translation": string, "note": string|null, ` +
+    `"grammar": {"label": string, "explanation": string}|null, "contextTranslation": string|null, ` +
     `"freqBand": "top1000"|"top3000"|"top5000"|"rare", "distractors": [string, string, string]}]}.\n` +
     `Reglas:\n` +
     `- "lemma": forma de diccionario del term: verbo en infinitivo (con -se si es pronominal), sustantivo en singular, ` +
@@ -56,7 +57,10 @@ export async function enrichBankItems(params: {
     `- "gender": solo para sustantivos; null en los demás casos.\n` +
     `- "translation": traducción CORTA del lemma en ${lang}: máximo 5 palabras, sin paréntesis, sin guiones largos, ` +
     `sin español dentro. Si la traducción vieja traía explicaciones, muévelas a "note".\n` +
-    `- "note": opcional, en ${lang}: matices de uso y todo lo que no sea la traducción.\n` +
+    `- "note": opcional, en ${lang}: matices de uso léxico y todo lo que no sea la traducción ni "grammar".\n` +
+    `- "grammar": objeto {"label", "explanation"} o null. Solo si el "term" (o su "context") está en SUBJUNTIVO: ` +
+    `"label" = el tiempo del subjuntivo en español; "explanation" en ${lang} = por qué se usa el subjuntivo ahí ` +
+    `(el disparador que lo exige) y por qué no el indicativo. En cualquier otro caso, null.\n` +
     `- "contextTranslation": traducción de "context" en ${lang}; null si context es null.\n` +
     `- "freqBand": "top1000", "top3000", "top5000" o "rare" (fuera de las 5000 más frecuentes o muy especializado).\n` +
     `- "distractors": exactamente 3 palabras españolas de la misma categoría gramatical, no sinónimas del lemma.\n` +
