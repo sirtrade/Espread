@@ -44,7 +44,7 @@ export function ThemePicker({ withLabels = false }: { withLabels?: boolean }) {
             >
               Aa
             </span>
-            {withLabels && <span className="text-[10px] text-subtext">{label}</span>}
+            {withLabels && <span className="text-[0.625rem] text-subtext">{label}</span>}
           </button>
         );
       })}
