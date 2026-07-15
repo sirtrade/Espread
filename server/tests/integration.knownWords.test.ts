@@ -42,6 +42,8 @@ describe("known words: completion, API and reset", () => {
       reviewResult: '{"items":[]}',
       changedItems: [],
       readingLemmas: ["hallazgo"],
+      localDay: "2026-07-15",
+      completedAt: Date.UTC(2026, 6, 15, 12),
     });
   }
 

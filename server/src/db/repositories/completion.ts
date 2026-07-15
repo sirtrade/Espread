@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { articles, bankItems, knownWords, readingSessions, userStats } from "../schema.js";
+import { articles, bankItems, dailyActivity, knownWords, readingSessions, userStats } from "../schema.js";
 import type { BankItemRecord } from "../../domain/bank.js";
 import { READING_KNOWN_THRESHOLD } from "../../domain/knownWords.js";
 
@@ -18,8 +18,10 @@ export async function applyCompletion(params: {
   reviewResult: string;
   changedItems: readonly BankItemRecord[];
   readingLemmas: readonly string[];
+  localDay: string;
+  completedAt: number;
 }): Promise<void> {
-  const now = Date.now();
+  const now = params.completedAt;
   db.transaction((trx) => {
     for (const item of params.changedItems) {
       // The "only overwrite context fields with non-empty values" rule is
@@ -117,6 +119,15 @@ export async function applyCompletion(params: {
         readAt: now,
       })
       .where(eq(articles.id, params.articleId))
+      .run();
+
+    trx
+      .insert(dailyActivity)
+      .values({ userId: params.userId, localDay: params.localDay, reading: true, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [dailyActivity.userId, dailyActivity.localDay],
+        set: { reading: true, updatedAt: now },
+      })
       .run();
 
     trx.delete(readingSessions).where(eq(readingSessions.id, params.sessionId)).run();
