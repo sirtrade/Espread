@@ -28,6 +28,9 @@ export const users = sqliteTable("users", {
   // words beyond the cap are parked as "queued" and promoted FIFO as slots
   // free up. 0 = no limit (every accepted word goes straight to active).
   activePoolLimit: integer("active_pool_limit").notNull().default(20),
+  // Independent cap for the grammar track's active pool (0 = unlimited,
+  // clamped to 0-50 in the API). Lexical and grammar pools never share slots.
+  grammarActivePoolLimit: integer("grammar_active_pool_limit").notNull().default(10),
   lastBotQuizAt: integer("last_bot_quiz_at"),
   // In-chat typed quiz awaiting a free-text answer: the bank item being asked
   // and when it was sent (stale pendings expire so old texts aren't graded).
@@ -174,6 +177,63 @@ export const articles = sqliteTable(
   },
   (t) => ({
     userReadIdx: index("articles_user_read_idx").on(t.userId, t.readAt),
+  }),
+);
+
+/**
+ * Grammar-track units (grammar-track design §5): a concrete productive
+ * pattern the reader explicitly accepted from a review. Deliberately NOT a
+ * bank_items extension — the key, content and exercises are different. The
+ * SRS columns mirror the lexical ladder, but only active practice will ever
+ * move them (reading/weaving give no grammar credit).
+ */
+export const grammarItems = sqliteTable(
+  "grammar_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Server-normalized stable identity, e.g. "cuando+subjuntivo-presente".
+    canonicalKey: text("canonical_key").notNull(),
+    // Short Spanish display pattern, e.g. "cuando + presente de subjuntivo".
+    pattern: text("pattern").notNull(),
+    category: text("category", {
+      enum: [
+        "tense_aspect",
+        "mood",
+        "periphrasis",
+        "pronouns",
+        "agreement",
+        "syntax",
+        "prepositions",
+        "connectors",
+        "other",
+      ],
+    }).notNull(),
+    // Short explanation in the user's explainLang at acceptance time.
+    explanation: text("explanation").notNull(),
+    status: text("status", { enum: ["active", "queued", "learned", "ignored"] })
+      .notNull()
+      .default("active"),
+    // JSON array of up to 5 contexts (same shape as bank contexts): a repeat
+    // detection of the same canonical key adds a context, never a second row.
+    contexts: text("contexts").notNull().default("[]"),
+    // Validated GrammarExercise JSON (cloze, acceptedAnswers, options).
+    exercise: text("exercise").notNull(),
+    srsStage: integer("srs_stage").notNull().default(0),
+    nextDueAt: integer("next_due_at"),
+    lastCreditAt: integer("last_credit_at"),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+  },
+  (t) => ({
+    userKeyIdx: uniqueIndex("grammar_items_user_key_idx").on(t.userId, t.canonicalKey),
+    userStatusDueIdx: index("grammar_items_user_status_due_idx").on(t.userId, t.status, t.nextDueAt),
   }),
 );
 

@@ -487,6 +487,21 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 снова. Сбой вызова или пустой результат логируется `logger.warn` и деградирует
 к нулю пассивных встреч — завершение чтения никогда не ломается из-за учёта
 пассивной лексики.
+**Грамматические единицы (F-12)**: клиент может прислать в `POST
+/session/complete` опциональный `grammarAccepted` (canonical keys, ≤10) —
+явно принятые кандидаты из архива review этой сессии. Ключи нормализуются
+`normalizeCanonicalKey` и сверяются с заново провалидированными
+(`parseGrammarCandidates`) кандидатами; `planGrammarSaves`
+(`domain/grammarLifecycle.ts`, чистая) решает: новый ключ → строка
+`grammar_items` со статусом `active`, пока в независимом грамматическом пуле
+есть место (`users.grammar_active_pool_limit`, default 10, `0` = без лимита),
+иначе `queued`; SRS с нуля (`srs_stage=0`, due сразу). Повторный ключ →
+только новый контекст (дедуп по предложению, максимум 5): статус и SRS
+не трогаются — learned остаётся learned, чтение никогда не даёт grammar
+SRS-кредит. Запись — в той же транзакции `applyCompletion`; клиент без
+grammar-решений ничего не сохраняет. После транзакции —
+`rebalanceGrammarPool` (FIFO, зеркало лексического), он же дергается при
+повышении лимита через `PATCH /me`.
 После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead,
 levelSuggestion }`: предложение вычисляется уже по окну, включающему только что
 завершённую статью, поэтому post-reading UI может показать его сразу.
@@ -912,7 +927,7 @@ itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
 | `PUT /api/session` | Сохранить пометки | ≤300 пометок |
 | `DELETE /api/session` | Бросить сессию | |
 | `POST /api/session/review` | LLM-разбор | Идемпотентно; rate-limit `DAILY_REVIEW_LIMIT` |
-| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100; возвращает nullable level suggestion |
+| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100, `grammarAccepted` ≤10 (опционально); возвращает nullable level suggestion |
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
 | `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); pool `limit*3`, shuffle, cross-card anti-leak; typed для stage≥2 без lemma/accepted до ответа |
@@ -980,12 +995,13 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
+| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `grammar_active_pool_limit` (default 10, Zod 0–50, `0` = без лимита), `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
 | `practice_answers` | Append-only журнал первых ответов практики/Quiz/бота | FK `user_id` и `item_id` cascade; `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
 | `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
+| `grammar_items` | Грамматические единицы (трек F-12) | unique `(user_id, canonical_key)`; `pattern`, `category` (9 значений), `explanation`, `status=active/queued/learned/ignored`, `contexts` (JSON ≤5), `exercise` (JSON), `srs_stage`, `next_due_at`, `last_credit_at`; индекс `(user_id, status, next_due_at)` |
 | `daily_activity` | История полезных локальных дней для устойчивого стрика | unique `(user_id, local_day)`; `reading`, `practice`, `created_at`, `updated_at` |
 | `reading_sessions` | Единственная активная сессия (unique `user_id`) | `article_id`, `marks` (JSON), `review_result`, `state` (`reading`/`reviewed`) |
 | `llm_calls` | Аудит/метрика LLM | `user_id` (**ON DELETE set null**), `kind`, `model`, `input_tokens`, `output_tokens`, `cost_usd_micros`, `ok`; индекс `(user_id, kind, created_at)` |
@@ -1027,6 +1043,10 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
   `level_suggestion_dismissed_at`; существующие пользователи получают null.
 - `0016` — append-only `practice_answers` с FK cascade, полной metadata ответа и
   индексами `(user_id, ts)` / `(item_id, ts)`; существующие строки не меняются.
+- `0017` — `grammar_items` (unique `(user_id, canonical_key)`, индекс
+  `(user_id, status, next_due_at)`, FK cascade) и
+  `users.grammar_active_pool_limit` (default 10); существующие строки не
+  меняются.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -1090,6 +1110,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `MAX_CONTEXTS` | 5 | `domain/contexts.ts` |
 | Окно / low / high level suggestion | 5 / `<2%` / `>8%` (все 5) | `domain/levelSuggestion.ts` |
 | `MAX_GRAMMAR_CANDIDATES_PER_REVIEW` | 5 | `domain/grammar.ts` |
+| `grammar_active_pool_limit` | 0–50 (0 = без лимита), default 10 | `users`, `domain/grammarLifecycle.ts` |
 | Cooldown level suggestion | 14 локальных календарных дней | `domain/levelSuggestion.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |

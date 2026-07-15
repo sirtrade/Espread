@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isValidTimezone } from "../lib/timezone.js";
 import { PRACTICE_SIZE_MIN, PRACTICE_SIZE_MAX } from "../domain/practiceSize.js";
 import { PRACTICE_LATENCY_MAX_MS } from "../domain/practiceAnswer.js";
+import { GRAMMAR_POOL_LIMIT_MAX, GRAMMAR_POOL_LIMIT_MIN } from "../domain/grammarLifecycle.js";
 
 export const authTelegramSchema = z.object({
   initData: z.string().min(1),
@@ -28,6 +29,13 @@ export const patchMeSchema = z.object({
   botQuizzesPerDay: z.number().int().min(0).max(12).optional(),
   // Active-pool cap: 0 = no limit, otherwise how many words may be in study.
   activePoolLimit: z.number().int().min(0).max(200).optional(),
+  // Independent grammar-pool cap (0 = no limit); design range 0-50.
+  grammarActivePoolLimit: z
+    .number()
+    .int()
+    .min(GRAMMAR_POOL_LIMIT_MIN)
+    .max(GRAMMAR_POOL_LIMIT_MAX)
+    .optional(),
   // Práctica session size (cards per session); server clamps 1-30 on the queue.
   practiceSize: z.number().int().min(PRACTICE_SIZE_MIN).max(PRACTICE_SIZE_MAX).optional(),
 });
@@ -96,6 +104,9 @@ export const putSessionSchema = z.object({
 export const completeSessionSchema = z.object({
   accepted: z.array(z.string().min(1).max(80)).max(100).optional(),
   rejected: z.array(z.string().min(1).max(80)).max(100).optional(),
+  // Canonical keys of explicitly accepted grammar candidates. Optional, so an
+  // old client that sends no grammar decisions completes normally (F-12).
+  grammarAccepted: z.array(z.string().min(1).max(80)).max(10).optional(),
 });
 
 export const bankQuerySchema = z.object({

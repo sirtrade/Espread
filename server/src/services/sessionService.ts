@@ -4,6 +4,8 @@ import { appendContext, parseContexts, type BankContext } from "../domain/contex
 import { dedupeMarks, type Mark } from "../domain/marks.js";
 import { applyReviewToBank, type BankItemRecord, type ReviewedItem } from "../domain/bank.js";
 import { normalizeArticleLemmas, readingEncounterLemmas } from "../domain/knownWords.js";
+import { normalizeCanonicalKey, parseGrammarCandidates } from "../domain/grammar.js";
+import { planGrammarSaves } from "../domain/grammarLifecycle.js";
 import { termAppearsIn } from "../domain/weaving.js";
 import { reviewMarkedItems } from "../llm/review.js";
 import { extractArticleLemmas } from "../llm/lemmatize.js";
@@ -16,6 +18,7 @@ import { getArticleById, updateArticleLemmas } from "../db/repositories/articles
 import { logger } from "../lib/logger.js";
 import { getUserById } from "../db/repositories/users.js";
 import { getBankItemsMap, rebalanceActivePool } from "../db/repositories/bank.js";
+import { countGrammarByStatus, getGrammarItemsByKeys, rebalanceGrammarPool } from "../db/repositories/grammar.js";
 import { applyCompletion } from "../db/repositories/completion.js";
 import { countRecentCalls } from "../db/repositories/llmCalls.js";
 import { getUserStats } from "../db/repositories/stats.js";
@@ -259,10 +262,13 @@ async function ensureArticleLemmas(userId: number, article: ArticleRow): Promise
   }
 }
 
-/** The reader's per-card intake choices from the review screen (lemmas). */
+/** The reader's per-card intake choices from the review screen (lemmas), plus
+ *  explicitly accepted grammar candidates (canonical keys). An old client that
+ *  sends no grammar decisions simply saves none (design §12). */
 export interface CompletionChoices {
   accepted?: string[];
   rejected?: string[];
+  grammarAccepted?: string[];
 }
 
 export async function completeSession(userId: number, choices: CompletionChoices = {}): Promise<CompleteResult> {
@@ -327,6 +333,32 @@ export async function completeSession(userId: number, choices: CompletionChoices
       .filter((item) => item.status === "queued" && before.get(item.lemma)?.status !== "queued")
       .map((item) => item.lemma);
 
+    // Grammar units are created ONLY from the reader's explicit accepts,
+    // matched against the server-validated candidates of this review. A
+    // repeat canonical key gains a context; status and SRS stay untouched
+    // (reading never earns grammar credit — design §6).
+    let grammarPlan: ReturnType<typeof planGrammarSaves> = { inserts: [], contextUpdates: [] };
+    const grammarAcceptedKeys = new Set((choices.grammarAccepted ?? []).map(normalizeCanonicalKey));
+    if (grammarAcceptedKeys.size > 0) {
+      const acceptedCandidates = parseGrammarCandidates(review.grammarCandidates, article.body).filter(
+        (candidate) => grammarAcceptedKeys.has(candidate.canonicalKey),
+      );
+      if (acceptedCandidates.length > 0) {
+        const [existing, grammarActiveCount] = await Promise.all([
+          getGrammarItemsByKeys(userId, acceptedCandidates.map((candidate) => candidate.canonicalKey)),
+          countGrammarByStatus(userId, "active"),
+        ]);
+        grammarPlan = planGrammarSaves({
+          accepted: acceptedCandidates,
+          existing,
+          activeCount: grammarActiveCount,
+          poolLimit: user.grammarActivePoolLimit,
+          articleId: article.id,
+          now: completedAt,
+        });
+      }
+    }
+
     await applyCompletion({
       userId,
       sessionId: session.id,
@@ -335,6 +367,8 @@ export async function completeSession(userId: number, choices: CompletionChoices
       reviewResult: session.reviewResult,
       changedItems,
       readingLemmas: passiveLemmas,
+      grammarInserts: grammarPlan.inserts,
+      grammarContextUpdates: grammarPlan.contextUpdates,
       localDay: localDayKey(completedAt, user.timezone),
       completedAt,
     });
@@ -345,6 +379,7 @@ export async function completeSession(userId: number, choices: CompletionChoices
     // actually stayed in the queue.
     const promoted = new Set(await rebalanceActivePool(userId, user.activePoolLimit));
     const queued = newlyQueued.filter((lemma) => !promoted.has(lemma));
+    await rebalanceGrammarPool(userId, user.grammarActivePoolLimit);
 
     const [stats, levelSuggestion] = await Promise.all([
       getUserStats(userId),

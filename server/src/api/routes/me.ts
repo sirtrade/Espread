@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth.js";
 import { getUserById, updateUser, type UserPatch } from "../../db/repositories/users.js";
 import { rebalanceActivePool } from "../../db/repositories/bank.js";
+import { rebalanceGrammarPool } from "../../db/repositories/grammar.js";
 import { getUserTopics, setUserTopics } from "../../db/repositories/topics.js";
 import { resetUserProgress } from "../../db/repositories/reset.js";
 import { markLevelSuggestion } from "../../services/levelSuggestionService.js";
@@ -49,6 +50,9 @@ meRoutes.patch("/", async (c) => {
   const raisesLimit =
     patch.activePoolLimit !== undefined &&
     capacity(patch.activePoolLimit) > capacity(previous.activePoolLimit);
+  const raisesGrammarLimit =
+    patch.grammarActivePoolLimit !== undefined &&
+    capacity(patch.grammarActivePoolLimit) > capacity(previous.grammarActivePoolLimit);
 
   if (Object.keys(patch).length > 0) {
     await updateUser(userId, patch);
@@ -58,6 +62,9 @@ meRoutes.patch("/", async (c) => {
   }
   if (raisesLimit) {
     await rebalanceActivePool(userId, patch.activePoolLimit!);
+  }
+  if (raisesGrammarLimit) {
+    await rebalanceGrammarPool(userId, patch.grammarActivePoolLimit!);
   }
 
   const user = await getUserById(userId);

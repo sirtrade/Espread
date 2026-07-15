@@ -27,6 +27,8 @@ export interface Profile {
   botQuizzesPerDay: number;
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
+  /** independent cap for grammar units in study (0 = no limit, max 50) */
+  grammarActivePoolLimit: number;
   /** cards requested per Práctica session (server clamps 1-30) */
   practiceSize: number;
   onboarded: boolean;
