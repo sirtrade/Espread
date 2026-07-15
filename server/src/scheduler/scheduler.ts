@@ -14,6 +14,7 @@ import { generateFreshArticle } from "../services/articleService.js";
 import { getUnconsumedPrefetchedArticle } from "../db/repositories/articles.js";
 import { getLearnedSince } from "../db/repositories/bank.js";
 import { getUserStats, setLastLearnedDigestAt } from "../db/repositories/stats.js";
+import { getCurrentStreak } from "../db/repositories/activity.js";
 
 const PREGEN_LEAD_MINUTES = 5;
 /** Fixed local hour for the learned-items digest (TZ 6: "раз в день дайджестом, не спамить"). */
@@ -55,7 +56,13 @@ async function runDailyDelivery(now: Date): Promise<void> {
           // notification still points at something readable.
           await generateFreshArticle(user.id, true);
         }
-        await bot.api.sendMessage(user.tgUserId, "Tu lectura de hoy 📖", {
+        const currentStreak = await getCurrentStreak(user.id, user.timezone, now.getTime());
+        const streakDayWord = currentStreak === 1 ? "día" : "días";
+        const streakLine =
+          currentStreak > 0
+            ? `🔥 Llevas una racha de ${currentStreak} ${streakDayWord}. ¡No la pierdas!`
+            : "🔥 Empieza tu racha hoy.";
+        await bot.api.sendMessage(user.tgUserId, `Tu lectura de hoy 📖\n\n${streakLine}`, {
           reply_markup: openAppKeyboard("Leer ahora"),
         });
         logger.info({ userId: user.id }, "Sent daily reading notification");

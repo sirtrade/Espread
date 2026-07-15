@@ -10,6 +10,8 @@ import {
 } from "../../domain/bank.js";
 import { advanceSrs, creditAllowedToday, graduatesOnSuccess, lapseSrs, PRACTICE_RETRY_MS, resetSrs } from "../../domain/srs.js";
 import { recognizeKnownWord } from "./knownWords.js";
+import { recordPracticeActivity } from "./activity.js";
+import { localDayKey } from "../../lib/timezone.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -180,6 +182,10 @@ export async function applyPracticeAnswer(
   if (status === "learned" && item.status !== "learned") {
     await recognizeKnownWord(userId, item.lemma, "learned", now);
   }
+  // One server-accepted first answer completes a one-card practice. Webapp
+  // retries stay client-side, bot answers use this same path, and the daily
+  // upsert makes repeated delivery safe.
+  await recordPracticeActivity(userId, localDayKey(now, timeZone), now);
 
   return { itemId, lemma: item.lemma, srsStage, nextDueAt, status, advanced };
 }

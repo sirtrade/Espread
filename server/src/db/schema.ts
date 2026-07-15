@@ -166,6 +166,28 @@ export const knownWords = sqliteTable(
   }),
 );
 
+export const dailyActivity = sqliteTable(
+  "daily_activity",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    localDay: text("local_day").notNull(),
+    reading: integer("reading", { mode: "boolean" }).notNull().default(false),
+    practice: integer("practice", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+  },
+  (t) => ({
+    userDayIdx: uniqueIndex("daily_activity_user_day_idx").on(t.userId, t.localDay),
+  }),
+);
+
 export const readingSessions = sqliteTable(
   "reading_sessions",
   {

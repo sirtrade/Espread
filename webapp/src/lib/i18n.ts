@@ -70,6 +70,10 @@ export interface Dict {
   "home.stat.articles": string;
   "home.stat.inProgress": string;
   "home.stat.learned": string;
+  "home.streak": string;
+  "home.progress": string;
+  "home.progress.articles": string;
+  "home.progress.words": string;
   "home.queuedLink": (p: { count: number }) => string;
   "home.activeBank": string;
   "home.seeAll": string;
@@ -288,6 +292,10 @@ const es: Dict = {
   "home.stat.articles": "Artículos",
   "home.stat.inProgress": "En progreso",
   "home.stat.learned": "Aprendidas",
+  "home.streak": "Días de racha",
+  "home.progress": "Progreso semanal",
+  "home.progress.articles": "Lecturas",
+  "home.progress.words": "Aprendidas",
   "home.queuedLink": ({ count }) => `🗂️ ${count} en cola`,
   "home.activeBank": "Tu banco activo",
   "home.seeAll": "Ver todo →",
@@ -515,6 +523,10 @@ const ru: Dict = {
   "home.stat.articles": "Статьи",
   "home.stat.inProgress": "В процессе",
   "home.stat.learned": "Выучено",
+  "home.streak": "Дней подряд",
+  "home.progress": "Прогресс по неделям",
+  "home.progress.articles": "Чтения",
+  "home.progress.words": "Выучено",
   "home.queuedLink": ({ count }) => `🗂️ ${count} в очереди`,
   "home.activeBank": "Ваш активный банк",
   "home.seeAll": "Показать всё →",
@@ -743,6 +755,10 @@ const en: Dict = {
   "home.stat.articles": "Articles",
   "home.stat.inProgress": "In progress",
   "home.stat.learned": "Learned",
+  "home.streak": "Day streak",
+  "home.progress": "Weekly progress",
+  "home.progress.articles": "Readings",
+  "home.progress.words": "Learned",
   "home.queuedLink": ({ count }) => `🗂️ ${count} queued`,
   "home.activeBank": "Your active bank",
   "home.seeAll": "See all →",

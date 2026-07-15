@@ -16,6 +16,7 @@ import { applyCompletion } from "../db/repositories/completion.js";
 import { countRecentCalls } from "../db/repositories/llmCalls.js";
 import { getUserStats } from "../db/repositories/stats.js";
 import { getActiveSession, setSessionReviewed } from "../db/repositories/sessions.js";
+import { localDayKey } from "../lib/timezone.js";
 
 /** A review card enriched for the client: the raw LLM verdict plus the exact
  *  sentence from the article the item was marked in. */
@@ -197,8 +198,9 @@ export async function completeSession(userId: number, choices: CompletionChoices
       new Set((lemmas ?? []).map(normalizeTerm).filter((l) => reviewedLemmaSet.has(l)));
     const overrides = { accepted: normalizeChoice(choices.accepted), rejected: normalizeChoice(choices.rejected) };
 
+    const completedAt = Date.now();
     const before = await getBankItemsMap(userId);
-    const after = applyReviewToBank(before, exposedLemmas, reviewedItems, overrides, user.activePoolLimit, Date.now(), user.timezone);
+    const after = applyReviewToBank(before, exposedLemmas, reviewedItems, overrides, user.activePoolLimit, completedAt, user.timezone);
 
     // Only rows that actually changed get written — a completion typically
     // touches a handful of lemmas, not the user's whole bank.
@@ -219,6 +221,8 @@ export async function completeSession(userId: number, choices: CompletionChoices
       reviewResult: session.reviewResult,
       changedItems,
       readingLemmas: passiveLemmas,
+      localDay: localDayKey(completedAt, user.timezone),
+      completedAt,
     });
 
     // Clean exposures that matured words past the pool threshold freed slots;

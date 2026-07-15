@@ -183,6 +183,13 @@ export interface Stats {
   itemsQueued: number;
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
+  currentStreak: number;
+  weeklyProgress: Array<{
+    /** Monday in the user's local calendar, YYYY-MM-DD */
+    weekStart: string;
+    articlesRead: number;
+    wordsLearned: number;
+  }>;
 }
 
 export type KnownWordSource = "learned" | "reading" | "manual";

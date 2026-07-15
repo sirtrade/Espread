@@ -620,6 +620,8 @@ Práctica в webapp (§10): слова со ступени 2+ спрашиваю
 - **Доставка**: если `HH:MM == dailyTime` и сегодня ещё не доставлено —
   `markDailyDelivered`, затем (если нет непотреблённой префетч-статьи) —
   генерация fallback'ом, и сообщение «Tu lectura de hoy 📖» + кнопка «Leer ahora».
+  Испанский текст также сообщает текущий стрик: при ненулевом — «Llevas una
+  racha de N día/días. ¡No la pierdas!», иначе приглашает начать серию сегодня.
 
 ### 13.2 Дайджест выученного (`runLearnedDigest`)
 В `DIGEST_LOCAL_HOUR = "20:00"` локального времени: слова, ставшие `learned` с
@@ -689,12 +691,32 @@ IANA-таймзоной.
 
 `webapp/src/screens/Home.tsx`: при наличии активной сессии — редирект в `/read`.
 Иначе `GET /stats` + `GET /bank?status=active` + `GET /practice/queue?limit=1`.
-Плитки: прочитано статей, «в прогрессе» (`X / limit`, если лимит задан),
-выучено; ссылка на очередь; активный банк чипами; кнопки «🧠 Тренировка (N)» (если
-есть due) и «Новое чтение». `GET /stats` возвращает `{ articlesRead,
-itemsInProgress, itemsLearned, itemsQueued, activePoolLimit }`.
+Показывает 🔥 текущий стрик, плитки прочитанных статей / слов в процессе /
+выученных, 12-недельный CSS-график чтений и learned-слов (без chart dependency),
+ссылку на очередь, активный банк чипами и кнопки «🧠 Тренировка (N)» / «Новое
+чтение». `GET /stats` возвращает `{ articlesRead, itemsInProgress, itemsLearned,
+itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
+`weeklyProgress` — `{ weekStart: "YYYY-MM-DD", articlesRead, wordsLearned }`.
 
-### 16.1 Словарный запас (`webapp/src/screens/Vocabulary.tsx`)
+### 16.1 Стрик и недельная динамика
+- Полезный день — локальный календарный день пользователя с завершённым чтением
+  или практикой. История хранится в `daily_activity` (unique
+  `(user_id, local_day)`, независимые boolean-флаги `reading`/`practice`);
+  накопительного счётчика нет.
+- Чтение ставит `reading=true` атомарно с `applyCompletion`. Любой принятый
+  сервером правильный или неправильный первый ответ карточки в webapp либо боте
+  ставит `practice=true`; клиентские ретраи на сервер не уходят. Дневной upsert
+  идемпотентен, поэтому один ответ и ранний выход уже считаются завершённой
+  one-card практикой.
+- `currentStreak` вычисляется чистой логикой `domain/motivation.ts` по
+  `localDayKey` и таймзоне профиля. Если сегодня действий ещё нет, непрерывная
+  серия до вчера сохраняется до конца текущих локальных суток; более старый
+  разрыв даёт 0.
+- Недельный график строится по локальным неделям с понедельника: чтения — из
+  `articles.read_at`, слова — только из `known_words.known_since` с
+  `source=learned`. Дневная цель не включена.
+
+### 16.2 Словарный запас (`webapp/src/screens/Vocabulary.tsx`)
 Вход с Home ведёт на `/vocabulary`. Экран показывает число признанных известных
 лемм (`known_since != null`), разбивку `learned/reading/manual`, прирост по каждой
 из последних 12 UTC-недель, список лемм и покрытие пяти диапазонов по 1000.
@@ -732,7 +754,7 @@ hermitdave FrequencyWords и распространяется с атрибуц�
 | `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); typed для stage≥2 |
 | `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint`; `typedAnswer` грейдится сервером |
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
-| `GET /api/stats` | Статистика | |
+| `GET /api/stats` | Статистика | Счётчики + текущий локальный стрик + 12 недель чтений/learned-слов |
 | `GET /api/known-words` | Список известных лемм | Только `known_since != null` |
 | `GET /api/known-words/stats` | Размер, источники, 12 недель, покрытие top-5000 | 5 диапазонов по 1000 |
 | `GET /api/admin/usage` | Расход LLM по юзерам | Только `ADMIN_TG_IDS` (`403` иначе) |
@@ -799,12 +821,14 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, `first_context`, `surface_form`, `pos`, `gender`, `note`, `context_translation`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
 | `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
+| `daily_activity` | История полезных локальных дней для устойчивого стрика | unique `(user_id, local_day)`; `reading`, `practice`, `created_at`, `updated_at` |
 | `reading_sessions` | Единственная активная сессия (unique `user_id`) | `article_id`, `marks` (JSON), `review_result`, `state` (`reading`/`reviewed`) |
 | `llm_calls` | Аудит/метрика LLM | `user_id` (**ON DELETE set null**), `kind`, `model`, `input_tokens`, `output_tokens`, `cost_usd_micros`, `ok`; индекс `(user_id, kind, created_at)` |
 | `user_stats` | Счётчики (PK = user_id) | `articles_read`, `items_learned`, `last_learned_digest_at` |
 
 FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
-Транзакции: `applyCompletion`, `resetUserProgress`, `setUserTopics`.
+Транзакции: `applyCompletion` (включая reading activity),
+`resetUserProgress`, `setUserTopics`.
 
 ### 20.1 Карта миграций (`server/drizzle/`)
 - `0000` — исходная схема (тогда `bank_items` имел `term`/`clean_streak`).
@@ -827,6 +851,8 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `0011` — `practice_size` (размер сессии Práctica, default 10).
 - `0012` — `known_words` и `articles.lemmas` (default `[]`, совместимо с
   существующими статьями).
+- `0013` — `daily_activity` с unique `(user_id, local_day)` и флагами
+  чтения/практики; новая таблица не меняет существующие строки.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -946,7 +972,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `db/` — клиент, миграции, `schema.ts`, репозитории (`repositories/*`).
 - `domain/` — **чистая логика без I/O**: `srs.ts`, `bank.ts`, `practice.ts`,
   `typedQuiz.ts`, `weaving.ts`, `marks.ts`, `context.ts`, `normalize.ts`,
-  `knownWords.ts`, `vocabularyStats.ts`, `topicRotation.ts` (покрыты
+  `knownWords.ts`, `vocabularyStats.ts`, `motivation.ts`, `topicRotation.ts` (покрыты
   юнит-тестами в `server/tests/`).
 - `data/spanishFrequencyV1.ts` — версионированный CC BY-SA 3.0 частотный
   список для оценки покрытия.
