@@ -19,6 +19,7 @@ export function serializeProfile(user: UserRow, topics: string[]) {
     dailyTime: user.dailyTime,
     botQuizzesPerDay: user.botQuizzesPerDay,
     activePoolLimit: user.activePoolLimit,
+    practiceSize: user.practiceSize,
     onboarded: user.onboardedAt !== null,
   };
 }

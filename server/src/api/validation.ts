@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidTimezone } from "../lib/timezone.js";
+import { PRACTICE_SIZE_MIN, PRACTICE_SIZE_MAX } from "../domain/practiceSize.js";
 
 export const authTelegramSchema = z.object({
   initData: z.string().min(1),
@@ -26,6 +27,8 @@ export const patchMeSchema = z.object({
   botQuizzesPerDay: z.number().int().min(0).max(12).optional(),
   // Active-pool cap: 0 = no limit, otherwise how many words may be in study.
   activePoolLimit: z.number().int().min(0).max(200).optional(),
+  // Práctica session size (cards per session); server clamps 1-30 on the queue.
+  practiceSize: z.number().int().min(PRACTICE_SIZE_MIN).max(PRACTICE_SIZE_MAX).optional(),
 });
 
 // Práctica answers carry an itemId; the post-reading Quiz carries a lemma

@@ -21,6 +21,9 @@ export const users = sqliteTable("users", {
   dailyTime: text("daily_time").notNull().default("08:00"),
   // In-chat vocabulary quizzes: how many per day the user wants (0 = off).
   botQuizzesPerDay: integer("bot_quizzes_per_day").notNull().default(0),
+  // How many cards a Práctica session requests (5 / 10 / 20). Several short
+  // sessions beat one long one (distributed practice); the server clamps 1-30.
+  practiceSize: integer("practice_size").notNull().default(10),
   // Cap on how many words may be "active" (in study) at once. New accepted
   // words beyond the cap are parked as "queued" and promoted FIFO as slots
   // free up. 0 = no limit (every accepted word goes straight to active).

@@ -13,6 +13,7 @@ import {
 import { getUserById } from "../../db/repositories/users.js";
 import { countRecentCalls } from "../../db/repositories/llmCalls.js";
 import { buildQueueCard, parseStoredDistractors, type CardType, type QueueCardType } from "../../domain/practice.js";
+import { clampPracticeSize } from "../../domain/practiceSize.js";
 import { gradeTypedAnswer, type TypedVerdict } from "../../domain/typedQuiz.js";
 import { checkPracticeSentence } from "../../llm/sentenceCheck.js";
 import { practiceAnswerSchema, practiceSentenceSchema } from "../validation.js";
@@ -44,7 +45,7 @@ export interface PracticeCard {
 
 practiceRoutes.get("/queue", async (c) => {
   const { userId } = c.get("session");
-  const limit = Math.min(Math.max(Number(c.req.query("limit")) || 10, 1), 30);
+  const limit = clampPracticeSize(Number(c.req.query("limit")));
   const now = Date.now();
 
   const [dueItems, due] = await Promise.all([getDueForPractice(userId, now, limit), countDueForPractice(userId, now)]);

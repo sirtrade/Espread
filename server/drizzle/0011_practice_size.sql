@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `practice_size` integer DEFAULT 10 NOT NULL;

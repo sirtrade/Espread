@@ -21,6 +21,8 @@ export interface Profile {
   botQuizzesPerDay: number;
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
+  /** cards requested per Práctica session (server clamps 1-30) */
+  practiceSize: number;
   onboarded: boolean;
 }
 

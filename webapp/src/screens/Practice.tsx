@@ -9,6 +9,7 @@ import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { hapticSuccess } from "../telegram/telegram.js";
 import { useT } from "../lib/i18n.js";
+import { useAuth } from "../state/AuthContext.js";
 
 /** Spaced-repetition practice: cloze/recall cards over due bank items, with
  *  an optional free-writing exercise (LLM-checked) after each card. Answers
@@ -16,6 +17,7 @@ import { useT } from "../lib/i18n.js";
 export function Practice() {
   const { t } = useT();
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [rawCards, setRawCards] = useState<PracticeCard[]>([]);
   const [due, setDue] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -34,7 +36,7 @@ export function Practice() {
     setLoading(true);
     setError(null);
     try {
-      const { cards: c, due: d } = await api.getPracticeQueue(10);
+      const { cards: c, due: d } = await api.getPracticeQueue(profile!.practiceSize);
       setRawCards(c);
       setDue(d);
     } catch (err) {
