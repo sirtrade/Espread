@@ -331,6 +331,35 @@ marks })`:
   затруднение; дубли лемм схлопываются.
 - `maxTokens: 4096`, схема `reviewSchema`.
 
+#### 7.1.1 Грамматические кандидаты (`grammarCandidates`, F-11)
+Тот же review-вызов (нового LLM-вызова **нет**) опционально возвращает
+`grammarCandidates` — до `MAX_GRAMMAR_CANDIDATES_PER_REVIEW = 5` продуктивных
+грамматических шаблонов (дизайн: `docs/grammar-track-design.md` §3–4, §12).
+- **Промпт-гейт**: грамматический блок добавляется в system-промпт только если
+  среди пометок есть `span`/`sentence`; разбор из одних одиночных слов о
+  грамматике даже не спрашивает, а вернувшихся «добровольцев» сервер отбрасывает.
+- **Поля кандидата**: `canonicalKey` (стабильная идентичность,
+  напр. `cuando+subjuntivo-presente`), `pattern` (короткий испанский шаблон),
+  `category` (закрытый enum: `tense_aspect | mood | periphrasis | pronouns |
+  agreement | syntax | prepositions | connectors | other`), `explanation`
+  (на `explainLang`), `sourceForm`/`sourceSentence`/`sourceSentenceTranslation`,
+  `exercise` (`cloze` с одним пропуском `___`, `acceptedAnswers`, `options`).
+- **Серверная валидация** (`domain/grammar.ts`, `parseGrammarCandidates`) —
+  чистая и поэлементная, невалидный кандидат отбрасывается, не трогая
+  лексические `items` и соседей: shape по `grammarCandidateSchema`; ключ
+  нормализуется `normalizeCanonicalKey` (lowercase, пробелы→`-`, только
+  `a-z 0-9 áéíóúüñ + _ -`); `sourceForm` — минимум 2 слова (одиночное слово —
+  лексика, не грамматика); `sourceForm` встречается в `sourceSentence`, а оно —
+  в теле статьи (нормализованное вхождение по границам слов); упражнение — ровно
+  один пропуск (любая серия `_` канонизируется в `___`), ответ не читается в
+  cloze, первый `acceptedAnswer` присутствует в `sourceSentence`, опции
+  дедуплицируются и не совпадают с ответами (минимум 3 выживших); дубли
+  `canonicalKey` схлопываются в первого; итог ≤ 5.
+- **Совместимость**: на уровне `reviewSchema` поле — `z.array(z.unknown())`
+  `.nullish()→[]`, поэтому легаси-`review_result` без поля валиден, а один
+  битый кандидат не роняет весь разбор. Валидированные кандидаты сохраняются в
+  архиве `review_result`; completion их пока игнорирует (потребление — F-12+).
+
 ### 7.2 Идемпотентность разбора (`server/src/services/sessionService.ts`)
 `reviewSession(userId)` (под `withUserLock`):
 - Если сессия уже в состоянии `reviewed` и есть закешированный результат — он
@@ -1060,6 +1089,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `PRACTICE_CANDIDATE_MULTIPLIER` | 3 | `db/repositories/bank.ts` |
 | `MAX_CONTEXTS` | 5 | `domain/contexts.ts` |
 | Окно / low / high level suggestion | 5 / `<2%` / `>8%` (все 5) | `domain/levelSuggestion.ts` |
+| `MAX_GRAMMAR_CANDIDATES_PER_REVIEW` | 5 | `domain/grammar.ts` |
 | Cooldown level suggestion | 14 локальных календарных дней | `domain/levelSuggestion.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |

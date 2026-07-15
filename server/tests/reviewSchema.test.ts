@@ -63,6 +63,33 @@ describe("review schema: translation must be a plain short translation", () => {
   });
 });
 
+describe("review schema: grammarCandidates backward compatibility", () => {
+  it("parses legacy review JSON without grammarCandidates to an empty list", () => {
+    const parsed = reviewSchema.parse({ items: [validItem()] });
+    expect(parsed.grammarCandidates).toEqual([]);
+    expect(reviewSchema.parse({ items: [], grammarCandidates: null }).grammarCandidates).toEqual([]);
+  });
+
+  it("keeps candidates raw at the schema level (per-element validation is separate)", () => {
+    // A malformed candidate must not invalidate the lexical items
+    // (grammar-track design §12): the schema doesn't inspect elements.
+    const parsed = reviewSchema.parse({
+      items: [validItem()],
+      grammarCandidates: [{ canonicalKey: "x" }, "garbage", 42],
+    });
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.grammarCandidates).toHaveLength(3);
+  });
+
+  it("rejects an absurdly long candidate list", () => {
+    const result = reviewSchema.safeParse({
+      items: [],
+      grammarCandidates: Array.from({ length: 21 }, () => ({})),
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("distractor prompt quality", () => {
   it.each([REVIEW_DISTRACTOR_INSTRUCTION, ENRICHMENT_DISTRACTOR_INSTRUCTION])(
     "asks for plausible same-POS alternatives with semantic safeguards",
