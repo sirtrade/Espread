@@ -7,8 +7,10 @@ import {
   LAPSE_STAGE_DROP,
   lapseSrs,
   PRACTICE_RETRY_MS,
+  READING_CREDIT_MAX_STAGE,
   resetSrs,
   SRS_INTERVALS_DAYS,
+  SRS_MAX_STAGE,
 } from "../src/domain/srs.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -80,6 +82,15 @@ describe("lapseSrs", () => {
     expect(next.srsStage).toBe(3);
     expect(next.nextDueAt).toBe(now + PRACTICE_RETRY_MS);
     expect(next.nextDueAt).toBeLessThan(now + DAY);
+  });
+});
+
+describe("READING_CREDIT_MAX_STAGE", () => {
+  it("caps reading credit below the top rung so reading alone can't graduate a word", () => {
+    // Passive reading advances words only up to this rung; graduation (top rung)
+    // is therefore only reachable through active recall in practice/bot.
+    expect(READING_CREDIT_MAX_STAGE).toBe(2);
+    expect(READING_CREDIT_MAX_STAGE).toBeLessThan(SRS_MAX_STAGE);
   });
 });
 

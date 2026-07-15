@@ -1,19 +1,21 @@
 /**
  * Spaced-repetition schedule shared by reading and practice. A word climbs the
- * interval ladder on every successful encounter — a clean reading exposure
- * (woven into an article and NOT re-marked) or a first-try-correct quiz answer.
- * A failure (re-marked while reading, or a wrong quiz answer) is a soft lapse:
- * the word drops a couple rungs (`lapseSrs`) rather than restarting from zero,
- * because memory keeps its storage strength and re-learning is faster (savings;
- * Bjork & Bjork, 1992). A full reset to stage 0 (`resetSrs`) is reserved for a
- * manual status change, where a clean restart is intended. `nextDueAt` decides
- * when the word comes up again, both for weaving into the next article and for
- * practice.
+ * interval ladder on a successful encounter — a first-try-correct quiz answer,
+ * or a clean reading exposure (woven into an article and NOT re-marked) but only
+ * on the lower rungs (see `READING_CREDIT_MAX_STAGE`). A failure (re-marked while
+ * reading, or a wrong quiz answer) is a soft lapse: the word drops a couple rungs
+ * (`lapseSrs`) rather than restarting from zero, because memory keeps its storage
+ * strength and re-learning is faster (savings; Bjork & Bjork, 1992). A full reset
+ * to stage 0 (`resetSrs`) is reserved for a manual status change, where a clean
+ * restart is intended. `nextDueAt` decides when the word comes up again, both for
+ * weaving into the next article and for practice.
  *
  * A word that succeeds again while already at the top rung (i.e. it survived
  * the whole ladder plus the final 120-day review) graduates to "learned"
- * automatically. The reader can still mark a word learned/ignored by hand in
- * the bank, and bring a learned word back into study.
+ * automatically — but only through active recall in practice/bot, never from
+ * passive reading (see `READING_CREDIT_MAX_STAGE`). The reader can still mark a
+ * word learned/ignored by hand in the bank, and bring a learned word back into
+ * study.
  */
 
 import { localDayKey } from "../lib/timezone.js";
@@ -27,6 +29,19 @@ export const SRS_MAX_STAGE = SRS_INTERVALS_DAYS.length;
 export function graduatesOnSuccess(currentStage: number): boolean {
   return currentStage >= SRS_MAX_STAGE;
 }
+
+/**
+ * The highest rung a clean reading exposure may advance a word from. Passive
+ * reading ("the word appeared in an article and wasn't re-marked") is a weak
+ * retrieval signal — "didn't mark it" is not "recalled it", and incidental
+ * uptake from reading takes many encounters and yields mostly receptive
+ * knowledge (Karpicke & Roediger, 2008; Webb, 2007; Uchihara et al., 2019).
+ * So reading only helps a word climb while it's still on the lower rungs
+ * (srsStage <= this value); past it, exposure still counts (`exposures`) but no
+ * longer moves the schedule, and the word can only advance — and graduate to
+ * "learned" — through active recall in practice/bot.
+ */
+export const READING_CREDIT_MAX_STAGE = 2;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

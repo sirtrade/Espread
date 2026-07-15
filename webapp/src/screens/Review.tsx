@@ -7,7 +7,7 @@ import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { hapticSelect } from "../telegram/telegram.js";
 import { posLabel, displayLemma, highlightSurface } from "../lib/vocab.js";
-import { intervalDaysForStage, SRS_MAX_STAGE } from "../lib/srs.js";
+import { intervalDaysForStage, READING_CREDIT_MAX_STAGE } from "../lib/srs.js";
 import { useT } from "../lib/i18n.js";
 
 type Decision = "bank" | "skip";
@@ -164,13 +164,14 @@ export function Review() {
           <p className="mb-3 text-xs text-subtext">{t("review.wovenHintSrs")}</p>
           <ul className="flex flex-col gap-2">
             {result.wovenTerms.map((w) => {
-              // A clean reading here bumps the word one rung up the ladder;
-              // one that already topped the ladder graduates to "learned".
+              // A clean reading bumps the word one rung only while it's on the
+              // lower rungs; past READING_CREDIT_MAX_STAGE reading no longer moves
+              // the schedule, so the word advances only through practice/bot.
               const label = w.markedAgain
                 ? t("review.markedAgain")
-                : w.srsStage >= SRS_MAX_STAGE
-                  ? t("quizSession.mastered")
-                  : t("review.wovenNextIn", { days: intervalDaysForStage(w.srsStage + 1) });
+                : w.srsStage <= READING_CREDIT_MAX_STAGE
+                  ? t("review.wovenNextIn", { days: intervalDaysForStage(w.srsStage + 1) })
+                  : t("review.wovenPractice");
               return (
                 <li key={w.lemma} className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
                   <p className="font-medium">{w.lemma}</p>

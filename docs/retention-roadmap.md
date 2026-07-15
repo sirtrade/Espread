@@ -191,6 +191,14 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
 **Критерии приёмки:** довести слово до «learned» можно только ответами в
 практике/боте; чтение помогает только на нижних ступенях.
 
+**Статус:** готово (ветка `claude/backlog-task-impl-h129y8`, F-2). Добавлена
+`READING_CREDIT_MAX_STAGE = 2` (`domain/srs.ts`); чистая экспозиция в
+`applyReviewToBank` двигает ступень только при `srsStage <= 2` и никогда не
+graduate'ит; graduation остался только в `applyPracticeAnswer`. Опциональный
+пункт 3 (требовать typed-ответ для graduation) не реализован — помечен
+«согласовать с владельцем» и в объём F-2 не входил. Копирайт Review-экрана
+обновлён (`review.wovenHintSrs`, новый ключ `review.wovenPractice`).
+
 ---
 
 ## Этап 7. Interleaving и защита от утечек между карточками
@@ -303,7 +311,7 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
 | 3 | Повтор ошибок в сессии | P0 | готово (ветка `claude/retention-stages-1-3-6c6fss`) |
 | 4 | Мягкий откат вместо сброса | P1 | готово (ветка `claude/retention-roadmap-stage-n-fn70m6`) |
 | 5 | Typed recall в webapp | P1 | готово (ветка `claude/feature-f-1-74gzml`) |
-| 6 | Понизить вес чтения | P1 | не начат |
+| 6 | Понизить вес чтения | P1 | готово (ветка `claude/backlog-task-impl-h129y8`, F-2) |
 | 7 | Interleaving + анти-утечка | P2 | не начат |
 | 8 | Ротация контекстов | P2 | не начат |
 | 9 | Дистракторы | P2 | не начат |

@@ -1,4 +1,4 @@
-import { advanceSrs, creditAllowedToday, graduatesOnSuccess, lapseSrs } from "./srs.js";
+import { advanceSrs, creditAllowedToday, lapseSrs, READING_CREDIT_MAX_STAGE } from "./srs.js";
 
 /**
  * Active words with an SRS stage at or below this rung count toward the active
@@ -111,9 +111,13 @@ function occupiesSlot(item: Pick<BankItemRecord, "status" | "srsStage">): boolea
  * Rules:
  * - exposedLemmas are the active bank items that were actually woven into the
  *   article (validated against the body). Ones NOT re-marked earn a clean
- *   exposure and climb the SRS ladder (once per day). Ones re-marked are a soft
- *   lapse — they drop a couple rungs (`lapseSrs`, not a full reset), stay due
- *   immediately, and follow the fresh verdict.
+ *   exposure: it always counts toward `exposures`, but only climbs the SRS
+ *   ladder while the word is still on the lower rungs
+ *   (srsStage <= READING_CREDIT_MAX_STAGE) and at most once per day. Higher-stage
+ *   words keep their schedule untouched — passive reading is too weak a signal to
+ *   advance them. Ones re-marked are a soft lapse — they drop a couple rungs
+ *   (`lapseSrs`, not a full reset), stay due immediately, and follow the fresh
+ *   verdict.
  * - Any other marked item (new or already tracked) is upserted per its
  *   frequency band: top1000..top5000 -> active, rare -> ignored.
  * - `poolLimit` caps the active pool (0 = no limit), counting only words young
@@ -121,8 +125,8 @@ function occupiesSlot(item: Pick<BankItemRecord, "status" | "srsStage">): boolea
  *   WOULD become active but wasn't already active is parked as "queued" once
  *   the final map already holds `poolLimit` slot-occupying words. New words are
  *   considered in `reviewed` order, so earlier cards claim free slots first.
- * - A clean exposure for a word already at the top SRS rung graduates it to
- *   "learned" instead of rescheduling it.
+ * - Reading never graduates a word to "learned": graduation happens only through
+ *   active recall in practice/bot (`applyPracticeAnswer`).
  * - The "once per day" anti-farm cap counts days in the reader's `timeZone`
  *   (their local midnight), not UTC.
  *
@@ -160,19 +164,18 @@ export function applyReviewToBank(
       item.status = statusForItem(lemma, mark.freqBand, overrides);
       updateCardFields(item, mark);
     } else {
-      // Clean exposure: climb the ladder, but at most once per calendar day.
+      // Clean exposure: always counts as an encounter, but passive reading only
+      // moves the schedule on the lower rungs (srsStage <= READING_CREDIT_MAX_STAGE)
+      // and at most once per calendar day. Higher-stage words keep their schedule
+      // untouched and stay in the weaving rotation as they were — reading is too
+      // weak a signal to advance them, and it never graduates a word to "learned"
+      // (that needs active recall in practice/bot).
       item.exposures += 1;
-      if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
-        if (graduatesOnSuccess(item.srsStage)) {
-          // Survived the whole ladder plus the final 120-day review — learned.
-          item.status = "learned";
-          item.lastCreditAt = now;
-        } else {
-          const s = advanceSrs(item.srsStage, now);
-          item.srsStage = s.srsStage;
-          item.nextDueAt = s.nextDueAt;
-          item.lastCreditAt = now;
-        }
+      if (item.srsStage <= READING_CREDIT_MAX_STAGE && creditAllowedToday(item.lastCreditAt, now, timeZone)) {
+        const s = advanceSrs(item.srsStage, now);
+        item.srsStage = s.srsStage;
+        item.nextDueAt = s.nextDueAt;
+        item.lastCreditAt = now;
       }
     }
   }
