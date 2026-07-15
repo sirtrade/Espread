@@ -124,8 +124,8 @@ export const reviewItemSchema = z.object({
     .nullish()
     .transform((v) => v || null),
   freqBand: freqBandSchema,
-  /** exactly 3 same-POS Spanish distractors for multiple-choice quizzes */
-  distractors: z.array(z.string().min(1).max(60)).length(3),
+  /** 3–8 same-POS Spanish distractors; min 3 keeps legacy cards compatible */
+  distractors: z.array(z.string().min(1).max(60)).min(3).max(8),
 });
 export type ReviewItem = z.infer<typeof reviewItemSchema>;
 

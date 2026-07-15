@@ -6,9 +6,11 @@ import {
   buildOptions,
   buildQueueCard,
   containsLeakTerm,
+  FALLBACK_SAMPLE_SIZE,
   isPhraseText,
   parseStoredDistractors,
   protectCrossCardLeaks,
+  sampleFallbackDistractors,
   shufflePracticeCandidates,
   type CardSource,
   type QueueItemSource,
@@ -45,6 +47,18 @@ describe("buildOptions", () => {
     const options = buildOptions("uno", ["dos", "tres", "cuatro", "cinco", "seis"], 3, seeded(3));
     expect(options).toHaveLength(3);
     expect(options).toContain("uno");
+  });
+});
+
+describe("fallback distractor sampling", () => {
+  it("selects a deterministic subset with injected randomness and varies by seed", () => {
+    const first = sampleFallbackDistractors("noun", seeded(1));
+    const repeated = sampleFallbackDistractors("noun", seeded(1));
+    const second = sampleFallbackDistractors("noun", seeded(2));
+
+    expect(first).toHaveLength(FALLBACK_SAMPLE_SIZE);
+    expect(first).toEqual(repeated);
+    expect(first).not.toEqual(second);
   });
 });
 
@@ -153,6 +167,29 @@ describe("buildCard", () => {
     expect(card.options.every((o) => !isPhraseText(o))).toBe(true);
   });
 
+  it("uses stored distractors before bank and fallback candidates", () => {
+    const stored = ["esfuerzo", "acuerdo", "recurso"];
+    const card = buildCard(
+      source({ firstContext: null, storedDistractors: stored, poolLemmas: ["propuesta", "amenaza"] }),
+      "recall",
+      seeded(4),
+    )!;
+    expect(card.options).toHaveLength(4);
+    expect(card.options.filter((option) => option !== card.answer)).toEqual(expect.arrayContaining(stored));
+  });
+
+  it("fills after stored and bank candidates from a sampled POS fallback", () => {
+    const card = buildCard(
+      source({ firstContext: null, storedDistractors: ["guardado"], poolLemmas: ["candidato"] }),
+      "recall",
+      seeded(8),
+    )!;
+    expect(card.options).toHaveLength(4);
+    expect(card.options).toContain("guardado");
+    expect(card.options).toContain("candidato");
+    expect(card.options.filter((option) => ![card.answer, "guardado", "candidato"].includes(option))).toHaveLength(1);
+  });
+
   it("offers only phrases for a phrase card, and never a single-word decoy", () => {
     const card = buildCard(
       source({
@@ -245,7 +282,7 @@ describe("buildQueueCard", () => {
   it("keeps multiple choice below TYPED_QUIZ_MIN_STAGE (recognition for fresh words)", () => {
     const card = buildQueueCard(source({ srsStage: TYPED_QUIZ_MIN_STAGE - 1 }), "cloze", seeded(1))!;
     expect(card.type).toBe("cloze");
-    expect(card.options.length).toBeGreaterThanOrEqual(3);
+    expect(card.options).toHaveLength(4);
     expect(card.contextHint).toBeNull();
   });
 

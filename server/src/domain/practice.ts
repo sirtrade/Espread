@@ -26,6 +26,26 @@ export const FALLBACK_DISTRACTORS: Record<"noun" | "verb" | "adj", readonly stri
     "medida",
     "nivel",
     "crecimiento",
+    "resultado",
+    "proceso",
+    "decisión",
+    "cambio",
+    "objetivo",
+    "informe",
+    "entorno",
+    "debate",
+    "impacto",
+    "desafío",
+    "estrategia",
+    "tendencia",
+    "iniciativa",
+    "avance",
+    "criterio",
+    "conjunto",
+    "alcance",
+    "riesgo",
+    "enfoque",
+    "contexto",
   ],
   verb: [
     "desarrollar",
@@ -38,6 +58,26 @@ export const FALLBACK_DISTRACTORS: Record<"noun" | "verb" | "adj", readonly stri
     "mantener",
     "generar",
     "sostener",
+    "considerar",
+    "analizar",
+    "mejorar",
+    "reducir",
+    "aumentar",
+    "aplicar",
+    "evaluar",
+    "permitir",
+    "evitar",
+    "reconocer",
+    "observar",
+    "definir",
+    "asumir",
+    "abordar",
+    "destacar",
+    "avanzar",
+    "conservar",
+    "determinar",
+    "plantear",
+    "favorecer",
   ],
   adj: [
     "importante",
@@ -50,14 +90,46 @@ export const FALLBACK_DISTRACTORS: Record<"noun" | "verb" | "adj", readonly stri
     "profundo",
     "escaso",
     "sólido",
+    "relevante",
+    "general",
+    "principal",
+    "actual",
+    "posible",
+    "distinto",
+    "adecuado",
+    "significativo",
+    "específico",
+    "común",
+    "estable",
+    "positivo",
+    "negativo",
+    "necesario",
+    "disponible",
+    "fundamental",
+    "habitual",
+    "diverso",
+    "concreto",
+    "eficaz",
   ],
 };
+
+/** Keep fallback varied without letting it swamp higher-priority sources. */
+export const FALLBACK_SAMPLE_SIZE = 8;
 
 /** The fallback list for a POS. Nouns/adverbs/other fall back to the noun list. */
 function fallbackForPos(pos: PartOfSpeech | null): readonly string[] {
   if (pos === "verb") return FALLBACK_DISTRACTORS.verb;
   if (pos === "adj") return FALLBACK_DISTRACTORS.adj;
   return FALLBACK_DISTRACTORS.noun;
+}
+
+/** Random last-resort slice; injectable randomness keeps tests reproducible. */
+export function sampleFallbackDistractors(
+  pos: PartOfSpeech | null,
+  random: () => number = Math.random,
+  count = FALLBACK_SAMPLE_SIZE,
+): string[] {
+  return shuffleInPlace([...fallbackForPos(pos)], random).slice(0, count);
 }
 
 /** A multi-word answer/option (used to keep phrases and single words apart). */
@@ -180,7 +252,7 @@ export function buildOptions(
   const seen = new Set([correct.toLowerCase()]);
   const distractors: string[] = [];
 
-  for (const c of shuffleInPlace([...pool], random)) {
+  for (const c of pool) {
     if (distractors.length >= count - 1) break;
     const key = c.toLowerCase();
     if (seen.has(key)) continue;
@@ -233,8 +305,8 @@ export function parseStoredDistractors(raw: string | null): string[] {
   }
 }
 
-/** Minimum options for a usable multiple-choice card (correct + 2 distractors). */
-const MIN_OPTIONS = 3;
+/** A usable multiple-choice card always has one answer plus 3 distractors. */
+const MIN_OPTIONS = 4;
 
 /** Everything needed to build a practice card, independent of the DB row shape. */
 export interface CardSource {
@@ -266,14 +338,14 @@ export interface BuiltCard {
   contextTranslation: string | null;
 }
 
-/** Composes the distractor pool for an item, keeping phrases and words apart. */
-function distractorPool(src: CardSource): string[] {
+/** Composes the priority pool, keeping phrases and words apart. */
+function distractorPool(src: CardSource, random: () => number): string[] {
   const base = [...src.storedDistractors, ...src.poolLemmas];
   if (src.isPhrase) {
     // Phrase cards drill only against other phrases (no single words, no fallback).
     return base.filter(isPhraseText);
   }
-  return [...base.filter((w) => !isPhraseText(w)), ...fallbackForPos(src.pos)];
+  return [...base.filter((w) => !isPhraseText(w)), ...sampleFallbackDistractors(src.pos, random)];
 }
 
 /** Whether `answer` occurs anywhere inside `text` (case-insensitive). */
@@ -329,7 +401,7 @@ function buildRecallVariant(src: CardSource, pool: string[], random: () => numbe
  * satisfies: the correct answer never appears in the prompt.
  */
 export function buildCard(src: CardSource, prefer: CardType = "cloze", random: () => number = Math.random): BuiltCard | null {
-  const pool = distractorPool(src);
+  const pool = distractorPool(src, random);
   const cloze = buildClozeVariant(src, pool, random);
   const recall = buildRecallVariant(src, pool, random);
   const [first, second] = prefer === "cloze" ? [cloze, recall] : [recall, cloze];
