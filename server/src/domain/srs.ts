@@ -16,6 +16,8 @@
  * the bank, and bring a learned word back into study.
  */
 
+import { localDayKey } from "../lib/timezone.js";
+
 /** Days between reviews at each rung. The top rung repeats every 120 days. */
 export const SRS_INTERVALS_DAYS = [1, 3, 7, 14, 30, 60, 120] as const;
 
@@ -74,22 +76,19 @@ export function lapseSrs(currentStage: number, now: number, delayMs = 0): SrsSta
   return { srsStage: Math.max(0, currentStage - LAPSE_STAGE_DROP), nextDueAt: now + delayMs };
 }
 
-/** Two timestamps fall on the same calendar day (UTC). */
-export function isSameUtcDay(a: number, b: number): boolean {
-  const da = new Date(a);
-  const db = new Date(b);
-  return (
-    da.getUTCFullYear() === db.getUTCFullYear() &&
-    da.getUTCMonth() === db.getUTCMonth() &&
-    da.getUTCDate() === db.getUTCDate()
-  );
+/** Two timestamps fall on the same calendar day in the user's timezone. */
+export function isSameLocalDay(a: number, b: number, timeZone: string): boolean {
+  return localDayKey(a, timeZone) === localDayKey(b, timeZone);
 }
 
 /**
- * Anti-farm: a word may climb the ladder at most once per calendar day (UTC),
- * no matter how many times it's encountered (reading + several quiz answers).
- * `lastCreditAt` is the timestamp of the last credited advance.
+ * Anti-farm: a word may climb the ladder at most once per calendar day, no
+ * matter how many times it's encountered (reading + several quiz answers). The
+ * day boundary is the user's own local midnight (`timeZone`), not UTC, so a
+ * reader in UTC+3 can't earn two credits in one of their days by practicing at
+ * 02:00 and again at 23:00 local. `lastCreditAt` is the timestamp of the last
+ * credited advance.
  */
-export function creditAllowedToday(lastCreditAt: number | null, now: number): boolean {
-  return lastCreditAt == null || !isSameUtcDay(lastCreditAt, now);
+export function creditAllowedToday(lastCreditAt: number | null, now: number, timeZone: string): boolean {
+  return lastCreditAt == null || !isSameLocalDay(lastCreditAt, now, timeZone);
 }

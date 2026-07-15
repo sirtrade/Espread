@@ -117,7 +117,7 @@ export function registerQuizHandlers(bot: Bot): void {
     }
 
     const item = await getBankItemById(user.id, itemId);
-    await applyPracticeAnswer(user.id, itemId, correct);
+    await applyPracticeAnswer(user.id, itemId, correct, Date.now(), false, user.timezone);
 
     await ctx.answerCallbackQuery({ text: correct ? "✅ ¡Correcto!" : "❌ Casi..." });
 
@@ -151,7 +151,7 @@ export function registerQuizHandlers(bot: Bot): void {
 
     const accepted = [item.surfaceForm, item.lemma].filter((f): f is string => !!f);
     const grade = gradeTypedAnswer(text, accepted);
-    await applyPracticeAnswer(user.id, item.id, grade.correct);
+    await applyPracticeAnswer(user.id, item.id, grade.correct, Date.now(), false, user.timezone);
 
     const answerLine = answerLineFor(item);
     const contextLine = item.firstContext ? `\n\n${item.firstContext}` : "";

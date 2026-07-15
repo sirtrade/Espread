@@ -128,7 +128,16 @@ practiceRoutes.post("/answer", async (c) => {
     correct = body.data.correct ?? false;
   }
 
-  const result = await applyPracticeAnswer(userId, itemId, correct, Date.now(), body.data.usedHint ?? false);
+  // The anti-farm daily cap counts days in the reader's timezone (see srs.ts).
+  const user = await getUserById(userId);
+  const result = await applyPracticeAnswer(
+    userId,
+    itemId,
+    correct,
+    Date.now(),
+    body.data.usedHint ?? false,
+    user?.timezone ?? "UTC",
+  );
   if (!result) throw Errors.notFound("Palabra");
   return c.json({
     ok: true,
