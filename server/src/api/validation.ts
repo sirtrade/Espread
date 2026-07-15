@@ -115,6 +115,16 @@ export const completeSessionSchema = z.object({
   grammarAccepted: z.array(z.string().min(1).max(80)).max(10).optional(),
 });
 
+// F-17 skip questionnaire: the reason is optional (closing the sheet without
+// answering still skips), the free-text comment is accepted only with "other"
+// (owner decision — the three preset reasons already encode the signal).
+export const skipSessionSchema = z
+  .object({
+    reason: z.enum(["repeat", "not_interested", "too_hard", "other"]).optional(),
+    comment: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine((d) => d.comment == null || d.reason === "other", "El comentario solo se admite con la razón 'other'");
+
 export const bankQuerySchema = z.object({
   status: z.enum(["active", "learned", "ignored", "queued"]).optional(),
 });

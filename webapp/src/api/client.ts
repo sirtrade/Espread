@@ -18,6 +18,7 @@ import type {
   SentenceCheckResult,
   ReviewResult,
   Session,
+  SkipReason,
   Stats,
   KnownWord,
   LevelSuggestion,
@@ -128,6 +129,10 @@ export const api = {
   putSession: (marks: Mark[]) =>
     request<{ ok: true }>("/session", { method: "PUT", body: JSON.stringify({ marks }) }),
   deleteSession: () => request<{ ok: true }>("/session", { method: "DELETE" }),
+  // F-17: skip the active reading. The reason is optional; a comment is only
+  // sent (and only accepted by the server) with reason "other".
+  skipSession: (payload: { reason?: SkipReason; comment?: string } = {}) =>
+    request<{ ok: true }>("/session/skip", { method: "POST", body: JSON.stringify(payload) }),
   reviewSession: () => request<ReviewResult>("/session/review", { method: "POST" }),
   completeSession: (choices: { accepted?: string[]; rejected?: string[]; grammarAccepted?: string[] } = {}) =>
     request<CompleteResult>("/session/complete", { method: "POST", body: JSON.stringify(choices) }),

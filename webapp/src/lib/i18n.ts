@@ -121,6 +121,16 @@ export interface Dict {
   "reading.analyzing": string;
   "reading.loadError": string;
   "reading.analyzeError": string;
+  "reading.skip": string;
+  "reading.skipTitle": string;
+  "reading.skipReason.repeat": string;
+  "reading.skipReason.not_interested": string;
+  "reading.skipReason.too_hard": string;
+  "reading.skipReason.other": string;
+  "reading.skipCommentPlaceholder": string;
+  "reading.skipConfirm": string;
+  "reading.skipping": string;
+  "reading.skipError": string;
 
   "review.spinnerAnalyzing": string;
   "review.title": string;
@@ -376,6 +386,16 @@ const es: Dict = {
   "reading.analyzing": "Analizando...",
   "reading.loadError": "No se pudo cargar la lectura",
   "reading.analyzeError": "No se pudo analizar la lectura",
+  "reading.skip": "Omitir",
+  "reading.skipTitle": "¿Por qué omites este artículo?",
+  "reading.skipReason.repeat": "Ya leí sobre esto",
+  "reading.skipReason.not_interested": "El tema no me interesa",
+  "reading.skipReason.too_hard": "Demasiado difícil",
+  "reading.skipReason.other": "Otro motivo",
+  "reading.skipCommentPlaceholder": "Cuéntanos por qué (opcional)",
+  "reading.skipConfirm": "Omitir artículo",
+  "reading.skipping": "Omitiendo...",
+  "reading.skipError": "No se pudo omitir el artículo",
 
   "review.spinnerAnalyzing": "Analizando tus palabras y frases...",
   "review.title": "Tu análisis",
@@ -639,6 +659,16 @@ const ru: Dict = {
   "reading.analyzing": "Анализ...",
   "reading.loadError": "Не удалось загрузить чтение",
   "reading.analyzeError": "Не удалось проанализировать чтение",
+  "reading.skip": "Пропустить",
+  "reading.skipTitle": "Почему пропускаешь?",
+  "reading.skipReason.repeat": "Уже читал(а) об этом",
+  "reading.skipReason.not_interested": "Тема не интересна",
+  "reading.skipReason.too_hard": "Слишком сложно",
+  "reading.skipReason.other": "Другое",
+  "reading.skipCommentPlaceholder": "Расскажи почему (необязательно)",
+  "reading.skipConfirm": "Пропустить статью",
+  "reading.skipping": "Пропускаем...",
+  "reading.skipError": "Не удалось пропустить статью",
 
   "review.spinnerAnalyzing": "Анализируем ваши слова и фразы...",
   "review.title": "Ваш разбор",
@@ -903,6 +933,16 @@ const en: Dict = {
   "reading.analyzing": "Analyzing...",
   "reading.loadError": "Couldn't load the reading",
   "reading.analyzeError": "Couldn't analyze the reading",
+  "reading.skip": "Skip",
+  "reading.skipTitle": "Why are you skipping?",
+  "reading.skipReason.repeat": "I've already read about this",
+  "reading.skipReason.not_interested": "Not interested in the topic",
+  "reading.skipReason.too_hard": "Too difficult",
+  "reading.skipReason.other": "Other",
+  "reading.skipCommentPlaceholder": "Tell us why (optional)",
+  "reading.skipConfirm": "Skip article",
+  "reading.skipping": "Skipping...",
+  "reading.skipError": "Couldn't skip the article",
 
   "review.spinnerAnalyzing": "Analyzing your words and phrases...",
   "review.title": "Your review",

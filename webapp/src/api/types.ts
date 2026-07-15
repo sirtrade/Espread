@@ -63,6 +63,10 @@ export interface Session {
   updatedAt: number;
 }
 
+/** Why the reader skipped an article (F-17). A free-text comment is only
+ *  accepted alongside "other". */
+export type SkipReason = "repeat" | "not_interested" | "too_hard" | "other";
+
 export type Pos = "verb" | "noun" | "adj" | "adv" | "phrase" | "other";
 export type FreqBand = "top1000" | "top3000" | "top5000" | "rare";
 

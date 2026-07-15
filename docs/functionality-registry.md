@@ -189,8 +189,19 @@
 ### 5.4 Хром экрана
 Заголовок, опциональная строка источника (`sourceName`/`sourceUrl`, ссылка в
 новой вкладке), компактный `ThemePicker` и ссылка «⚙» в настройки, разовая
-подсказка (запоминается в localStorage). Нижняя панель: счётчик пометок и кнопка
-«Готово» → финальный `PUT /session` → `POST /session/review` → переход в Review.
+подсказка (запоминается в localStorage). Нижняя панель: тихая текстовая кнопка
+«Пропустить» (F-17), счётчик пометок и кнопка «Готово» → финальный
+`PUT /session` → `POST /session/review` → переход в Review.
+
+**Пропуск статьи (F-17).** Тап по «Пропустить» открывает bottom-sheet-анкету
+«Почему пропускаешь?» с 4 вариантами (`repeat` / `not_interested` / `too_hard`
+/ `other`; повторный тап снимает выбор) и полем текста ≤200 символов, которое
+показывается только при «Другое». Кнопка «Пропустить статью» шлёт
+`POST /api/session/skip` и работает и без выбранной причины; тап по фону или
+«Назад» закрывает анкету без пропуска. После пропуска — переход на Home, где
+«Новое чтение» = обычный `startReading`. Кнопка есть только на экране чтения:
+после запуска разбора (state `reviewed`, LLM уже оплачен) пропуск недоступен —
+сервер отвечает `404` (решение владельца). Все строки — i18n ru/en/es.
 
 ---
 
@@ -304,6 +315,19 @@
 3. Иначе rate-limit: `countRecentCalls(userId, "generate")` за 24 ч; при `>=
    DAILY_ARTICLE_LIMIT` (default **10**) → `429`.
 4. Иначе сгенерировать свежую и создать сессию.
+
+**Пропуск (F-17, `skipSession` в `sessionService.ts`).** `POST
+/api/session/skip` под тем же `withUserLock("session:"+userId)`: одной
+транзакцией (`applySkip`) ставит на статью `skipped_at`/`skip_reason`/
+`skip_comment` и удаляет сессию. Только для `state = "reading"` (после разбора
+— `404`; без сессии — тоже `404`). Причина опциональна (`repeat` /
+`not_interested` / `too_hard` / `other`), comment ≤200 — только при `other`
+(иначе `400`). Пропуск **ничего не кредитует**: ни SRS/банк, ни `known_words`,
+ни `daily_activity`, ни `user_stats.articlesRead`; пометки сессии
+отбрасываются; в историю чтения статья не попадает (фильтр `readAt IS NOT
+NULL`), но её тема продолжает учитываться в `getRecentTopics` (ротация по
+`createdAt`). Потраченный `generate` не возвращается — следующая статья идёт
+по обычному приоритету выше и дневному лимиту.
 
 ---
 
@@ -864,6 +888,8 @@ IANA-таймзоной.
   формата `{items}`, `LegacyReviewArchive` для старого `{words, phrases}`).
 - Доступ: `GET /articles/:id` отдаёт `404` (не `403`) для чужих/непрочитанных
   статей, чтобы не раскрывать их существование.
+- Пропущенные статьи (F-17) в историю не попадают: выборка фильтрует по
+  `readAt IS NOT NULL`, а пропуск `read_at` не ставит (покрыто тестом).
 
 ---
 
@@ -978,6 +1004,7 @@ itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
 | `GET /api/session` | Активная сессия | |
 | `PUT /api/session` | Сохранить пометки | ≤300 пометок |
 | `DELETE /api/session` | Бросить сессию | |
+| `POST /api/session/skip` | Пропустить статью с анкетой (F-17) | Только `state=reading` (иначе `404`); `reason?` из 4 значений, `comment?` ≤200 только при `other`; без кредитов прогресса |
 | `POST /api/session/review` | LLM-разбор | Идемпотентно; rate-limit `DAILY_REVIEW_LIMIT` |
 | `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100, `grammarAccepted` ≤10 (опционально); возвращает nullable level suggestion |
 | `GET /api/grammar` | Список грамматических единиц | Опциональный `?status=active/queued/learned/ignored` |
@@ -1053,7 +1080,7 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
 | `practice_answers` | Append-only полиморфный журнал первых ответов (слова и грамматика) | FK `user_id`/`item_id`/`grammar_item_id` cascade; `item_kind=word/grammar` (ровно один target на строку), nullable `item_id`/`grammar_item_id`, `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)`, `(grammar_item_id, ts)` |
-| `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
+| `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`, nullable `skipped_at`/`skip_reason` (enum repeat/not_interested/too_hard/other)/`skip_comment` (F-17; статья читается или пропускается максимум один раз); индекс `(user_id, read_at)` |
 | `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
 | `grammar_items` | Грамматические единицы (трек F-12) | unique `(user_id, canonical_key)`; `pattern`, `category` (9 значений), `explanation`, `status=active/queued/learned/ignored`, `contexts` (JSON ≤5), `exercise` (JSON), `srs_stage`, `next_due_at`, `last_credit_at`; индекс `(user_id, status, next_due_at)` |
 | `daily_activity` | История полезных локальных дней для устойчивого стрика | unique `(user_id, local_day)`; `reading`, `practice`, `created_at`, `updated_at` |
@@ -1105,6 +1132,8 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
   nullable `item_id`, `item_kind` (default `'word'`) и nullable
   `grammar_item_id` (FK cascade) + индекс `(grammar_item_id, ts)`;
   существующие строки переносятся как `item_kind='word'`.
+- `0019` — F-17: nullable `articles.skipped_at`/`skip_reason`/`skip_comment`
+  (простые `ALTER TABLE ADD`, существующие строки получают NULL).
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -1176,6 +1205,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | Предгенерация | за 5 мин до доставки | `scheduler.ts` |
 | Лимит тела запроса | 256 КБ | `api/app.ts` |
 | Пометок за сессию | ≤300 | `api/validation.ts` |
+| Комментарий пропуска статьи (F-17) | ≤200 символов, только при `other` | `api/validation.ts`, `Reading.tsx` |
 | Тик планировщика | каждую минуту | `scheduler.ts` |
 
 ---

@@ -177,6 +177,12 @@ export const articles = sqliteTable(
     marks: text("marks").notNull().default("[]"),
     reviewResult: text("review_result"),
     readAt: integer("read_at"),
+    // Skip record (F-17): an article is read or skipped at most once, so the
+    // questionnaire answer lives here (no separate table). The reason/comment
+    // feed future topic selection (F-18/F-19). Comment only with "other".
+    skippedAt: integer("skipped_at"),
+    skipReason: text("skip_reason", { enum: ["repeat", "not_interested", "too_hard", "other"] }),
+    skipComment: text("skip_comment"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch('now') * 1000)`),
