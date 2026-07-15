@@ -9,6 +9,7 @@ import type {
   HistoryItem,
   Mark,
   PracticeAnswerResult,
+  PracticeCardType,
   PracticeCard,
   Profile,
   ReadArticle,
@@ -16,6 +17,9 @@ import type {
   ReviewResult,
   Session,
   Stats,
+  KnownWord,
+  LevelSuggestion,
+  VocabularyStats,
 } from "./types.js";
 
 const TOKEN_KEY = "lector_token";
@@ -115,6 +119,8 @@ export const api = {
   patchMe: (patch: Partial<Omit<Profile, "id" | "tgUserId" | "username" | "onboarded">> & { markOnboarded?: boolean }) =>
     request<Profile>("/me", { method: "PATCH", body: JSON.stringify(patch) }),
   resetProgress: () => request<{ ok: true }>("/me/progress", { method: "DELETE" }),
+  markLevelSuggestion: (interaction: LevelSuggestion & { action: "seen" | "dismissed" }) =>
+    request<{ ok: true }>("/me/level-suggestion", { method: "PATCH", body: JSON.stringify(interaction) }),
   createArticle: () => request<{ article: Article; session: Session }>("/articles", { method: "POST" }),
   getSession: () => request<{ session: Session | null; article: Article | null }>("/session"),
   putSession: (marks: Mark[]) =>
@@ -127,6 +133,8 @@ export const api = {
   patchBankItem: (id: number, status: BankStatus) =>
     request<{ item: BankItem }>(`/bank/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   getStats: () => request<Stats>("/stats"),
+  getKnownWords: () => request<{ items: KnownWord[] }>("/known-words"),
+  getVocabularyStats: () => request<VocabularyStats>("/known-words/stats"),
   getHistory: (limit = 20, offset = 0) =>
     request<{ items: HistoryItem[]; total: number }>(`/articles?limit=${limit}&offset=${offset}`),
   getReadArticle: (id: number) => request<{ article: ReadArticle }>(`/articles/${id}`),
@@ -137,7 +145,19 @@ export const api = {
   // it. Both drive the same learning + SRS update.
   postPracticeAnswer: (
     target: { itemId: number } | { lemma: string },
-    answer: { correct: boolean; usedHint?: boolean } | { typedAnswer: string },
+    answer:
+      | {
+          correct: boolean;
+          usedHint?: boolean;
+          cardType: PracticeCardType;
+          latencyMs: number;
+        }
+      | {
+          typedAnswer: string;
+          contextAddedAt?: number | null;
+          cardType: "typed";
+          latencyMs: number;
+        },
   ) =>
     request<PracticeAnswerResult>("/practice/answer", {
       method: "POST",

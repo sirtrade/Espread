@@ -1,6 +1,7 @@
 import { pickTopic } from "../domain/topicRotation.js";
 import { selectTargetTerms } from "../domain/bank.js";
 import { verifyWovenTerms } from "../domain/weaving.js";
+import { normalizeArticleLemmas } from "../domain/knownWords.js";
 import { generateArticle } from "../llm/articleGeneration.js";
 import { config } from "../lib/config.js";
 import { withUserLock } from "../lib/locks.js";
@@ -37,6 +38,7 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
   const generated = await generateArticle({ userId, level: user.level, topic, targetTerms: candidateTerms });
 
   const wovenTerms = verifyWovenTerms(candidateTerms, generated.body, generated.usedTerms);
+  const lemmas = normalizeArticleLemmas(generated.lemmas, generated.body);
 
   return createArticle({
     userId,
@@ -46,6 +48,7 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
     sourceName: generated.sourceName,
     sourceUrl: generated.sourceUrl,
     targetTerms: wovenTerms,
+    lemmas,
     prefetched,
   });
 }

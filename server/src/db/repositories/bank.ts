@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { bankItems } from "../schema.js";
+import { bankItems, practiceAnswers } from "../schema.js";
 import {
   POOL_SLOT_MAX_STAGE,
   queuedPromotionCount,
@@ -9,6 +9,13 @@ import {
   type PartOfSpeech,
 } from "../../domain/bank.js";
 import { advanceSrs, creditAllowedToday, graduatesOnSuccess, lapseSrs, PRACTICE_RETRY_MS, resetSrs } from "../../domain/srs.js";
+import { recognizeKnownWord } from "./knownWords.js";
+import { recordPracticeActivity } from "./activity.js";
+import { localDayKey } from "../../lib/timezone.js";
+import {
+  clampPracticeLatency,
+  type PracticeCardType,
+} from "../../domain/practiceAnswer.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -32,6 +39,7 @@ export async function getBankItemsMap(userId: number): Promise<Map<string, BankI
         gender: r.gender,
         note: r.note,
         contextTranslation: r.contextTranslation,
+        contexts: r.contexts,
         distractors: r.distractors,
         freqBand: r.freqBand,
       },
@@ -67,6 +75,7 @@ export async function setBankItemStatus(userId: number, itemId: number, status: 
     .set({ status, srsStage: s.srsStage, nextDueAt: s.nextDueAt, lastCreditAt: null, updatedAt: now })
     .where(and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)))
     .returning();
+  if (row && status === "learned") await recognizeKnownWord(userId, row.lemma, "manual", now);
   return row;
 }
 
@@ -84,13 +93,18 @@ function dueForPracticeWhere(userId: number, now: number) {
   );
 }
 
-/** Active items whose spaced-repetition timer has expired (or never started). */
+/** Extra due candidates fetched so route-level shuffling can interleave words
+ * and refill cards dropped by safe construction / cross-card anti-leak. */
+export const PRACTICE_CANDIDATE_MULTIPLIER = 3;
+
+/** Active items whose spaced-repetition timer has expired (or never started).
+ * Returns an oversampled candidate pool; the route shuffles and caps output. */
 export async function getDueForPractice(userId: number, now: number, limit: number): Promise<BankItemRow[]> {
   return db.query.bankItems.findMany({
     where: dueForPracticeWhere(userId, now),
     // Nulls (never practiced) sort first in SQLite ASC — new words come first.
     orderBy: [asc(bankItems.nextDueAt)],
-    limit,
+    limit: limit * PRACTICE_CANDIDATE_MULTIPLIER,
   });
 }
 
@@ -112,6 +126,13 @@ export interface PracticeAnswerResult {
   status: BankStatus;
   /** the word climbed a rung this answer (first-try correct, within the daily cap) */
   advanced: boolean;
+}
+
+export interface PracticeAnswerMetadata {
+  /** Existing internal callers default to recall; UI/bot callers pass the exact type. */
+  cardType?: PracticeCardType;
+  /** First-attempt time from card display to submit; null for bot answers. */
+  latencyMs?: number | null;
 }
 
 /**
@@ -136,46 +157,80 @@ export async function applyPracticeAnswer(
   now = Date.now(),
   usedHint = false,
   timeZone = "UTC",
+  metadata: PracticeAnswerMetadata = {},
 ): Promise<PracticeAnswerResult | undefined> {
-  const item = await db.query.bankItems.findFirst({
-    where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)),
-  });
-  if (!item) return undefined;
+  const applied = db.transaction((trx) => {
+    const item = trx
+      .select()
+      .from(bankItems)
+      .where(and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)))
+      .get();
+    if (!item) return undefined;
 
-  let srsStage = item.srsStage;
-  let nextDueAt = item.nextDueAt ?? now;
-  let lastCreditAt = item.lastCreditAt;
-  let status = item.status;
-  let advanced = false;
+    let srsStage = item.srsStage;
+    let nextDueAt = item.nextDueAt ?? now;
+    let lastCreditAt = item.lastCreditAt;
+    let status = item.status;
+    let advanced = false;
 
-  if (!correct) {
-    const s = lapseSrs(item.srsStage, now, PRACTICE_RETRY_MS);
-    srsStage = s.srsStage;
-    nextDueAt = s.nextDueAt;
-  } else if (usedHint) {
-    // Correct, but the translation was revealed first: no advance, and the
-    // schedule (stage/nextDueAt/lastCreditAt) is left as-is so the word stays
-    // due for an unaided retrieval later. `advanced` stays false.
-  } else if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
-    if (graduatesOnSuccess(item.srsStage)) {
-      status = "learned";
-      lastCreditAt = now;
-      advanced = true;
-    } else {
-      const s = advanceSrs(item.srsStage, now);
+    if (!correct) {
+      const s = lapseSrs(item.srsStage, now, PRACTICE_RETRY_MS);
       srsStage = s.srsStage;
       nextDueAt = s.nextDueAt;
-      lastCreditAt = now;
-      advanced = true;
+    } else if (usedHint) {
+      // Correct, but the translation was revealed first: no advance, and the
+      // schedule (stage/nextDueAt/lastCreditAt) is left as-is so the word stays
+      // due for an unaided retrieval later. `advanced` stays false.
+    } else if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
+      if (graduatesOnSuccess(item.srsStage)) {
+        status = "learned";
+        lastCreditAt = now;
+        advanced = true;
+      } else {
+        const s = advanceSrs(item.srsStage, now);
+        srsStage = s.srsStage;
+        nextDueAt = s.nextDueAt;
+        lastCreditAt = now;
+        advanced = true;
+      }
     }
+
+    trx
+      .update(bankItems)
+      .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
+      .where(eq(bankItems.id, itemId))
+      .run();
+    trx
+      .insert(practiceAnswers)
+      .values({
+        userId,
+        itemId,
+        ts: now,
+        cardType: metadata.cardType ?? "recall",
+        correct,
+        usedHint,
+        latencyMs: clampPracticeLatency(metadata.latencyMs),
+        srsStageBefore: item.srsStage,
+        srsStageAfter: srsStage,
+      })
+      .run();
+
+    return {
+      result: { itemId, lemma: item.lemma, srsStage, nextDueAt, status, advanced },
+      learnedNow: status === "learned" && item.status !== "learned",
+    };
+  });
+  if (!applied) return undefined;
+
+  if (applied.learnedNow) {
+    await recognizeKnownWord(userId, applied.result.lemma, "learned", now);
   }
+  // One server-accepted first answer completes a one-card practice. Webapp
+  // retries stay client-side, bot answers use this same path, and the daily
+  // upsert makes repeated delivery safe.
+  await recordPracticeActivity(userId, localDayKey(now, timeZone), now);
 
-  await db
-    .update(bankItems)
-    .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
-    .where(eq(bankItems.id, itemId));
-
-  return { itemId, lemma: item.lemma, srsStage, nextDueAt, status, advanced };
+  return applied.result;
 }
 
 export async function getBankItemById(userId: number, itemId: number): Promise<BankItemRow | undefined> {

@@ -83,7 +83,10 @@ async function runWriteStep(params: {
     `El artículo debe tener entre 250 y 320 palabras y párrafos cortos. ` +
     `${writerGuidance(params.level)} ` +
     `${targetTermsBlock}\n` +
-    `Responde ÚNICAMENTE con JSON: {"title": string, "body": string, "usedTerms": string[]}.`;
+    `Además devuelve "lemmas": los lemas (formas de diccionario) de las palabras con contenido semántico que aparecen ` +
+    `en ESTA versión final del cuerpo. Excluye artículos, pronombres, preposiciones, conjunciones, auxiliares y nombres propios; ` +
+    `incluye cada lema una sola vez. ` +
+    `Responde ÚNICAMENTE con JSON: {"title": string, "body": string, "usedTerms": string[], "lemmas": string[]}.`;
 
   return callJsonLLM({
     system,

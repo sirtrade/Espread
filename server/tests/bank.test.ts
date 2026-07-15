@@ -35,6 +35,7 @@ function item(overrides: Partial<BankItemRecord> = {}): BankItemRecord {
     distractors: '["puerta","mesa","calle"]',
     freqBand: "top1000",
     ...overrides,
+    contexts: overrides.contexts ?? null,
   };
 }
 

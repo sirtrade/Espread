@@ -97,13 +97,24 @@ export function Practice() {
       title={t("practice.title")}
       cards={cards}
       pendingCount={due}
-      onAnswer={(card, correct, usedHint) => api.postPracticeAnswer({ itemId: card.itemId! }, { correct, usedHint })}
-      onTypedAnswer={async (card, typedAnswer) => {
-        const res = await api.postPracticeAnswer({ itemId: card.itemId! }, { typedAnswer });
+      onAnswer={(card, correct, usedHint, latencyMs) =>
+        api.postPracticeAnswer({ itemId: card.itemId! }, { correct, usedHint, cardType: card.type, latencyMs })
+      }
+      onTypedAnswer={async (card, typedAnswer, latencyMs) => {
+        const res = await api.postPracticeAnswer(
+          { itemId: card.itemId! },
+          { typedAnswer, contextAddedAt: card.contextAddedAt, cardType: "typed", latencyMs },
+        );
+        // Typed queue payloads intentionally omit the lemma. Reveal only the
+        // server-returned proper form after the first attempt for feedback,
+        // summary, retries and the optional writing exercise.
+        card.lemma = res.answer ?? "";
+        card.context = res.context ?? null;
+        card.contextTranslation = res.contextTranslation ?? null;
         return {
           correct: res.correct ?? false,
           verdict: res.verdict ?? "wrong",
-          answer: res.answer ?? card.lemma,
+          answer: card.lemma,
           outcome: res,
         };
       }}

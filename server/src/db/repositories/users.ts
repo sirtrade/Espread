@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../client.js";
 import { userStats, users } from "../schema.js";
 
@@ -16,12 +16,47 @@ export type UserPatch = Partial<{
   activePoolLimit: number;
   practiceSize: number;
   onboardedAt: number;
+  levelSuggestionDirection: "up" | "down" | null;
+  levelSuggestionShownAt: number | null;
+  levelSuggestionDismissedAt: number | null;
 }>;
 
 export async function updateUser(userId: number, patch: UserPatch): Promise<UserRow> {
-  const [row] = await db.update(users).set(patch).where(eq(users.id, userId)).returning();
+  const current = patch.level === undefined ? undefined : await getUserById(userId);
+  const resetSuggestion = current && patch.level !== current.level;
+  const [row] = await db
+    .update(users)
+    .set(resetSuggestion
+      ? {
+          ...patch,
+          levelSuggestionDirection: null,
+          levelSuggestionShownAt: null,
+          levelSuggestionDismissedAt: null,
+        }
+      : patch)
+    .where(eq(users.id, userId))
+    .returning();
   if (!row) throw new Error("User not found");
   return row;
+}
+
+export async function recordLevelSuggestionInteraction(
+  userId: number,
+  expectedLevel: UserRow["level"],
+  direction: "up" | "down",
+  action: "seen" | "dismissed",
+  at: number,
+): Promise<boolean> {
+  const rows = await db
+    .update(users)
+    .set({
+      levelSuggestionDirection: direction,
+      levelSuggestionShownAt: at,
+      levelSuggestionDismissedAt: action === "dismissed" ? at : null,
+    })
+    .where(and(eq(users.id, userId), eq(users.level, expectedLevel)))
+    .returning({ id: users.id });
+  return rows.length === 1;
 }
 
 export async function getUserById(userId: number): Promise<UserRow | undefined> {
@@ -45,12 +80,18 @@ export async function setLastBotQuizAt(userId: number, ts: number): Promise<void
 }
 
 /** Marks a typed bot quiz as awaiting the user's free-text answer. */
-export async function setPendingQuiz(userId: number, itemId: number, ts: number): Promise<void> {
-  await db.update(users).set({ pendingQuizItemId: itemId, pendingQuizSentAt: ts }).where(eq(users.id, userId));
+export async function setPendingQuiz(userId: number, itemId: number, ts: number, contextAddedAt: number | null): Promise<void> {
+  await db
+    .update(users)
+    .set({ pendingQuizItemId: itemId, pendingQuizSentAt: ts, pendingQuizContextAddedAt: contextAddedAt })
+    .where(eq(users.id, userId));
 }
 
 export async function clearPendingQuiz(userId: number): Promise<void> {
-  await db.update(users).set({ pendingQuizItemId: null, pendingQuizSentAt: null }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({ pendingQuizItemId: null, pendingQuizSentAt: null, pendingQuizContextAddedAt: null })
+    .where(eq(users.id, userId));
 }
 
 export async function markDailyDelivered(userId: number, dateStr: string): Promise<void> {

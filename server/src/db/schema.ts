@@ -33,6 +33,14 @@ export const users = sqliteTable("users", {
   // and when it was sent (stale pendings expire so old texts aren't graded).
   pendingQuizItemId: integer("pending_quiz_item_id"),
   pendingQuizSentAt: integer("pending_quiz_sent_at"),
+  // Identifies the randomly selected context for typed bot feedback without
+  // exposing its surface form before the answer is graded.
+  pendingQuizContextAddedAt: integer("pending_quiz_context_added_at"),
+  // F-8 suggestion interaction metadata. Null means no suggestion has been
+  // displayed since onboarding/reset/the last actual level change.
+  levelSuggestionDirection: text("level_suggestion_direction", { enum: ["up", "down"] }),
+  levelSuggestionShownAt: integer("level_suggestion_shown_at"),
+  levelSuggestionDismissedAt: integer("level_suggestion_dismissed_at"),
   onboardedAt: integer("onboarded_at"),
   lastDailyDeliveredDate: text("last_daily_delivered_date"),
   lastPrefetchDate: text("last_prefetch_date"),
@@ -82,6 +90,9 @@ export const bankItems = sqliteTable(
     note: text("note"),
     // Translation of firstContext into the user's explain language.
     contextTranslation: text("context_translation"),
+    // Up to five contextual encounters. Nullable/default-compatible so rows
+    // from before F-6 keep using the legacy fields above.
+    contexts: text("contexts").default("[]"),
     // JSON array of 3 same-POS Spanish words, for quiz options.
     distractors: text("distractors"),
     freqBand: text("freq_band", { enum: ["top1000", "top3000", "top5000", "rare"] }),
@@ -108,6 +119,30 @@ export const bankItems = sqliteTable(
   }),
 );
 
+export const practiceAnswers = sqliteTable(
+  "practice_answers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => bankItems.id, { onDelete: "cascade" }),
+    ts: integer("ts").notNull(),
+    cardType: text("card_type", { enum: ["cloze", "recall", "typed"] }).notNull(),
+    correct: integer("correct", { mode: "boolean" }).notNull(),
+    usedHint: integer("used_hint", { mode: "boolean" }).notNull(),
+    latencyMs: integer("latency_ms"),
+    srsStageBefore: integer("srs_stage_before").notNull(),
+    srsStageAfter: integer("srs_stage_after").notNull(),
+  },
+  (t) => ({
+    userTsIdx: index("practice_answers_user_ts_idx").on(t.userId, t.ts),
+    itemTsIdx: index("practice_answers_item_ts_idx").on(t.itemId, t.ts),
+  }),
+);
+
 export const articles = sqliteTable(
   "articles",
   {
@@ -121,6 +156,9 @@ export const articles = sqliteTable(
     sourceName: text("source_name"),
     sourceUrl: text("source_url"),
     targetTerms: text("target_terms").notNull().default("[]"),
+    // Content-word lemmas emitted by the writer/editor and then normalized and
+    // verified against the final article body on the server.
+    lemmas: text("lemmas").notNull().default("[]"),
     prefetched: integer("prefetched", { mode: "boolean" }).notNull().default(false),
     consumed: integer("consumed", { mode: "boolean" }).notNull().default(false),
     // Reading history: when the session completes, its marks and LLM review
@@ -136,6 +174,52 @@ export const articles = sqliteTable(
   },
   (t) => ({
     userReadIdx: index("articles_user_read_idx").on(t.userId, t.readAt),
+  }),
+);
+
+export const knownWords = sqliteTable(
+  "known_words",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lemma: text("lemma").notNull(),
+    source: text("source", { enum: ["learned", "reading", "manual"] }).notNull(),
+    encounters: integer("encounters").notNull().default(0),
+    firstSeenAt: integer("first_seen_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    lastSeenAt: integer("last_seen_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    knownSince: integer("known_since"),
+  },
+  (t) => ({
+    userLemmaIdx: uniqueIndex("known_words_user_lemma_idx").on(t.userId, t.lemma),
+    userKnownSinceIdx: index("known_words_user_known_since_idx").on(t.userId, t.knownSince),
+  }),
+);
+
+export const dailyActivity = sqliteTable(
+  "daily_activity",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    localDay: text("local_day").notNull(),
+    reading: integer("reading", { mode: "boolean" }).notNull().default(false),
+    practice: integer("practice", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+  },
+  (t) => ({
+    userDayIdx: uniqueIndex("daily_activity_user_day_idx").on(t.userId, t.localDay),
   }),
 );
 

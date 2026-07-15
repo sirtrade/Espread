@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { reviewItemSchema, reviewSchema, shortTranslationSchema } from "../src/llm/schemas.js";
 import { frequencyInstruction, LEVEL_FREQ_CAP } from "../src/llm/articleGeneration.js";
+import { REVIEW_DISTRACTOR_INSTRUCTION } from "../src/llm/review.js";
+import { ENRICHMENT_DISTRACTOR_INSTRUCTION } from "../src/llm/enrichBank.js";
 
 function validItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -37,9 +39,18 @@ describe("review schema: translation must be a plain short translation", () => {
     expect(shortTranslationSchema.safeParse("очень ".repeat(11) + "длинно").success).toBe(false);
   });
 
-  it("requires exactly 3 distractors", () => {
+  it.each([3, 5, 6, 7, 8])("accepts %i distractors", (count) => {
+    const distractors = Array.from({ length: count }, (_, i) => `opción ${i}`);
+    expect(reviewItemSchema.safeParse(validItem({ distractors })).success).toBe(true);
+  });
+
+  it("rejects fewer than 3 or more than 8 distractors", () => {
     expect(reviewItemSchema.safeParse(validItem({ distractors: ["uno", "dos"] })).success).toBe(false);
-    expect(reviewItemSchema.safeParse(validItem({ distractors: ["uno", "dos", "tres", "cuatro"] })).success).toBe(false);
+    expect(
+      reviewItemSchema.safeParse(
+        validItem({ distractors: Array.from({ length: 9 }, (_, i) => `opción ${i}`) }),
+      ).success,
+    ).toBe(false);
   });
 
   it("normalizes omitted gender/note/contextTranslation to null", () => {
@@ -50,6 +61,20 @@ describe("review schema: translation must be a plain short translation", () => {
     const parsed = reviewSchema.parse({ items: [item] });
     expect(parsed.items[0]).toMatchObject({ gender: null, note: null, contextTranslation: null });
   });
+});
+
+describe("distractor prompt quality", () => {
+  it.each([REVIEW_DISTRACTOR_INSTRUCTION, ENRICHMENT_DISTRACTOR_INSTRUCTION])(
+    "asks for plausible same-POS alternatives with semantic safeguards",
+    (instruction) => {
+      expect(instruction).toContain("entre 5 y 8");
+      expect(instruction).toContain("misma categoría gramatical");
+      expect(instruction).toContain("tema cercano");
+      expect(instruction).toContain("longitud y registro parecidos");
+      expect(instruction).toContain("No deben ser sinónimos");
+      expect(instruction).toContain("variantes flexionadas");
+    },
+  );
 });
 
 describe("article generation frequency frame", () => {

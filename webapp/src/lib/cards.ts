@@ -28,14 +28,30 @@ export interface SessionCard {
   contextHint?: string | null;
   /** SRS ladder rung (Práctica only); absent for post-reading Quiz cards. */
   srsStage?: number;
+  /** Opaque server selector for the randomly chosen stored context. */
+  contextAddedAt?: number | null;
 }
 
 /** POS-aware padding, mirroring the server's last-resort distractor lists. */
 const FALLBACK: Record<"noun" | "verb" | "adj", readonly string[]> = {
-  noun: ["desarrollo", "esfuerzo", "amenaza", "propuesta", "recurso", "acuerdo", "fuente", "medida", "nivel", "crecimiento"],
-  verb: ["desarrollar", "proponer", "alcanzar", "establecer", "impulsar", "señalar", "lograr", "mantener", "generar", "sostener"],
-  adj: ["importante", "reciente", "evidente", "complejo", "notable", "frecuente", "amplio", "profundo", "escaso", "sólido"],
+  noun: [
+    "desarrollo", "esfuerzo", "amenaza", "propuesta", "recurso", "acuerdo", "fuente", "medida", "nivel", "crecimiento",
+    "resultado", "proceso", "decisión", "cambio", "objetivo", "informe", "entorno", "debate", "impacto", "desafío",
+    "estrategia", "tendencia", "iniciativa", "avance", "criterio", "conjunto", "alcance", "riesgo", "enfoque", "contexto",
+  ],
+  verb: [
+    "desarrollar", "proponer", "alcanzar", "establecer", "impulsar", "señalar", "lograr", "mantener", "generar", "sostener",
+    "considerar", "analizar", "mejorar", "reducir", "aumentar", "aplicar", "evaluar", "permitir", "evitar", "reconocer",
+    "observar", "definir", "asumir", "abordar", "destacar", "avanzar", "conservar", "determinar", "plantear", "favorecer",
+  ],
+  adj: [
+    "importante", "reciente", "evidente", "complejo", "notable", "frecuente", "amplio", "profundo", "escaso", "sólido",
+    "relevante", "general", "principal", "actual", "posible", "distinto", "adecuado", "significativo", "específico", "común",
+    "estable", "positivo", "negativo", "necesario", "disponible", "fundamental", "habitual", "diverso", "concreto", "eficaz",
+  ],
 };
+
+const FALLBACK_SAMPLE_SIZE = 8;
 
 function fallbackForPos(pos: Pos): readonly string[] {
   if (pos === "verb") return FALLBACK.verb;
@@ -43,33 +59,37 @@ function fallbackForPos(pos: Pos): readonly string[] {
   return FALLBACK.noun;
 }
 
+function sampleFallback(pos: Pos, random: () => number): string[] {
+  return shuffle(fallbackForPos(pos), random).slice(0, FALLBACK_SAMPLE_SIZE);
+}
+
 function isPhraseText(text: string): boolean {
   return text.trim().includes(" ");
 }
 
-function shuffle<T>(arr: readonly T[]): T[] {
+function shuffle<T>(arr: readonly T[], random: () => number): T[] {
   const out = [...arr];
   for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [out[i], out[j]] = [out[j]!, out[i]!];
   }
   return out;
 }
 
-const MIN_OPTIONS = 3;
+const MIN_OPTIONS = 4;
 
 /** Correct term plus up to count-1 distinct distractors from the pool. */
-function buildOptions(correct: string, pool: readonly string[], count = 4): string[] {
+function buildOptions(correct: string, pool: readonly string[], count: number, random: () => number): string[] {
   const seen = new Set([correct.toLowerCase()]);
   const distractors: string[] = [];
-  for (const c of shuffle(pool)) {
+  for (const c of pool) {
     if (distractors.length >= count - 1) break;
     const key = c.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     distractors.push(c);
   }
-  return shuffle([correct, ...distractors]);
+  return shuffle([correct, ...distractors], random);
 }
 
 function buildCloze(context: string, term: string): string | null {
@@ -80,6 +100,25 @@ function buildCloze(context: string, term: string): string | null {
 
 function leaks(text: string, answer: string): boolean {
   return text.toLowerCase().includes(answer.toLowerCase());
+}
+
+function normalizeLeakText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/** Mirrors server cross-card matching: accent/case-insensitive lexical units. */
+export function containsLeakTerm(text: string, term: string): boolean {
+  const words = normalizeLeakText(term).trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  const phrase = words.map(escapeRegex).join(String.raw`\s+`);
+  return new RegExp(String.raw`(^|[^\p{L}\p{N}])${phrase}(?=$|[^\p{L}\p{N}])`, "u").test(normalizeLeakText(text));
 }
 
 interface ClientSource {
@@ -94,17 +133,17 @@ interface ClientSource {
   poolLemmas: readonly string[];
 }
 
-function distractorPool(src: ClientSource): string[] {
+function distractorPool(src: ClientSource, random: () => number): string[] {
   const base = [...src.storedDistractors, ...src.poolLemmas];
   if (src.isPhrase) return base.filter(isPhraseText);
-  return [...base.filter((w) => !isPhraseText(w)), ...fallbackForPos(src.pos)];
+  return [...base.filter((w) => !isPhraseText(w)), ...sampleFallback(src.pos, random)];
 }
 
-function buildClozeVariant(src: ClientSource, pool: string[]): SessionCard | null {
+function buildClozeVariant(src: ClientSource, pool: string[], random: () => number): SessionCard | null {
   const answer = src.surface || src.lemma;
   const prompt = src.context ? buildCloze(src.context, answer) : null;
   if (!prompt || leaks(prompt, answer)) return null;
-  const options = buildOptions(answer, pool);
+  const options = buildOptions(answer, pool, 4, random);
   if (options.length < MIN_OPTIONS) return null;
   return {
     key: src.lemma,
@@ -119,9 +158,9 @@ function buildClozeVariant(src: ClientSource, pool: string[]): SessionCard | nul
   };
 }
 
-function buildRecallVariant(src: ClientSource, pool: string[]): SessionCard | null {
+function buildRecallVariant(src: ClientSource, pool: string[], random: () => number): SessionCard | null {
   if (!src.translation || leaks(src.translation, src.lemma)) return null;
-  const options = buildOptions(src.lemma, pool);
+  const options = buildOptions(src.lemma, pool, 4, random);
   if (options.length < MIN_OPTIONS) return null;
   return {
     key: src.lemma,
@@ -141,10 +180,9 @@ function buildRecallVariant(src: ClientSource, pool: string[]): SessionCard | nu
  * Alternates cloze/recall for variety; leak protection degrades a leaking
  * recall into a cloze and drops any word that can't become a safe card.
  */
-export function buildQuizCards(items: readonly ReviewItem[], max = 5): SessionCard[] {
-  const cards: SessionCard[] = [];
-  for (const item of shuffle(items)) {
-    if (cards.length >= max) break;
+export function buildQuizCards(items: readonly ReviewItem[], max = 5, random: () => number = Math.random): SessionCard[] {
+  const candidates: Array<SessionCard & { leakAnswers: string[] }> = [];
+  for (const item of shuffle(items, random)) {
     const isPhrase = item.pos === "phrase";
     const src: ClientSource = {
       lemma: item.lemma,
@@ -155,20 +193,65 @@ export function buildQuizCards(items: readonly ReviewItem[], max = 5): SessionCa
       context: item.contextSentence,
       contextTranslation: item.contextTranslation,
       storedDistractors: item.distractors,
-      // Other accepted words of the same shape make plausible, non-mixed decoys.
+      // Other accepted words of the same POS/shape make plausible, non-mixed decoys.
       poolLemmas: items
-        .filter((o) => o.lemma !== item.lemma && (o.pos === "phrase") === isPhrase)
+        .filter((o) => o.lemma !== item.lemma && o.pos === item.pos)
         .map((o) => o.lemma),
     };
-    const pool = distractorPool(src);
-    const cloze = buildClozeVariant(src, pool);
-    const recall = buildRecallVariant(src, pool);
+    const pool = distractorPool(src, random);
+    const cloze = buildClozeVariant(src, pool, random);
+    const recall = buildRecallVariant(src, pool, random);
     // Alternate the preferred style by position; fall back to whichever exists.
-    const prefer = cards.length % 2 === 0 ? cloze : recall;
+    const prefer = candidates.length % 2 === 0 ? cloze : recall;
     const card = prefer ?? cloze ?? recall;
-    if (card) cards.push(card);
+    if (card) {
+      candidates.push({
+        ...card,
+        leakAnswers: [item.lemma, item.surface, card.answer].filter(Boolean),
+      });
+    }
   }
-  return cards;
+
+  const selected: Array<SessionCard & { leakAnswers: string[] }> = [];
+  for (const original of candidates) {
+    if (selected.length >= max) break;
+    const candidate = { ...original };
+    if (
+      selected.some((card) => card.leakAnswers.some((term) => containsLeakTerm(candidate.prompt, term))) ||
+      selected.some((card) => candidate.leakAnswers.some((term) => containsLeakTerm(card.prompt, term)))
+    ) {
+      continue;
+    }
+
+    if (
+      candidate.context &&
+      selected.some((card) => card.leakAnswers.some((term) => containsLeakTerm(candidate.context!, term)))
+    ) {
+      candidate.context = null;
+    }
+    if (
+      candidate.contextHint &&
+      selected.some((card) => card.leakAnswers.some((term) => containsLeakTerm(candidate.contextHint!, term)))
+    ) {
+      candidate.contextHint = null;
+    }
+    for (let i = 0; i < selected.length; i++) {
+      const card = selected[i]!;
+      const context =
+        card.context && candidate.leakAnswers.some((term) => containsLeakTerm(card.context!, term))
+          ? null
+          : card.context;
+      const contextHint =
+        card.contextHint && candidate.leakAnswers.some((term) => containsLeakTerm(card.contextHint!, term))
+          ? null
+          : card.contextHint;
+      if (context !== card.context || contextHint !== card.contextHint) {
+        selected[i] = { ...card, context, contextHint };
+      }
+    }
+    selected.push(candidate);
+  }
+  return selected.map(({ leakAnswers: _leakAnswers, ...card }) => card);
 }
 
 /** Maps a server-built Práctica card into the shared session model. */
@@ -176,7 +259,7 @@ export function fromPracticeCard(card: PracticeCard): SessionCard {
   return {
     key: String(card.itemId),
     itemId: card.itemId,
-    lemma: card.lemma,
+    lemma: card.lemma ?? "",
     type: card.type,
     prompt: card.prompt,
     answer: card.answer,
@@ -186,5 +269,6 @@ export function fromPracticeCard(card: PracticeCard): SessionCard {
     contextTranslation: card.contextTranslation,
     contextHint: card.contextHint,
     srsStage: card.srsStage,
+    contextAddedAt: card.contextAddedAt,
   };
 }

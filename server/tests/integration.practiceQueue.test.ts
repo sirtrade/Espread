@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 /**
  * Route-level coverage for typed recall in the webapp practice queue (F-1):
@@ -70,14 +71,16 @@ describe("practice queue + typed answer (route level)", () => {
   afterAll(() => sqlite.close());
 
   it("serves a typed card for a stage-2 word", async () => {
-    await seedItem({ lemma: "abarcar", srsStage: 2 });
+    const id = await seedItem({ lemma: "abarcar", srsStage: 2 });
     const { cards } = await queue();
-    const card = cards.find((c) => c.lemma === "abarcar")!;
+    const card = cards.find((c) => c.itemId === id)!;
     expect(card.type).toBe("typed");
+    expect(card.lemma).toBeNull(); // accepted forms stay server-side until grading
     expect(card.answer).toBe(""); // graded on the server, never sent to the client
     expect(card.options).toEqual([]);
     expect(card.prompt).toBe("охватывать");
     expect(card.contextHint).toBe("Los planes _____ varios sectores.");
+    expect(card.context).toBeNull(); // accepted surface is not in the queue payload
   });
 
   it("keeps multiple choice for a stage-0 word", async () => {
@@ -89,19 +92,78 @@ describe("practice queue + typed answer (route level)", () => {
   });
 
   it("exposes the SRS rung on each card (webapp surfaces free-writing on upper rungs)", async () => {
-    await seedItem({ lemma: "reforzar", translation: "укреплять", srsStage: 5, surfaceForm: "refuerza", firstContext: "El plan refuerza la seguridad." });
+    const id = await seedItem({ lemma: "reforzar", translation: "укреплять", srsStage: 5, surfaceForm: "refuerza", firstContext: "El plan refuerza la seguridad." });
     const { cards } = await queue();
-    const card = cards.find((c) => c.lemma === "reforzar")!;
+    const card = cards.find((c) => c.itemId === id)!;
     expect(card.srsStage).toBe(5);
   });
 
   it("grades an exact typed answer on the server and climbs the ladder", async () => {
     const id = await seedItem({ lemma: "consolidar", translation: "укреплять", surfaceForm: "consolida", firstContext: "El equipo consolida su posición.", srsStage: 3 });
     // The client sends the raw text; a bogus `correct:true` must be ignored.
-    const { status, body } = await answer({ itemId: id, typedAnswer: "consolida", correct: false });
+    const { status, body } = await answer({
+      itemId: id,
+      typedAnswer: "consolida",
+      correct: false,
+      cardType: "recall",
+      latencyMs: 2_345,
+    });
     expect(status).toBe(200);
-    expect(body).toMatchObject({ verdict: "exact", correct: true, advanced: true, srsStage: 4 });
+    expect(body).toMatchObject({
+      verdict: "exact",
+      correct: true,
+      advanced: true,
+      srsStage: 4,
+      context: "El equipo consolida su posición.",
+    });
     expect((await getBankItemById(userId, id))?.srsStage).toBe(4);
+    const rows = await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.itemId, id));
+    expect(rows).toEqual([
+      expect.objectContaining({
+        userId,
+        itemId: id,
+        cardType: "typed",
+        correct: true,
+        usedHint: false,
+        latencyMs: 2_345,
+        srsStageBefore: 3,
+        srsStageAfter: 4,
+      }),
+    ]);
+  });
+
+  it("grades and returns feedback from the context selected by the queue", async () => {
+    const id = await seedItem({
+      lemma: "fortalecer",
+      translation: "укреплять",
+      surfaceForm: "fortalece",
+      firstContext: "El equipo fortalece su posición.",
+      srsStage: 3,
+      contexts: JSON.stringify([
+        {
+          sentence: "El equipo fortalece su posición.",
+          translation: "Команда укрепляет свои позиции.",
+          surfaceForm: "fortalece",
+          articleId: 1,
+          addedAt: 101,
+        },
+        {
+          sentence: "Las empresas fortalecieron el acuerdo.",
+          translation: null,
+          surfaceForm: "fortalecieron",
+          articleId: 2,
+          addedAt: 202,
+        },
+      ]),
+    });
+    const { body } = await answer({ itemId: id, typedAnswer: "fortalecieron", contextAddedAt: 202 });
+    expect(body).toMatchObject({
+      verdict: "exact",
+      correct: true,
+      answer: "fortalecieron",
+      context: "Las empresas fortalecieron el acuerdo.",
+      contextTranslation: null,
+    });
   });
 
   it("forgives a missing accent with a spelling verdict (still correct)", async () => {
@@ -124,5 +186,12 @@ describe("practice queue + typed answer (route level)", () => {
     const id = await seedItem({ lemma: "impulsar", srsStage: 2 });
     const { status } = await answer({ itemId: id });
     expect(status).toBe(400);
+  });
+
+  it("rejects latency outside the 0..600000 ms API range", async () => {
+    const id = await seedItem({ lemma: "demora" });
+    expect((await answer({ itemId: id, correct: true, cardType: "cloze", latencyMs: -1 })).status).toBe(400);
+    expect((await answer({ itemId: id, correct: true, cardType: "cloze", latencyMs: 600_001 })).status).toBe(400);
+    expect(await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.itemId, id))).toHaveLength(0);
   });
 });

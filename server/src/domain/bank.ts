@@ -41,6 +41,8 @@ export interface BankItemRecord {
   note: string | null;
   /** translation of firstContext into the user's explain language */
   contextTranslation: string | null;
+  /** JSON array of contextual encounters; legacy fields remain the fallback */
+  contexts: string | null;
   /** JSON array of 3 same-POS Spanish words */
   distractors: string | null;
   freqBand: FreqBand | null;
@@ -226,6 +228,7 @@ export function applyReviewToBank(
         gender: mark.gender,
         note: mark.note,
         contextTranslation: mark.contextTranslation,
+        contexts: null,
         distractors: mark.distractors.length > 0 ? JSON.stringify(mark.distractors) : null,
         freqBand: mark.freqBand,
       });

@@ -21,6 +21,14 @@ export const articleStepSchema = z.object({
     .array(z.string().min(1).max(80))
     .nullish()
     .transform((v) => v ?? []),
+  // Content-word dictionary forms from this exact version of the article.
+  // The server still normalizes, deduplicates and verifies every value against
+  // the final body before persistence.
+  lemmas: z
+    .array(z.string().min(1).max(80))
+    .max(500)
+    .nullish()
+    .transform((v) => v ?? []),
 });
 export type ArticleStepResult = z.infer<typeof articleStepSchema>;
 
@@ -116,8 +124,8 @@ export const reviewItemSchema = z.object({
     .nullish()
     .transform((v) => v || null),
   freqBand: freqBandSchema,
-  /** exactly 3 same-POS Spanish distractors for multiple-choice quizzes */
-  distractors: z.array(z.string().min(1).max(60)).length(3),
+  /** 3–8 same-POS Spanish distractors; min 3 keeps legacy cards compatible */
+  distractors: z.array(z.string().min(1).max(60)).min(3).max(8),
 });
 export type ReviewItem = z.infer<typeof reviewItemSchema>;
 

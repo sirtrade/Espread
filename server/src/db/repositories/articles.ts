@@ -12,6 +12,7 @@ export async function createArticle(params: {
   sourceName: string | null;
   sourceUrl: string | null;
   targetTerms: string[];
+  lemmas: string[];
   prefetched?: boolean;
 }): Promise<ArticleRow> {
   const [row] = await db
@@ -24,6 +25,7 @@ export async function createArticle(params: {
       sourceName: params.sourceName,
       sourceUrl: params.sourceUrl,
       targetTerms: JSON.stringify(params.targetTerms),
+      lemmas: JSON.stringify(params.lemmas),
       prefetched: params.prefetched ?? false,
     })
     .returning();
@@ -54,6 +56,19 @@ export async function markArticleConsumed(articleId: number): Promise<void> {
 
 export async function getArticleById(articleId: number): Promise<ArticleRow | undefined> {
   return db.query.articles.findFirst({ where: eq(articles.id, articleId) });
+}
+
+/** Latest completed readings for deterministic level-suggestion evaluation. */
+export async function getRecentCompletedReadings(
+  userId: number,
+  limit: number,
+): Promise<Array<Pick<ArticleRow, "body" | "marks">>> {
+  return db.query.articles.findMany({
+    where: and(eq(articles.userId, userId), isNotNull(articles.readAt)),
+    orderBy: [desc(articles.readAt)],
+    limit,
+    columns: { body: true, marks: true },
+  });
 }
 
 export interface ReadArticleSummary {

@@ -26,6 +26,26 @@ export const FALLBACK_DISTRACTORS: Record<"noun" | "verb" | "adj", readonly stri
     "medida",
     "nivel",
     "crecimiento",
+    "resultado",
+    "proceso",
+    "decisión",
+    "cambio",
+    "objetivo",
+    "informe",
+    "entorno",
+    "debate",
+    "impacto",
+    "desafío",
+    "estrategia",
+    "tendencia",
+    "iniciativa",
+    "avance",
+    "criterio",
+    "conjunto",
+    "alcance",
+    "riesgo",
+    "enfoque",
+    "contexto",
   ],
   verb: [
     "desarrollar",
@@ -38,6 +58,26 @@ export const FALLBACK_DISTRACTORS: Record<"noun" | "verb" | "adj", readonly stri
     "mantener",
     "generar",
     "sostener",
+    "considerar",
+    "analizar",
+    "mejorar",
+    "reducir",
+    "aumentar",
+    "aplicar",
+    "evaluar",
+    "permitir",
+    "evitar",
+    "reconocer",
+    "observar",
+    "definir",
+    "asumir",
+    "abordar",
+    "destacar",
+    "avanzar",
+    "conservar",
+    "determinar",
+    "plantear",
+    "favorecer",
   ],
   adj: [
     "importante",
@@ -50,14 +90,46 @@ export const FALLBACK_DISTRACTORS: Record<"noun" | "verb" | "adj", readonly stri
     "profundo",
     "escaso",
     "sólido",
+    "relevante",
+    "general",
+    "principal",
+    "actual",
+    "posible",
+    "distinto",
+    "adecuado",
+    "significativo",
+    "específico",
+    "común",
+    "estable",
+    "positivo",
+    "negativo",
+    "necesario",
+    "disponible",
+    "fundamental",
+    "habitual",
+    "diverso",
+    "concreto",
+    "eficaz",
   ],
 };
+
+/** Keep fallback varied without letting it swamp higher-priority sources. */
+export const FALLBACK_SAMPLE_SIZE = 8;
 
 /** The fallback list for a POS. Nouns/adverbs/other fall back to the noun list. */
 function fallbackForPos(pos: PartOfSpeech | null): readonly string[] {
   if (pos === "verb") return FALLBACK_DISTRACTORS.verb;
   if (pos === "adj") return FALLBACK_DISTRACTORS.adj;
   return FALLBACK_DISTRACTORS.noun;
+}
+
+/** Random last-resort slice; injectable randomness keeps tests reproducible. */
+export function sampleFallbackDistractors(
+  pos: PartOfSpeech | null,
+  random: () => number = Math.random,
+  count = FALLBACK_SAMPLE_SIZE,
+): string[] {
+  return shuffleInPlace([...fallbackForPos(pos)], random).slice(0, count);
 }
 
 /** A multi-word answer/option (used to keep phrases and single words apart). */
@@ -71,6 +143,97 @@ function shuffleInPlace<T>(arr: T[], random: () => number): T[] {
     [arr[i], arr[j]] = [arr[j]!, arr[i]!];
   }
   return arr;
+}
+
+/** Fisher-Yates shuffle with injectable randomness for deterministic tests. */
+export function shufflePracticeCandidates<T>(items: readonly T[], random: () => number = Math.random): T[] {
+  return shuffleInPlace([...items], random);
+}
+
+/** Lowercase and remove accents while retaining spaces for phrase matching. */
+function normalizeLeakText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/**
+ * True when a word or multi-word phrase occurs as a complete lexical unit.
+ * Matching is case/accent-insensitive; phrase whitespace may vary.
+ */
+export function containsLeakTerm(text: string, term: string): boolean {
+  const words = normalizeLeakText(term).trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  const phrase = words.map(escapeRegex).join(String.raw`\s+`);
+  return new RegExp(String.raw`(^|[^\p{L}\p{N}])${phrase}(?=$|[^\p{L}\p{N}])`, "u").test(normalizeLeakText(text));
+}
+
+export interface CrossCardLeakSource {
+  prompt: string;
+  context: string | null;
+  contextHint: string | null;
+  /** All forms which count as this card's answer; never serialized to clients. */
+  leakAnswers: readonly string[];
+}
+
+/**
+ * Greedily builds a safe batch in candidate order.
+ *
+ * Prompt conflicts drop the later candidate so a question remains meaningful.
+ * Context/contextHint conflicts are sanitized to null on either card. Continuing
+ * through the oversampled candidates refills dropped cards where possible.
+ */
+export function protectCrossCardLeaks<T extends CrossCardLeakSource>(candidates: readonly T[], limit: number): T[] {
+  const selected: T[] = [];
+
+  for (const original of candidates) {
+    if (selected.length >= limit) break;
+    const candidate = { ...original };
+
+    const leaksSelectedPrompt = selected.some((card) =>
+      card.leakAnswers.some((term) => containsLeakTerm(candidate.prompt, term)),
+    );
+    const leaksExistingPrompt = selected.some((card) =>
+      candidate.leakAnswers.some((term) => containsLeakTerm(card.prompt, term)),
+    );
+    if (leaksSelectedPrompt || leaksExistingPrompt) continue;
+
+    if (
+      candidate.context &&
+      selected.some((card) => card.leakAnswers.some((term) => containsLeakTerm(candidate.context!, term)))
+    ) {
+      candidate.context = null;
+    }
+    if (
+      candidate.contextHint &&
+      selected.some((card) => card.leakAnswers.some((term) => containsLeakTerm(candidate.contextHint!, term)))
+    ) {
+      candidate.contextHint = null;
+    }
+
+    for (let i = 0; i < selected.length; i++) {
+      const card = selected[i]!;
+      const context =
+        card.context && candidate.leakAnswers.some((term) => containsLeakTerm(card.context!, term))
+          ? null
+          : card.context;
+      const contextHint =
+        card.contextHint && candidate.leakAnswers.some((term) => containsLeakTerm(card.contextHint!, term))
+          ? null
+          : card.contextHint;
+      if (context !== card.context || contextHint !== card.contextHint) {
+        selected[i] = { ...card, context, contextHint };
+      }
+    }
+
+    selected.push(candidate);
+  }
+  return selected;
 }
 
 /**
@@ -89,7 +252,7 @@ export function buildOptions(
   const seen = new Set([correct.toLowerCase()]);
   const distractors: string[] = [];
 
-  for (const c of shuffleInPlace([...pool], random)) {
+  for (const c of pool) {
     if (distractors.length >= count - 1) break;
     const key = c.toLowerCase();
     if (seen.has(key)) continue;
@@ -142,8 +305,8 @@ export function parseStoredDistractors(raw: string | null): string[] {
   }
 }
 
-/** Minimum options for a usable multiple-choice card (correct + 2 distractors). */
-const MIN_OPTIONS = 3;
+/** A usable multiple-choice card always has one answer plus 3 distractors. */
+const MIN_OPTIONS = 4;
 
 /** Everything needed to build a practice card, independent of the DB row shape. */
 export interface CardSource {
@@ -175,14 +338,14 @@ export interface BuiltCard {
   contextTranslation: string | null;
 }
 
-/** Composes the distractor pool for an item, keeping phrases and words apart. */
-function distractorPool(src: CardSource): string[] {
+/** Composes the priority pool, keeping phrases and words apart. */
+function distractorPool(src: CardSource, random: () => number): string[] {
   const base = [...src.storedDistractors, ...src.poolLemmas];
   if (src.isPhrase) {
     // Phrase cards drill only against other phrases (no single words, no fallback).
     return base.filter(isPhraseText);
   }
-  return [...base.filter((w) => !isPhraseText(w)), ...fallbackForPos(src.pos)];
+  return [...base.filter((w) => !isPhraseText(w)), ...sampleFallbackDistractors(src.pos, random)];
 }
 
 /** Whether `answer` occurs anywhere inside `text` (case-insensitive). */
@@ -238,7 +401,7 @@ function buildRecallVariant(src: CardSource, pool: string[], random: () => numbe
  * satisfies: the correct answer never appears in the prompt.
  */
 export function buildCard(src: CardSource, prefer: CardType = "cloze", random: () => number = Math.random): BuiltCard | null {
-  const pool = distractorPool(src);
+  const pool = distractorPool(src, random);
   const cloze = buildClozeVariant(src, pool, random);
   const recall = buildRecallVariant(src, pool, random);
   const [first, second] = prefer === "cloze" ? [cloze, recall] : [recall, cloze];

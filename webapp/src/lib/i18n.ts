@@ -65,10 +65,15 @@ export interface Dict {
 
   "home.settings": string;
   "home.history": string;
+  "home.vocabulary": string;
   "home.queuedBanner": (p: { count: number }) => string;
   "home.stat.articles": string;
   "home.stat.inProgress": string;
   "home.stat.learned": string;
+  "home.streak": string;
+  "home.progress": string;
+  "home.progress.articles": string;
+  "home.progress.words": string;
   "home.queuedLink": (p: { count: number }) => string;
   "home.activeBank": string;
   "home.seeAll": string;
@@ -80,6 +85,29 @@ export interface Dict {
   "home.loadError": string;
   "home.startError": string;
   "home.progressLoading": string;
+
+  "levelSuggestion.up": (p: { level: string }) => string;
+  "levelSuggestion.down": (p: { level: string }) => string;
+  "levelSuggestion.change": (p: { level: string }) => string;
+  "levelSuggestion.keep": string;
+  "levelSuggestion.error": string;
+
+  "vocabulary.title": string;
+  "vocabulary.loading": string;
+  "vocabulary.loadError": string;
+  "vocabulary.total": string;
+  "vocabulary.breakdown": string;
+  "vocabulary.source.learned": string;
+  "vocabulary.source.reading": string;
+  "vocabulary.source.manual": string;
+  "vocabulary.weekly": string;
+  "vocabulary.weekAdded": (p: { count: number }) => string;
+  "vocabulary.coverage": string;
+  "vocabulary.coverageHint": string;
+  "vocabulary.range": (p: { from: number; to: number }) => string;
+  "vocabulary.of": (p: { known: number; total: number }) => string;
+  "vocabulary.empty": string;
+  "vocabulary.list": string;
 
   "reading.loading": string;
   "reading.source": string;
@@ -262,6 +290,7 @@ const es: Dict = {
 
   "home.settings": "Ajustes",
   "home.history": "Historial",
+  "home.vocabulary": "Vocabulario",
   "home.queuedBanner": ({ count }) =>
     `🗂️ ${count} ${plural("es", count, ["palabra", "palabras"])} en cola. ${
       count === 1 ? "Entrará" : "Entrarán"
@@ -269,6 +298,10 @@ const es: Dict = {
   "home.stat.articles": "Artículos",
   "home.stat.inProgress": "En progreso",
   "home.stat.learned": "Aprendidas",
+  "home.streak": "Días de racha",
+  "home.progress": "Progreso semanal",
+  "home.progress.articles": "Lecturas",
+  "home.progress.words": "Aprendidas",
   "home.queuedLink": ({ count }) => `🗂️ ${count} en cola`,
   "home.activeBank": "Tu banco activo",
   "home.seeAll": "Ver todo →",
@@ -280,6 +313,29 @@ const es: Dict = {
   "home.loadError": "No se pudieron cargar tus datos",
   "home.startError": "No se pudo generar la lectura",
   "home.progressLoading": "Cargando tu progreso...",
+
+  "levelSuggestion.up": ({ level }) => `Estas lecturas parecen fáciles. ¿Quieres probar el nivel ${level}?`,
+  "levelSuggestion.down": ({ level }) => `Estas lecturas parecen difíciles. ¿Quieres probar el nivel ${level}?`,
+  "levelSuggestion.change": ({ level }) => `Cambiar a ${level}`,
+  "levelSuggestion.keep": "Mantener mi nivel",
+  "levelSuggestion.error": "No se pudo guardar tu elección",
+
+  "vocabulary.title": "Vocabulario",
+  "vocabulary.loading": "Cargando tu vocabulario...",
+  "vocabulary.loadError": "No se pudo cargar tu vocabulario",
+  "vocabulary.total": "Palabras conocidas",
+  "vocabulary.breakdown": "Por origen",
+  "vocabulary.source.learned": "Aprendidas",
+  "vocabulary.source.reading": "Por lectura",
+  "vocabulary.source.manual": "Marcadas manualmente",
+  "vocabulary.weekly": "Progreso semanal",
+  "vocabulary.weekAdded": ({ count }) => `+${count}`,
+  "vocabulary.coverage": "Cobertura por frecuencia",
+  "vocabulary.coverageHint": "Coincidencias con una lista versionada de 5.000 lemas frecuentes.",
+  "vocabulary.range": ({ from, to }) => `${from}–${to}`,
+  "vocabulary.of": ({ known, total }) => `${known} de ${total}`,
+  "vocabulary.empty": "Tu registro aún está vacío. Leer y practicar lo irá completando.",
+  "vocabulary.list": "Palabras conocidas",
 
   "reading.loading": "Cargando artículo...",
   "reading.source": "Fuente:",
@@ -471,6 +527,7 @@ const ru: Dict = {
 
   "home.settings": "Настройки",
   "home.history": "История",
+  "home.vocabulary": "Словарный запас",
   "home.queuedBanner": ({ count }) =>
     `🗂️ ${count} ${plural("ru", count, ["слово", "слова", "слов"])} в очереди. ${
       plural("ru", count, ["Оно войдёт", "Они войдут", "Они войдут"])
@@ -478,6 +535,10 @@ const ru: Dict = {
   "home.stat.articles": "Статьи",
   "home.stat.inProgress": "В процессе",
   "home.stat.learned": "Выучено",
+  "home.streak": "Дней подряд",
+  "home.progress": "Прогресс по неделям",
+  "home.progress.articles": "Чтения",
+  "home.progress.words": "Выучено",
   "home.queuedLink": ({ count }) => `🗂️ ${count} в очереди`,
   "home.activeBank": "Ваш активный банк",
   "home.seeAll": "Показать всё →",
@@ -489,6 +550,29 @@ const ru: Dict = {
   "home.loadError": "Не удалось загрузить ваши данные",
   "home.startError": "Не удалось создать чтение",
   "home.progressLoading": "Загрузка вашего прогресса...",
+
+  "levelSuggestion.up": ({ level }) => `Похоже, эти тексты вам легки. Попробовать уровень ${level}?`,
+  "levelSuggestion.down": ({ level }) => `Похоже, эти тексты вам сложны. Попробовать уровень ${level}?`,
+  "levelSuggestion.change": ({ level }) => `Перейти на ${level}`,
+  "levelSuggestion.keep": "Оставить мой уровень",
+  "levelSuggestion.error": "Не удалось сохранить выбор",
+
+  "vocabulary.title": "Словарный запас",
+  "vocabulary.loading": "Загрузка словарного запаса...",
+  "vocabulary.loadError": "Не удалось загрузить словарный запас",
+  "vocabulary.total": "Известных слов",
+  "vocabulary.breakdown": "По источникам",
+  "vocabulary.source.learned": "Выучено",
+  "vocabulary.source.reading": "Из чтения",
+  "vocabulary.source.manual": "Отмечено вручную",
+  "vocabulary.weekly": "Динамика по неделям",
+  "vocabulary.weekAdded": ({ count }) => `+${count}`,
+  "vocabulary.coverage": "Покрытие частотного списка",
+  "vocabulary.coverageHint": "Совпадения с версионированным списком 5 000 частотных лемм.",
+  "vocabulary.range": ({ from, to }) => `${from}–${to}`,
+  "vocabulary.of": ({ known, total }) => `${known} из ${total}`,
+  "vocabulary.empty": "Реестр пока пуст. Чтение и тренировки постепенно его наполнят.",
+  "vocabulary.list": "Известные слова",
 
   "reading.loading": "Загрузка статьи...",
   "reading.source": "Источник:",
@@ -681,6 +765,7 @@ const en: Dict = {
 
   "home.settings": "Settings",
   "home.history": "History",
+  "home.vocabulary": "Vocabulary",
   "home.queuedBanner": ({ count }) =>
     `🗂️ ${count} ${plural("en", count, ["word", "words"])} queued. ${
       count === 1 ? "It will enter" : "They will enter"
@@ -688,6 +773,10 @@ const en: Dict = {
   "home.stat.articles": "Articles",
   "home.stat.inProgress": "In progress",
   "home.stat.learned": "Learned",
+  "home.streak": "Day streak",
+  "home.progress": "Weekly progress",
+  "home.progress.articles": "Readings",
+  "home.progress.words": "Learned",
   "home.queuedLink": ({ count }) => `🗂️ ${count} queued`,
   "home.activeBank": "Your active bank",
   "home.seeAll": "See all →",
@@ -699,6 +788,29 @@ const en: Dict = {
   "home.loadError": "Couldn't load your data",
   "home.startError": "Couldn't generate the reading",
   "home.progressLoading": "Loading your progress...",
+
+  "levelSuggestion.up": ({ level }) => `These readings seem easy. Would you like to try level ${level}?`,
+  "levelSuggestion.down": ({ level }) => `These readings seem difficult. Would you like to try level ${level}?`,
+  "levelSuggestion.change": ({ level }) => `Change to ${level}`,
+  "levelSuggestion.keep": "Keep my level",
+  "levelSuggestion.error": "Couldn't save your choice",
+
+  "vocabulary.title": "Vocabulary",
+  "vocabulary.loading": "Loading your vocabulary...",
+  "vocabulary.loadError": "Couldn't load your vocabulary",
+  "vocabulary.total": "Known words",
+  "vocabulary.breakdown": "By source",
+  "vocabulary.source.learned": "Learned",
+  "vocabulary.source.reading": "From reading",
+  "vocabulary.source.manual": "Marked manually",
+  "vocabulary.weekly": "Weekly growth",
+  "vocabulary.weekAdded": ({ count }) => `+${count}`,
+  "vocabulary.coverage": "Frequency coverage",
+  "vocabulary.coverageHint": "Matches against a versioned list of 5,000 frequent lemmas.",
+  "vocabulary.range": ({ from, to }) => `${from}–${to}`,
+  "vocabulary.of": ({ known, total }) => `${known} of ${total}`,
+  "vocabulary.empty": "Your registry is empty. Reading and practice will gradually fill it.",
+  "vocabulary.list": "Known words",
 
   "reading.loading": "Loading article...",
   "reading.source": "Source:",

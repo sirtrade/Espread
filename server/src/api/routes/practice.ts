@@ -12,7 +12,16 @@ import {
 } from "../../db/repositories/bank.js";
 import { getUserById } from "../../db/repositories/users.js";
 import { countRecentCalls } from "../../db/repositories/llmCalls.js";
-import { buildQueueCard, parseStoredDistractors, type CardType, type QueueCardType } from "../../domain/practice.js";
+import {
+  buildQueueCard,
+  parseStoredDistractors,
+  protectCrossCardLeaks,
+  shufflePracticeCandidates,
+  type CardType,
+  type QueueCardType,
+} from "../../domain/practice.js";
+import { contextByAddedAt, parseContexts, pickContext, type BankContext } from "../../domain/contexts.js";
+import type { BankItemRow } from "../../db/repositories/bank.js";
 import { clampPracticeSize } from "../../domain/practiceSize.js";
 import { gradeTypedAnswer, type TypedVerdict } from "../../domain/typedQuiz.js";
 import { checkPracticeSentence } from "../../llm/sentenceCheck.js";
@@ -25,7 +34,8 @@ practiceRoutes.use("*", requireAuth);
 
 export interface PracticeCard {
   itemId: number;
-  lemma: string;
+  /** Hidden for typed cards until the server grades the answer. */
+  lemma: string | null;
   isPhrase: boolean;
   /** SRS ladder rung of the word, so the client can surface the free-writing
    *  exercise more prominently on the upper rungs (see webapp Práctica). */
@@ -38,12 +48,18 @@ export interface PracticeCard {
   /** the option that is correct: the blanked surface form for cloze, the lemma for recall; empty for typed */
   answer: string;
   options: string[];
-  /** the article sentence, shown as after-answer feedback */
+  /** article sentence; null for typed cards to keep accepted forms server-side */
   context: string | null;
   /** translation of the context sentence, shown as a cloze hint */
   contextTranslation: string | null;
   /** typed cards: the blanked sentence shown as a hint while answering (null for MC) */
   contextHint: string | null;
+  /** Opaque selector returned with typed answers to preserve chosen feedback. */
+  contextAddedAt: number | null;
+}
+
+export function pickPracticeContext(item: BankItemRow, random: () => number = Math.random): BankContext | null {
+  return pickContext(parseContexts(item.contexts, item), random);
 }
 
 practiceRoutes.get("/queue", async (c) => {
@@ -53,8 +69,9 @@ practiceRoutes.get("/queue", async (c) => {
 
   const [dueItems, due] = await Promise.all([getDueForPractice(userId, now, limit), countDueForPractice(userId, now)]);
 
-  const cards: PracticeCard[] = [];
-  for (const item of dueItems) {
+  const candidates: Array<PracticeCard & { leakAnswers: string[] }> = [];
+  for (const item of shufflePracticeCandidates(dueItems)) {
+    const selectedContext = pickPracticeContext(item);
     const poolLemmas = (await getDistractorPool(userId, item.id, { pos: item.pos, isPhrase: item.isPhrase })).map(
       (d) => d.lemma,
     );
@@ -63,15 +80,15 @@ practiceRoutes.get("/queue", async (c) => {
     // (or when a safe typed card can't be built) fall back to multiple choice,
     // alternating cloze/recall for variety. The builder degrades a leaking
     // recall into a cloze and skips items it can't turn into a safe card.
-    const prefer: CardType = cards.length % 2 === 0 ? "cloze" : "recall";
+    const prefer: CardType = candidates.length % 2 === 0 ? "cloze" : "recall";
     const card = buildQueueCard(
       {
         lemma: item.lemma,
         isPhrase: item.isPhrase,
         translation: item.translation,
-        firstContext: item.firstContext,
-        surfaceForm: item.surfaceForm,
-        contextTranslation: item.contextTranslation,
+        firstContext: selectedContext?.sentence ?? item.firstContext,
+        surfaceForm: selectedContext?.surfaceForm ?? item.surfaceForm,
+        contextTranslation: selectedContext?.translation ?? item.contextTranslation,
         pos: item.pos,
         storedDistractors: parseStoredDistractors(item.distractors),
         poolLemmas,
@@ -81,9 +98,11 @@ practiceRoutes.get("/queue", async (c) => {
     );
     if (!card) continue;
 
-    cards.push({
+    candidates.push({
       itemId: item.id,
-      lemma: item.lemma,
+      // A typed card is keyed by itemId and graded server-side. Sending its
+      // lemma would disclose an accepted answer before the user types it.
+      lemma: card.type === "typed" ? null : item.lemma,
       isPhrase: item.isPhrase,
       srsStage: item.srsStage,
       translation: card.translation,
@@ -91,12 +110,19 @@ practiceRoutes.get("/queue", async (c) => {
       prompt: card.prompt,
       answer: card.answer,
       options: card.options,
-      context: card.context,
+      // Typed context contains an accepted surface form, so reveal it only in
+      // the answer response, never in the pre-answer queue payload.
+      context: card.type === "typed" ? null : card.context,
       contextTranslation: card.contextTranslation,
       contextHint: card.contextHint,
+      contextAddedAt: selectedContext?.addedAt ?? null,
+      leakAnswers: [item.lemma, selectedContext?.surfaceForm, item.surfaceForm, card.answer].filter(
+        (term): term is string => typeof term === "string" && term.length > 0,
+      ),
     });
   }
 
+  const cards = protectCrossCardLeaks(candidates, limit).map(({ leakAnswers: _leakAnswers, ...card }) => card);
   return c.json({ cards, due });
 });
 
@@ -121,14 +147,22 @@ practiceRoutes.post("/answer", async (c) => {
   let correct: boolean;
   let verdict: TypedVerdict | undefined;
   let answer: string | undefined;
+  let feedbackContext: string | null | undefined;
+  let feedbackContextTranslation: string | null | undefined;
   if (body.data.typedAnswer != null) {
     const item = await getBankItemById(userId, itemId);
     if (!item) throw Errors.notFound("Palabra");
-    const accepted = [item.surfaceForm, item.lemma].filter((f): f is string => typeof f === "string" && f.length > 0);
+    const contexts = parseContexts(item.contexts, item);
+    const selectedContext = contextByAddedAt(contexts, body.data.contextAddedAt) ?? contexts[0] ?? null;
+    const accepted = [selectedContext?.surfaceForm, item.surfaceForm, item.lemma].filter(
+      (f): f is string => typeof f === "string" && f.length > 0,
+    );
     const grade = gradeTypedAnswer(body.data.typedAnswer, accepted);
     correct = grade.correct;
     verdict = grade.verdict;
     answer = grade.matched;
+    feedbackContext = selectedContext?.sentence ?? item.firstContext;
+    feedbackContextTranslation = selectedContext?.translation ?? item.contextTranslation;
   } else {
     correct = body.data.correct ?? false;
   }
@@ -142,6 +176,10 @@ practiceRoutes.post("/answer", async (c) => {
     Date.now(),
     body.data.usedHint ?? false,
     user?.timezone ?? "UTC",
+    {
+      cardType: body.data.typedAnswer != null ? "typed" : (body.data.cardType ?? "recall"),
+      latencyMs: body.data.latencyMs,
+    },
   );
   if (!result) throw Errors.notFound("Palabra");
   return c.json({
@@ -151,7 +189,15 @@ practiceRoutes.post("/answer", async (c) => {
     status: result.status,
     advanced: result.advanced,
     // Present only for typed answers: the grading verdict and the correct form.
-    ...(verdict ? { verdict, correct, answer } : {}),
+    ...(verdict
+      ? {
+          verdict,
+          correct,
+          answer,
+          context: feedbackContext ?? null,
+          contextTranslation: feedbackContextTranslation ?? null,
+        }
+      : {}),
   });
 });
 

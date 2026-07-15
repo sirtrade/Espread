@@ -4,9 +4,10 @@ import { getUserById, updateUser, type UserPatch } from "../../db/repositories/u
 import { rebalanceActivePool } from "../../db/repositories/bank.js";
 import { getUserTopics, setUserTopics } from "../../db/repositories/topics.js";
 import { resetUserProgress } from "../../db/repositories/reset.js";
+import { markLevelSuggestion } from "../../services/levelSuggestionService.js";
 import { Errors } from "../errors.js";
 import { serializeProfile } from "../serializers.js";
-import { patchMeSchema } from "../validation.js";
+import { levelSuggestionInteractionSchema, patchMeSchema } from "../validation.js";
 import type { AppEnv } from "../context.js";
 
 export const meRoutes = new Hono<AppEnv>();
@@ -19,6 +20,14 @@ meRoutes.get("/", async (c) => {
   if (!user) throw Errors.notFound("Usuario");
   const topics = await getUserTopics(userId);
   return c.json(serializeProfile(user, topics));
+});
+
+meRoutes.patch("/level-suggestion", async (c) => {
+  const { userId } = c.get("session");
+  const body = levelSuggestionInteractionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw Errors.badRequest(body.error.issues[0]?.message ?? "Datos inválidos");
+  await markLevelSuggestion(userId, body.data, body.data.action);
+  return c.json({ ok: true });
 });
 
 meRoutes.patch("/", async (c) => {

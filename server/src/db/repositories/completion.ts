@@ -1,7 +1,8 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { articles, bankItems, readingSessions, userStats } from "../schema.js";
+import { articles, bankItems, dailyActivity, knownWords, readingSessions, userStats } from "../schema.js";
 import type { BankItemRecord } from "../../domain/bank.js";
+import { READING_KNOWN_THRESHOLD } from "../../domain/knownWords.js";
 
 /**
  * Applies a finished reading session in a single transaction: bank upserts,
@@ -16,8 +17,11 @@ export async function applyCompletion(params: {
   marks: string;
   reviewResult: string;
   changedItems: readonly BankItemRecord[];
+  readingLemmas: readonly string[];
+  localDay: string;
+  completedAt: number;
 }): Promise<void> {
-  const now = Date.now();
+  const now = params.completedAt;
   db.transaction((trx) => {
     for (const item of params.changedItems) {
       // The "only overwrite context fields with non-empty values" rule is
@@ -40,6 +44,7 @@ export async function applyCompletion(params: {
           gender: item.gender,
           note: item.note,
           contextTranslation: item.contextTranslation,
+          contexts: item.contexts,
           distractors: item.distractors,
           freqBand: item.freqBand,
           updatedAt: now,
@@ -59,9 +64,44 @@ export async function applyCompletion(params: {
             gender: item.gender,
             note: item.note,
             contextTranslation: item.contextTranslation,
+            contexts: item.contexts,
             distractors: item.distractors,
             freqBand: item.freqBand,
             updatedAt: now,
+          },
+        })
+        .run();
+    }
+
+    for (const lemma of params.readingLemmas) {
+      trx
+        .insert(knownWords)
+        .values({
+          userId: params.userId,
+          lemma,
+          source: "reading",
+          encounters: 1,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          knownSince: null,
+        })
+        .onConflictDoUpdate({
+          target: [knownWords.userId, knownWords.lemma],
+          set: {
+            encounters: sql`${knownWords.encounters} + 1`,
+            lastSeenAt: now,
+            knownSince: sql`CASE
+              WHEN ${knownWords.knownSince} IS NULL
+                AND ${knownWords.encounters} + 1 >= ${READING_KNOWN_THRESHOLD}
+              THEN ${now}
+              ELSE ${knownWords.knownSince}
+            END`,
+            source: sql`CASE
+              WHEN ${knownWords.knownSince} IS NULL
+                AND ${knownWords.encounters} + 1 >= ${READING_KNOWN_THRESHOLD}
+              THEN 'reading'
+              ELSE ${knownWords.source}
+            END`,
           },
         })
         .run();
@@ -81,6 +121,15 @@ export async function applyCompletion(params: {
         readAt: now,
       })
       .where(eq(articles.id, params.articleId))
+      .run();
+
+    trx
+      .insert(dailyActivity)
+      .values({ userId: params.userId, localDay: params.localDay, reading: true, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [dailyActivity.userId, dailyActivity.localDay],
+        set: { reading: true, updatedAt: now },
+      })
       .run();
 
     trx.delete(readingSessions).where(eq(readingSessions.id, params.sessionId)).run();

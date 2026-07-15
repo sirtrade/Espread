@@ -4,6 +4,12 @@ import type { FontSizeId } from "../lib/fontSize.js";
 export type Level = "A2" | "B1" | "B2" | "C1" | "C2";
 export type ExplainLang = "ru" | "en" | "es";
 export type BankStatus = "active" | "learned" | "ignored" | "queued";
+export type PracticeCardType = "cloze" | "recall" | "typed";
+
+export interface LevelSuggestion {
+  direction: "up" | "down";
+  targetLevel: Level;
+}
 
 export interface Profile {
   id: number;
@@ -137,6 +143,7 @@ export interface CompleteResult {
   /** lemmas parked in the queue because the active pool was full */
   queued: string[];
   articlesRead: number;
+  levelSuggestion: LevelSuggestion | null;
 }
 
 export interface BankItem {
@@ -152,6 +159,13 @@ export interface BankItem {
   note: string | null;
   firstContext: string | null;
   contextTranslation: string | null;
+  contexts?: Array<{
+    sentence: string;
+    translation: string | null;
+    surfaceForm: string;
+    articleId: number | null;
+    addedAt: number;
+  }>;
   distractors: string[] | null;
   freqBand: FreqBand | null;
   updatedAt: number;
@@ -183,6 +197,35 @@ export interface Stats {
   itemsQueued: number;
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
+  levelSuggestion: LevelSuggestion | null;
+  currentStreak: number;
+  weeklyProgress: Array<{
+    /** Monday in the user's local calendar, YYYY-MM-DD */
+    weekStart: string;
+    articlesRead: number;
+    wordsLearned: number;
+  }>;
+}
+
+export type KnownWordSource = "learned" | "reading" | "manual";
+
+export interface KnownWord {
+  lemma: string;
+  source: KnownWordSource;
+  encounters: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  knownSince: number;
+}
+
+export interface VocabularyStats {
+  total: number;
+  bySource: Record<KnownWordSource, number>;
+  weekly: Array<{ weekStart: number; added: number }>;
+  coverage: {
+    version: string;
+    ranges: Array<{ from: number; to: number; known: number; total: number }>;
+  };
 }
 
 /** How a typed-recall answer was graded (mirrors the server's `TypedVerdict`). */
@@ -190,7 +233,8 @@ export type TypedVerdict = "exact" | "spelling" | "wrong";
 
 export interface PracticeCard {
   itemId: number;
-  lemma: string;
+  /** Null for typed cards until the answer endpoint reveals the proper form. */
+  lemma: string | null;
   isPhrase: boolean;
   /** SRS ladder rung of the word; drives whether the free-writing exercise is
    *  offered upfront (upper rungs) or behind a link. */
@@ -198,17 +242,19 @@ export interface PracticeCard {
   translation: string | null;
   /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
    *  word (graded on the server, so `answer` is empty and `options` is `[]`). */
-  type: "cloze" | "recall" | "typed";
+  type: PracticeCardType;
   prompt: string;
   /** the correct option: blanked surface form (cloze) or lemma (recall); empty for typed */
   answer: string;
   options: string[];
-  /** the article sentence, shown as after-answer feedback */
+  /** article sentence; null for typed cards to keep accepted forms server-side */
   context: string | null;
   /** translation of the context sentence, shown as a cloze hint */
   contextTranslation: string | null;
   /** typed cards: the blanked sentence shown as a hint while answering (null for MC) */
   contextHint: string | null;
+  /** Opaque selector used to preserve the chosen typed-card feedback. */
+  contextAddedAt: number | null;
 }
 
 /** New SRS state returned after a practice/quiz answer, used to build the
@@ -226,6 +272,9 @@ export interface PracticeAnswerResult {
   correct?: boolean;
   /** typed answers only: the proper form to show as feedback */
   answer?: string;
+  /** typed answers only: revealed after grading for corrective feedback */
+  context?: string | null;
+  contextTranslation?: string | null;
 }
 
 export interface SentenceCheckResult {

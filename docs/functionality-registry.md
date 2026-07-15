@@ -244,7 +244,9 @@
   реально использованные леммы.
 - Источник фактов передаётся в user-сообщении (или fallback-инструкция «без
   источника, без точных цифр и выдуманных цитат»).
-- `maxTokens: 2048`. Ответ JSON `{title, body, usedTerms}`.
+- `maxTokens: 2048`. Ответ JSON `{title, body, usedTerms, lemmas}`. `lemmas` —
+  уникальные словарные формы содержательных слов именно этой версии текста
+  (без служебных слов и имён собственных); отдельного LLM-вызова нет.
 
 ### 6.4 Контроль качества (`server/src/llm/articleQuality.ts`)
 Черновик проходит `auditAndRefineArticle` до сохранения. Логика: черновик →
@@ -266,11 +268,17 @@
   источника) ниже **4**.
 - **Переработка** (`runRewriteStep`, kind `rewrite`, `maxTokens: 2048`): editor
   правит минимально по конкретным замечаниям, сохраняя факты и вплетённые слова;
-  результат — тот же `articleStepSchema`.
+  результат — тот же `articleStepSchema`, включая заново собранные `lemmas`
+  исправленной версии.
 - **Ограничение цикла и деградация**: не более `MAX_REWRITE_ATTEMPTS = 2`
   переработок; при исчерпании — сохраняется версия с лучшими оценками. Сбой
   аудита/переработки логируется и деградирует к лучшему имеющемуся черновику,
   а не роняет генерацию в 500.
+- После выбора лучшей версии сервер применяет `normalizeArticleLemmas`:
+  нормализует и дедуплицирует леммы, удаляет служебные/многословные элементы и
+  оставляет только леммы, подтверждённые в **финальном** `body` через
+  `termAppearsIn`. Поэтому при выборе черновика или rewrite сохраняется набор
+  именно возвращаемого текста.
 - **Учёт вызовов**: `audit`/`rewrite` — отдельные `kind` в `llm_calls`
   (`recordLlmCall`), попадают в статистику стоимости, но **не** уменьшают дневной
   лимит статей (`countRecentCalls` считает только `generate`).
@@ -306,8 +314,10 @@ marks })`:
   многословных — `phrase`), `gender` (только для существительных), `translation`
   (короткий перевод ≤5 слов, без скобок/тире, без испанского внутри), `note`
   (нюансы использования — всё, что не перевод), `contextTranslation` (перевод
-  помеченного предложения), `freqBand`, `distractors` (ровно 3 несинонимичных
-  слова той же части речи).
+  помеченного предложения), `freqBand`, `distractors` (5–8 семантически
+  правдоподобных слов той же части речи, близких по теме, длине и регистру,
+  но не синонимов и не форм ответа). Схема принимает 3–8 для совместимости с
+  ранее сохранёнными массивами из трёх элементов.
 - Правила группировки: соседние пометки одного предложения, образующие одну
   конструкцию (клитика+глагол, перифраза), объединяются в одну карточку; одинокая
   клитика/артикль карточки не получает (`freqBand "rare"` + объяснение в `note`);
@@ -382,6 +392,13 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 - **Прочие помеченные слова** → апсерт по частотному бэнду; слово, впервые
   становящееся активным при полном пуле, паркуется в `queued`.
 
+**Контексты карточки** (`domain/contexts.ts`): `bank_items.contexts` — JSON-массив
+объектов `{sentence, translation, surfaceForm, articleId, addedAt}`, максимум
+`MAX_CONTEXTS = 5`. Парсер строго проверяет shape и при malformed/пустом JSON
+деградирует к сохранённым `firstContext`/`contextTranslation`/`surfaceForm`.
+Добавление дедуплицирует нормализованное предложение и при переполнении оставляет
+пять новейших. Легаси-поля не удалены и продолжают обновляться старым правилом.
+
 ### 8.2 Расписание интервальных повторений (`server/src/domain/srs.ts`)
 Общая лестница для чтения и тренировок:
 - `SRS_INTERVALS_DAYS = [1, 3, 7, 14, 30, 60, 120]`; `SRS_MAX_STAGE = 7`.
@@ -391,7 +408,9 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 - **Graduation** (`graduatesOnSuccess`): успех на/выше ступени 7 (пережил всю
   лестницу + финальный 120-дневный повтор) → статус `learned`. Graduation
   наступает **только через активное воспроизведение** в практике/боте
-  (`applyPracticeAnswer`); пассивное чтение никогда не graduate'ит.
+  (`applyPracticeAnswer`); пассивное чтение никогда не graduate'ит. Graduation
+  сразу апсертит лемму в `known_words` с `source=learned`; ручное «Знаю» —
+  с `source=manual`.
 - **Потолок кредита от чтения** (`READING_CREDIT_MAX_STAGE = 2`): чистая
   экспозиция при чтении двигает ступень только пока `srsStage <= 2`; выше слово
   продвигается лишь ответами в практике/боте. Обоснование: «не отметил» ≠
@@ -418,13 +437,28 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 (`bankItemDiffers`), затем `applyCompletion` **в одной транзакции**: апсертит
 изменённые карточки, инкрементит `user_stats.articles_read`, архивирует
 `marks`/`review_result` на строку статьи и ставит `read_at`, удаляет сессию.
-После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead }`.
+В той же транзакции леммы статьи, которых нет ни среди пометок, ни в банке
+(любой статус), увеличивают `known_words.encounters`. При
+`encounters >= READING_KNOWN_THRESHOLD = 3` строка получает
+`source=reading` и `known_since`; до порога `known_since=null` и в пользовательский
+список она не попадает.
+После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead,
+levelSuggestion }`: предложение вычисляется уже по окну, включающему только что
+завершённую статью, поэтому post-reading UI может показать его сразу.
+До вычисления changed rows completion накапливает контексты этой статьи:
+принятые/помеченные получают точное предложение через `contextForItem` и готовый
+`contextTranslation`; подтверждённые `targetTerms` получают предложение через
+`findTermContext` (с восстановлением точной флексии по stem при необходимости) и
+`translation=null`, без дополнительного LLM-вызова. Контекст добавляется только
+если соответствующая лемма уже присутствует в итоговом банке. Поле `contexts`
+участвует в `bankItemDiffers` и пишется атомарно в `applyCompletion`.
 
 ### 8.4 Экран банка (`webapp/src/screens/Bank.tsx`)
 Четыре вкладки: active («В прогрессе»), queued («В очереди»), learned
 («Выучено»), ignored («Отброшено»). Поиск появляется при > 10 элементов в
 вкладке (по лемме/переводу). Раскрытие строки (аккордеон): лемма, часть речи,
-бейдж редкости, перевод, заметка, первый контекст с подсветкой surface, для
+бейдж редкости, перевод, заметка, легаси-первый контекст с подсветкой surface
+(API совместимо отдаёт также массив `contexts` для дальнейшего UI), для
 active — таймер `nextDueLabel`. Смена статуса через `PATCH /api/bank/:id`:
 active → «Знаю»/«Отбросить»; queued → «Изучать сейчас»; learned/ignored →
 «Тренировать снова».
@@ -435,17 +469,26 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
 
 Немедленное подкрепление принятых слов. Карточки строятся **на клиенте**
 (`webapp/src/lib/cards.ts`, `buildQuizCards`, максимум 5) из принятых `ReviewItem`:
-- Дистракторы: сохранённые дистракторы + другие принятые леммы той же «формы»
-  (фраза/не-фраза) + POS-fallback (noun/verb/adj) для не-фраз; фразы тянут только
-  многословные дистракторы.
+- Дистракторы выбираются строго по приоритету: сохранённые → другие принятые
+  леммы той же «формы» (фраза/не-фраза) → случайная подвыборка из 30-словного
+  POS-fallback (noun/verb/adj; adv/other используют noun-семантику). Фразы
+  тянут только многословные дистракторы и fallback не получают.
 - **cloze**: пропуск (`_____`) на месте surface/lemma в контексте; отбрасывается,
-  если термин не найден или ответ утекает в prompt; 4 варианта (минимум 3).
+  если термин не найден или ответ утекает в prompt; ровно 4 варианта.
 - **recall**: prompt = перевод, ответ = лемма; отбрасывается при утечке леммы в
   перевод.
 - Чередование стиля по чётности позиции; неудобные слова пропускаются.
+- После построения применяется cross-card anti-leak: ни `prompt`, ни
+  `context`/`contextHint` карточки не содержат answer/lemma другой карточки.
+  Сопоставление регистро- и акцентонезависимое, по границам слов и с поддержкой
+  многословных фраз. Prompt-конфликт отбрасывает более позднюю карточку,
+  контекстная утечка зануляет контекст; сборка продолжает refill до максимума 5.
+- Перемешивание и сборка принимают инъецируемый `random`, поэтому тестируются
+  детерминированно без статистических проверок.
 
 Ответы уходят через `POST /practice/answer` **по лемме** (Quiz не видит id
-элементов банка). Слова здесь на ступени 0 — узнавание уместно.
+элементов банка), с фактическим `cardType` и latency первой попытки. Слова здесь
+на ступени 0 — узнавание уместно.
 
 ---
 
@@ -458,19 +501,39 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 
 ### 10.1 Сборка очереди на сервере (`server/src/api/routes/practice.ts`)
 - `getDueForPractice(userId, now, limit)` — активные due-слова по `nextDueAt ASC`
-  (NULL/новые — первыми) + `countDueForPractice` для счётчика `due`.
+  (NULL/новые — первыми), но выбирает candidate pool размером
+  `limit * PRACTICE_CANDIDATE_MULTIPLIER`, где multiplier = **3**. Route
+  перемешивает кандидатов Fisher–Yates до сборки, затем возвращает максимум
+  requested `limit`; инъецируемый `random` позволяет детерминированные тесты.
+  `countDueForPractice` независимо возвращает полный счётчик `due`.
 - Для каждого — пул дистракторов `getDistractorPool` (той же части речи/формы) и
-  сборка карточки `buildQueueCard` (`server/src/domain/practice.ts`):
+  случайный `pickContext` из максимум пяти сохранённых контекстов (инъецируемый
+  `random`; при пустом/битом JSON — legacy fallback), затем сборка карточки
+  `buildQueueCard` (`server/src/domain/practice.ts`):
+  - для MC дистракторы берутся по приоритету stored → bank pool → случайная
+    подвыборка из 30-словного POS-fallback; noun/verb/adj не смешиваются,
+    adv/other сохраняют noun-fallback, а phrases fallback не получают;
   - слова со `srsStage >= TYPED_QUIZ_MIN_STAGE` (=2) отдаются **typed**-карточкой
     (`buildTypedQuizCard`, §11): ввод с клавиатуры вместо кнопок — более сильное
     извлечение. Для typed `answer=""` и `options=[]` (ответ грейдится на сервере,
-    клиенту не передаётся), а `contextHint` несёт предложение с пропуском как
-    безопасную подсказку;
+    клиенту не передаётся), а `contextHint` несёт выбранное предложение с пропуском как
+    безопасную подсказку; `lemma=null` и `context=null`, accepted-формы и
+    содержащий surface контекст не входят в queue payload. Непрозрачный
+    `contextAddedAt` не содержит ответа; клиент возвращает его с typed-попыткой,
+    после которой `POST /practice/answer` раскрывает правильную форму и именно
+    выбранный контекст для feedback;
   - слова ниже ступени 2, либо когда безопасная typed-карточка не строится (нет
     перевода / перевод содержит ответ), — множественный выбор `buildCard` с
     чередованием предпочтения по чётности индекса (even→cloze, odd→recall).
     Защита от утечки: утекающий recall деградирует в cloze; невозможные карточки
     пропускаются.
+- После построения кандидатов чистая cross-card защита сравнивает
+  `prompt`/`context`/`contextHint` каждой карточки с answer, lemma и surface-form
+  остальных: case/accent-insensitive, по корректным границам слов, включая
+  multi-word phrases. Prompt-конфликт отбрасывает более позднюю карточку;
+  утечки в `context`/`contextHint` зануляются. Сборка продолжает кандидатов из
+  трёхкратного запаса; если безопасно набрать requested limit нельзя, выдача
+  короче, но утечки не допускаются.
 - Карточка: `{ itemId, lemma, isPhrase, srsStage, translation, type, prompt,
   answer, options[], context, contextTranslation, contextHint }`, где `type` —
   `cloze | recall | typed`. `srsStage` отдаётся, чтобы клиент мог заметнее
@@ -480,8 +543,9 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 `POST /practice/answer` принимает либо `correct` (множественный выбор — клиент
 сам знает верность), либо `typedAnswer` (typed recall — сырой текст). Для
 `typedAnswer` сервер сам грейдит ответ через `gradeTypedAnswer` по accepted-
-формам слова (`surfaceForm`, `lemma`), игнорируя присланный `correct` (клиенту не
-доверяем), и возвращает дополнительно `verdict` (`exact | spelling | wrong`),
+формам выбранного контекста (`surfaceForm`) и легаси-карточки/лемме, игнорируя
+присланный `correct` (клиенту не доверяем), и возвращает дополнительно `verdict`
+(`exact | spelling | wrong`),
 вычисленный `correct` и правильную форму `answer` для показа фидбэка. Далее —
 общий `applyPracticeAnswer`:
 
@@ -495,12 +559,23 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 - **Верно, но кредит уже был сегодня** → расписание не трогается.
 Возвращает `{ srsStage, nextDueAt, status, advanced }`.
 
+Каждый принятый сервером первый ответ атомарно с изменением `bank_items` пишет
+строку `practice_answers`: время, фактический `cardType`, итоговую server-side
+верность, hint, latency и ступень SRS до/после. Для typed клиентский `correct`
+игнорируется и в журнал попадает результат `gradeTypedAnswer`. Даже
+`correct + usedHint` и повторный успех в те же локальные сутки журналируются,
+хотя расписание не меняется. Несуществующий item не создаёт запись.
+
 ### 10.3 Runner викторины (`webapp/src/components/QuizSession.tsx`)
 Общий для Quiz и Práctica.
 - **Повтор ошибок в сессии**: неверная карточка ставится в хвост очереди
   (`MAX_RETRIES = 2`). Ретраи — **чисто клиентские** пере-дриллы: не пишутся на
   сервер и не считаются первой попыткой (SRS-исход слова определяет только первый
   ответ).
+- **Latency**: для каждого показа первой попытки runner запоминает время; при
+  submit передаёт elapsed milliseconds, клемпнутые в `0..600000`. При переходе
+  к следующей карточке таймер сбрасывается. Клиентские retry не вызывают API и
+  поэтому не создают ни latency-сигнала, ни строки журнала.
 - **cloze**: перевод-подсказка (`contextTranslation`) спрятана за кнопку «Показать
   перевод»; факт использования уходит как `usedHint`. После ответа перевод
   показывается всегда.
@@ -571,21 +646,26 @@ Práctica в webapp (§10): слова со ступени 2+ спрашиваю
 
 ### 12.2 Чат-викторины (`bot/quiz.ts`)
 `sendBotQuiz(bot, user)` берёт случайное due-слово (`getRandomDueItem`):
+- перед сборкой случайно выбирает сохранённый контекст (инъецируемый `random`);
 - `srsStage >= 2` → **typed recall** (`sendTypedQuiz`, `force_reply`, сохранение
-  `pending_quiz_item_id`/`pending_quiz_sent_at`); при невозможности — fallback в
-  выбор.
+  `pending_quiz_item_id`/`pending_quiz_sent_at` и непрозрачного
+  `pending_quiz_context_added_at`); при невозможности — fallback в выбор.
 - иначе → **множественный выбор** (`sendChoiceQuiz`, inline-кнопки,
-  `callback_data = pq:{itemId}:{idx}:{correctIdx}`).
+  `callback_data = pq:{itemId}:{c|r}:{idx}:{correctIdx}`; тип создаётся сервером
+  и укладывается в лимит 64 байта; старый формат без типа принимается как
+  `recall`).
 Если ничего due — возвращает `false` (планировщик не обновит `last_bot_quiz_at`,
 следующий тик попробует снова).
 
 **Обработчики**:
 - callback `pq:*` — грейдит выбор, `applyPracticeAnswer`, показывает вердикт,
-  редактирует сообщение (убирает клавиатуру, чтобы нельзя было ответить дважды).
+  редактирует сообщение (убирает клавиатуру, чтобы нельзя было ответить дважды);
+  в журнал передаёт сохранённый server-side тип карточки и `latency=null`.
 - `message:text` — для ответов на typed-quiz: пропускает команды и чужие тексты,
   игнорит протухшие (> 24 ч) pending'и, грейдит через `gradeTypedAnswer`,
   `applyPracticeAnswer`, показывает вердикт (`exact`/`spelling`/`wrong`) с
-  правильной формой и контекстом.
+  правильной формой и тем же выбранным контекстом; журналирует `cardType=typed`,
+  server-side верность и `latency=null`.
 
 ---
 
@@ -605,6 +685,8 @@ Práctica в webapp (§10): слова со ступени 2+ спрашиваю
 - **Доставка**: если `HH:MM == dailyTime` и сегодня ещё не доставлено —
   `markDailyDelivered`, затем (если нет непотреблённой префетч-статьи) —
   генерация fallback'ом, и сообщение «Tu lectura de hoy 📖» + кнопка «Leer ahora».
+  Испанский текст также сообщает текущий стрик: при ненулевом — «Llevas una
+  racha de N día/días. ¡No la pierdas!», иначе приглашает начать серию сегодня.
 
 ### 13.2 Дайджест выученного (`runLearnedDigest`)
 В `DIGEST_LOCAL_HOUR = "20:00"` локального времени: слова, ставшие `learned` с
@@ -634,6 +716,8 @@ IANA-таймзоной.
 - **Размер шрифта** — `sm` (1rem) / `md` (1.125rem, default) / `lg` (1.3rem) /
   `xl` (1.5rem) + живой образец. Локально + best-effort в профиль.
 - **Уровень** — A2/B1/B2/C1/C2 (сохраняется по «Сохранить»).
+  Любая фактическая ручная или принятая из баннера смена уровня очищает
+  метаданные старого предложения; PATCH с тем же уровнем их не трогает.
 - **Темы интересов** — чипы с удалением + добавление своей (макс 20, каждая 1–60
   символов).
 - **Ежедневное чтение** — чекбокс + время.
@@ -647,7 +731,9 @@ IANA-таймзоной.
   `clampPracticeSize`). Несколько коротких сессий закрепляют лучше одной длинной
   (distributed practice).
 - **Сброс прогресса** (деструктивно) — нативный `confirmDialog` → `DELETE
-  /me/progress` (стирает банк, статьи, статистику; аккаунт и настройки остаются).
+  /me/progress` (стирает банк, реестр известных слов, статьи и статистику;
+  строки `practice_answers` удаляются каскадом от bank item; аккаунт и настройки
+  остаются; metadata предложения уровня также очищается).
 
 Тема/шрифт хранятся и в профиле (следуют за пользователем между устройствами), и
 локально (мгновенное применение). `applyDisplayPrefs` при логине пушит серверные
@@ -673,10 +759,71 @@ IANA-таймзоной.
 
 `webapp/src/screens/Home.tsx`: при наличии активной сессии — редирект в `/read`.
 Иначе `GET /stats` + `GET /bank?status=active` + `GET /practice/queue?limit=1`.
-Плитки: прочитано статей, «в прогрессе» (`X / limit`, если лимит задан),
-выучено; ссылка на очередь; активный банк чипами; кнопки «🧠 Тренировка (N)» (если
-есть due) и «Новое чтение». `GET /stats` возвращает `{ articlesRead,
-itemsInProgress, itemsLearned, itemsQueued, activePoolLimit }`.
+Показывает 🔥 текущий стрик, плитки прочитанных статей / слов в процессе /
+выученных, 12-недельный CSS-график чтений и learned-слов (без chart dependency),
+ссылку на очередь, активный банк чипами и кнопки «🧠 Тренировка (N)» / «Новое
+чтение». `GET /stats` возвращает `{ articlesRead, itemsInProgress, itemsLearned,
+itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
+`weeklyProgress` — `{ weekStart: "YYYY-MM-DD", articlesRead, wordsLearned }`.
+
+### 16.1 Адаптивное предложение уровня CEFR (F-8)
+`server/src/domain/levelSuggestion.ts` — чистая логика, без автосмены уровня:
+- Окно — **последние 5 завершённых чтений** (`read_at`, newest first). При <5
+  предложения нет. Для каждого чтения `density = markedLexicalTokens /
+  bodyLexicalTokens`; при нулевом знаменателе density=0.
+- Lexical token — последовательность испанских/латинских букв, тем же правилом,
+  что word-токены Reader. Числитель берётся именно из `mark.text`: span и
+  sentence поэтому весят столько слов, сколько пользователь реально охватил
+  пометкой, а не «одну метку». При наличии `pos` лексические позиции
+  проецируются на токены содержащего предложения: одинаковые и перекрывающиеся
+  word/span/sentence считаются один раз. Legacy без пригодного `pos`
+  нормализуется (регистр/диакритика), одинаковые и вложенные последовательности
+  схлопываются насколько это возможно без координат. Числитель всегда capped
+  `wordCount(body)`, поэтому битые legacy-данные не дают >100%.
+- Сигнал устойчив только если **все 5** density строго `<
+  LEVEL_SUGGESTION_LOW_DENSITY = 0.02` (предложить один соседний уровень вверх)
+  либо строго `> LEVEL_SUGGESTION_HIGH_DENSITY = 0.08` (один вниз). Равенство
+  порогу и mixed window не срабатывают. Лестница A2→B1→B2→C1→C2; A2 не
+  понижается, C2 не повышается.
+- Cooldown — **14 локальных календарных дней** по `users.timezone`, а не 14×24
+  часа. Он direction-specific и считается от более позднего `shown_at` /
+  `dismissed_at`. `GET /stats` только вычисляет и ничего скрыто не пишет.
+  Клиент вызывает `PATCH /me/level-suggestion {action:"seen", direction,
+  targetLevel}` именно при рендере баннера; «Оставить» пишет `dismissed`.
+  Endpoint под per-user lock заново проверяет level/window/target и отвечает 409
+  stale-вкладке, поэтому она не может затереть актуальное решение.
+- `GET /stats` и `POST /session/complete` возвращают nullable
+  `{direction,targetLevel}`. Баннер показывается на Home и немедленно в
+  post-reading flow (в Quiz либо на Home, если карточек нет), локализован ru/en/es.
+  Кнопки: «перейти на X» через существующий `PATCH /me {level:X}` и «оставить».
+
+### 16.2 Стрик и недельная динамика
+- Полезный день — локальный календарный день пользователя с завершённым чтением
+  или практикой. История хранится в `daily_activity` (unique
+  `(user_id, local_day)`, независимые boolean-флаги `reading`/`practice`);
+  накопительного счётчика нет.
+- Чтение ставит `reading=true` атомарно с `applyCompletion`. Любой принятый
+  сервером правильный или неправильный первый ответ карточки в webapp либо боте
+  ставит `practice=true`; клиентские ретраи на сервер не уходят. Дневной upsert
+  идемпотентен, поэтому один ответ и ранний выход уже считаются завершённой
+  one-card практикой.
+- `currentStreak` вычисляется чистой логикой `domain/motivation.ts` по
+  `localDayKey` и таймзоне профиля. Если сегодня действий ещё нет, непрерывная
+  серия до вчера сохраняется до конца текущих локальных суток; более старый
+  разрыв даёт 0.
+- Недельный график строится по локальным неделям с понедельника: чтения — из
+  `articles.read_at`, слова — только из `known_words.known_since` с
+  `source=learned`. Дневная цель не включена.
+
+### 16.3 Словарный запас (`webapp/src/screens/Vocabulary.tsx`)
+Вход с Home ведёт на `/vocabulary`. Экран показывает число признанных известных
+лемм (`known_since != null`), разбивку `learned/reading/manual`, прирост по каждой
+из последних 12 UTC-недель, список лемм и покрытие пяти диапазонов по 1000.
+Покрытие считается чисто на сервере по встроенному списку 5000 содержательных
+испанских лемм `SPANISH_FREQUENCY_V1` без NLP-зависимости. Снимок
+`v1-doozan-c66c8a7` происходит из `doozan/spanish_data` / Wiktionary /
+hermitdave FrequencyWords и распространяется с атрибуцией по CC BY-SA 3.0
+(полная ссылка и SHA — в файле данных). Все строки экрана локализованы ru/en/es.
 
 ---
 
@@ -692,6 +839,7 @@ itemsInProgress, itemsLearned, itemsQueued, activePoolLimit }`.
 | `POST /api/auth/telegram` | Логин по initData | Валидация HMAC → JWT + профиль |
 | `GET /api/me` | Профиль | |
 | `PATCH /api/me` | Обновить профиль | Валидация уровня/языка/таймзоны/темы/шрифта/тем/времени/лимитов |
+| `PATCH /api/me/level-suggestion` | Записать показ/отказ | `{action: seen/dismissed, direction, targetLevel}`; re-check под lock, stale → `409` |
 | `DELETE /api/me/progress` | Сброс прогресса | |
 | `POST /api/articles` | Старт/текущее чтение | Rate-limit `DAILY_ARTICLE_LIMIT`; `429`/`503` |
 | `GET /api/articles` | История | `limit` 1–100 (20), `offset` |
@@ -700,13 +848,15 @@ itemsInProgress, itemsLearned, itemsQueued, activePoolLimit }`.
 | `PUT /api/session` | Сохранить пометки | ≤300 пометок |
 | `DELETE /api/session` | Бросить сессию | |
 | `POST /api/session/review` | LLM-разбор | Идемпотентно; rate-limit `DAILY_REVIEW_LIMIT` |
-| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100 |
+| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100; возвращает nullable level suggestion |
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
-| `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); typed для stage≥2 |
-| `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint`; `typedAnswer` грейдится сервером |
+| `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); pool `limit*3`, shuffle, cross-card anti-leak; typed для stage≥2 без lemma/accepted до ответа |
+| `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `cardType?` (текущие клиенты передают обязательно), `latencyMs?` integer/null 0..600000; `usedHint`; `typedAnswer` грейдится сервером и всегда журналируется как typed |
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
-| `GET /api/stats` | Статистика | |
+| `GET /api/stats` | Статистика | Счётчики + стрик + 12 недель + read-only nullable level suggestion |
+| `GET /api/known-words` | Список известных лемм | Только `known_since != null` |
+| `GET /api/known-words/stats` | Размер, источники, 12 недель, покрытие top-5000 | 5 диапазонов по 1000 |
 | `GET /api/admin/usage` | Расход LLM по юзерам | Только `ADMIN_TG_IDS` (`403` иначе) |
 | `POST /api/admin/enrich-bank` | Разовый бэкфилл легаси-карточек | Только админ; чанки по 10 |
 
@@ -766,16 +916,21 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
+| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
-| `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, `first_context`, `surface_form`, `pos`, `gender`, `note`, `context_translation`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
-| `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
+| `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
+| `practice_answers` | Append-only журнал первых ответов практики/Quiz/бота | FK `user_id` и `item_id` cascade; `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)` |
+| `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
+| `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
+| `daily_activity` | История полезных локальных дней для устойчивого стрика | unique `(user_id, local_day)`; `reading`, `practice`, `created_at`, `updated_at` |
 | `reading_sessions` | Единственная активная сессия (unique `user_id`) | `article_id`, `marks` (JSON), `review_result`, `state` (`reading`/`reviewed`) |
 | `llm_calls` | Аудит/метрика LLM | `user_id` (**ON DELETE set null**), `kind`, `model`, `input_tokens`, `output_tokens`, `cost_usd_micros`, `ok`; индекс `(user_id, kind, created_at)` |
 | `user_stats` | Счётчики (PK = user_id) | `articles_read`, `items_learned`, `last_learned_digest_at` |
 
 FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
-Транзакции: `applyCompletion`, `resetUserProgress`, `setUserTopics`.
+Транзакции: `applyCompletion` (включая reading activity),
+`applyPracticeAnswer` (SRS update + answer journal), `resetUserProgress`,
+`setUserTopics`.
 
 ### 20.1 Карта миграций (`server/drizzle/`)
 - `0000` — исходная схема (тогда `bank_items` имел `term`/`clean_streak`).
@@ -796,6 +951,18 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `0009` — `pending_quiz_item_id`, `pending_quiz_sent_at` (typed бот-квиз).
 - `0010` — `theme`, `font_size` (display-настройки в профиле).
 - `0011` — `practice_size` (размер сессии Práctica, default 10).
+- `0012` — `known_words` и `articles.lemmas` (default `[]`, совместимо с
+  существующими статьями).
+- `0013` — `daily_activity` с unique `(user_id, local_day)` и флагами
+  чтения/практики; новая таблица не меняет существующие строки.
+- `0014` — nullable/default-compatible `bank_items.contexts` (JSON, default
+  `[]`) и nullable `users.pending_quiz_context_added_at` для сохранения
+  выбранного typed-контекста бота до grading.
+- `0015` — три nullable metadata-поля предложения уровня:
+  `level_suggestion_direction`, `level_suggestion_shown_at`,
+  `level_suggestion_dismissed_at`; существующие пользователи получают null.
+- `0016` — append-only `practice_answers` с FK cascade, полной metadata ответа и
+  индексами `(user_id, ts)` / `(item_id, ts)`; существующие строки не меняются.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -842,14 +1009,21 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `PENDING_QUIZ_TTL_MS` | 24 ч | `domain/typedQuiz.ts` |
 | Прощение опечатки | ≥6 символов, 1 правка | `domain/typedQuiz.ts` |
 | `MAX_RETRIES` (ретраи в сессии) | 2 | `webapp/.../QuizSession.tsx` |
+| Максимальная latency первого ответа | 600000 мс (10 мин) | `domain/practiceAnswer.ts`, `QuizSession.tsx` |
 | Длина статьи (идеал / жёсткие границы) | 250–320 / 200–400 слов | `domain/articleQuality.ts` |
 | Частотный потолок A2/B1/B2/C1 | 1500 / 2500 / 3500 / 5000 (C2 — без потолка) | `llm/articleRubric.ts` |
 | `MAX_REWRITE_ATTEMPTS` (переработки качества) | 2 | `llm/articleQuality.ts` |
+| `READING_KNOWN_THRESHOLD` | 3 непомеченные встречи вне банка | `domain/knownWords.ts` |
+| Частотное покрытие | 5000 лемм, 5 диапазонов по 1000, версия `v1-doozan-c66c8a7` | `data/spanishFrequencyV1.ts` |
 | Порог оценок аудита (pass) | ≥ 4 из 5 | `llm/articleQuality.ts` (`needsRewrite`) |
 | Ротация тем | избегать 2 последних | `domain/topicRotation.ts` |
 | `active_pool_limit` | 0–200 (0 = без лимита), default 20 | `users` |
 | `bot_quizzes_per_day` | 0–12 | `users` |
 | `practice_size` (карточек за тренировку) | пресеты 5/10/20, клемп 1–30, default 10 | `users`, `domain/practiceSize.ts` |
+| `PRACTICE_CANDIDATE_MULTIPLIER` | 3 | `db/repositories/bank.ts` |
+| `MAX_CONTEXTS` | 5 | `domain/contexts.ts` |
+| Окно / low / high level suggestion | 5 / `<2%` / `>8%` (все 5) | `domain/levelSuggestion.ts` |
+| Cooldown level suggestion | 14 локальных календарных дней | `domain/levelSuggestion.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |
 | Предгенерация | за 5 мин до доставки | `scheduler.ts` |
@@ -885,16 +1059,15 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 > Часть рекомендаций из аудита уже реализована (мягкий откат, подсказка по
 > запросу, повтор ошибок, прерываемость, typed recall в webapp, пониженный вес
-> пассивного чтения), часть — в плане (`docs/retention-roadmap.md`: interleaving,
-> ротация контекстов, качество дистракторов, журнал ответов для FSRS). При работе
+> пассивного чтения, interleaving, cross-card anti-leak, ротация контекстов,
+> дистракторы и журнал ответов), часть — в плане (`docs/retention-roadmap.md`:
+> дальнейший адаптивный планировщик поверх накопленных данных). При работе
 > над этими этапами обновляй и этот раздел, и роадмап.
 
 ---
 
 ## 24. Известные ограничения
 
-- Контекст карточки не ротируется (всегда `firstContext`); слова из одной статьи
-  могут идти блоком (нет interleaving) — запланировано.
 - Легаси-пометки без `pos` не могут точно закрепиться за одним вхождением при
   восстановлении подсветки в истории (допустимая деградация).
 - Docker-образ и сквозной прогон в реальном Telegram-клиенте на момент написания
@@ -913,12 +1086,16 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `db/` — клиент, миграции, `schema.ts`, репозитории (`repositories/*`).
 - `domain/` — **чистая логика без I/O**: `srs.ts`, `bank.ts`, `practice.ts`,
   `typedQuiz.ts`, `weaving.ts`, `marks.ts`, `context.ts`, `normalize.ts`,
-  `topicRotation.ts` (покрыты юнит-тестами в `server/tests/`).
+  `knownWords.ts`, `vocabularyStats.ts`, `motivation.ts`, `levelSuggestion.ts`,
+  `topicRotation.ts` (покрыты
+  юнит-тестами в `server/tests/`).
+- `data/spanishFrequencyV1.ts` — версионированный CC BY-SA 3.0 частотный
+  список для оценки покрытия.
 - `llm/` — интеграция с Anthropic: генерация статей, разбор, обогащение,
   проверка предложений, схемы, тарифы, клиент, `callJson`.
 - `scheduler/` — cron и хелперы времени.
-- `services/` — `articleService.ts`, `sessionService.ts` (оркестрация домена + БД
-  + LLM).
+- `services/` — `articleService.ts`, `sessionService.ts`,
+  `levelSuggestionService.ts` (оркестрация домена + БД + LLM).
 - `lib/` — config, locks, logger, timezone.
 
 **Клиент (`webapp/src/`)**
@@ -928,7 +1105,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `telegram/telegram.ts` — SDK: тема, viewport, haptics, BackButton, initData,
   диалоги.
 - `screens/` — экраны (Onboarding, Home, Reading, Review, Quiz, Practice, Bank,
-  History, HistoryArticle, Settings).
+  Vocabulary, History, HistoryArticle, Settings).
 - `components/` — `QuizSession`, `BankChip`, пикеры темы/шрифта, Button, Spinner,
   ErrorState.
 - `lib/` — зеркала домена и утилиты: `srs.ts`, `cards.ts`, `typedRecall.ts`,
@@ -943,5 +1120,5 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 ---
 
-*Последнее обновление реестра: 2026-07-15.*
+*Последнее обновление реестра: 2026-07-15 (T-2: журнал ответов практики и latency).*
 *Не забудь обновить дату и содержимое при следующем изменении функционала.*

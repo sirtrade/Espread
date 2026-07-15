@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -8,6 +9,7 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
   let schema: typeof import("../src/db/schema.js");
   let applyPracticeAnswer: typeof import("../src/db/repositories/bank.js").applyPracticeAnswer;
   let getBankItemById: typeof import("../src/db/repositories/bank.js").getBankItemById;
+  let listKnownWords: typeof import("../src/db/repositories/knownWords.js").listKnownWords;
   let findOrCreateUser: typeof import("../src/db/repositories/users.js").findOrCreateUser;
   let userId: number;
 
@@ -35,6 +37,7 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     migrate(db, { migrationsFolder: "./drizzle" });
     schema = await import("../src/db/schema.js");
     ({ applyPracticeAnswer, getBankItemById } = await import("../src/db/repositories/bank.js"));
+    ({ listKnownWords } = await import("../src/db/repositories/knownWords.js"));
     ({ findOrCreateUser } = await import("../src/db/repositories/users.js"));
 
     const user = await findOrCreateUser(555001, "practicetest");
@@ -119,6 +122,9 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     expect(res).toMatchObject({ advanced: true, status: "learned" });
     const item = await getBankItemById(userId, id);
     expect(item?.status).toBe("learned");
+    expect(await listKnownWords(userId)).toEqual([
+      expect.objectContaining({ lemma: "graduada", source: "learned", knownSince: now }),
+    ]);
   });
 
   it("soft-lapses a top-rung word instead of graduating it on a wrong answer", async () => {
@@ -133,7 +139,10 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
   it("does not credit a correct answer given after revealing the hint", async () => {
     const id = await seedItem({ lemma: "conpista", srsStage: 2, nextDueAt: 1000 });
     const now = Date.UTC(2026, 0, 22, 9, 0, 0);
-    const res = await applyPracticeAnswer(userId, id, true, now, true);
+    const res = await applyPracticeAnswer(userId, id, true, now, true, "UTC", {
+      cardType: "cloze",
+      latencyMs: 1_234,
+    });
     // No advance: the schedule (stage/nextDueAt/lastCreditAt) is left untouched
     // so the word stays due for an unaided retrieval later.
     expect(res).toMatchObject({ advanced: false, srsStage: 2 });
@@ -141,6 +150,20 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     expect(item?.srsStage).toBe(2);
     expect(item?.nextDueAt).toBe(1000);
     expect(item?.lastCreditAt).toBeNull();
+    const rows = await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.itemId, id));
+    expect(rows).toEqual([
+      expect.objectContaining({
+        userId,
+        itemId: id,
+        ts: now,
+        cardType: "cloze",
+        correct: true,
+        usedHint: true,
+        latencyMs: 1_234,
+        srsStageBefore: 2,
+        srsStageAfter: 2,
+      }),
+    ]);
   });
 
   it("still lapses on a wrong answer even when the hint was used", async () => {
@@ -149,5 +172,45 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     const res = await applyPracticeAnswer(userId, id, false, now, true);
     // A wrong answer lapses regardless of the hint: stage 4 - 2 = 2.
     expect(res).toMatchObject({ advanced: false, srsStage: 2 });
+  });
+
+  it("does not journal a missing item", async () => {
+    const before = await db.select().from(schema.practiceAnswers);
+    expect(await applyPracticeAnswer(userId, 2_147_483_647, false)).toBeUndefined();
+    expect(await db.select().from(schema.practiceAnswers)).toHaveLength(before.length);
+  });
+
+  it("clamps latency for direct non-HTTP callers", async () => {
+    const id = await seedItem({ lemma: "latencia" });
+    await applyPracticeAnswer(userId, id, true, Date.UTC(2026, 0, 23), false, "UTC", {
+      cardType: "recall",
+      latencyMs: 700_000,
+    });
+    const [row] = await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.itemId, id));
+    expect(row?.latencyMs).toBe(600_000);
+  });
+
+  it("rolls back the bank update when the journal insert fails", async () => {
+    const id = await seedItem({ lemma: "atomicidad", srsStage: 4, nextDueAt: 500 });
+    sqlite.exec(`
+      CREATE TRIGGER fail_practice_answer
+      BEFORE INSERT ON practice_answers
+      BEGIN
+        SELECT RAISE(ABORT, 'forced journal failure');
+      END;
+    `);
+    try {
+      await expect(
+        applyPracticeAnswer(userId, id, false, Date.UTC(2026, 0, 24), false, "UTC", {
+          cardType: "typed",
+          latencyMs: 700_000,
+        }),
+      ).rejects.toThrow("forced journal failure");
+    } finally {
+      sqlite.exec("DROP TRIGGER fail_practice_answer");
+    }
+
+    expect(await getBankItemById(userId, id)).toMatchObject({ srsStage: 4, nextDueAt: 500 });
+    expect(await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.itemId, id))).toHaveLength(0);
   });
 });

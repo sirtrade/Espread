@@ -18,6 +18,7 @@ export const Errors = {
   forbidden: () => new ApiError(403, "forbidden", "Acceso denegado"),
   notFound: (what: string) => new ApiError(404, "not_found", `No se encontró: ${what}`),
   badRequest: (message: string) => new ApiError(400, "bad_request", message),
+  conflict: (message: string) => new ApiError(409, "conflict", message),
   rateLimited: (message: string) => new ApiError(429, "rate_limited", message),
   llmUnavailable: () =>
     new ApiError(503, "llm_unavailable", "El servicio de generación no está disponible ahora, intenta de nuevo más tarde"),
