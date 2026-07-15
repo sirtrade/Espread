@@ -10,7 +10,7 @@ import { FontSizePicker } from "../components/FontSizePicker.js";
 import { useT } from "../lib/i18n.js";
 import { langLabel } from "../lib/langs.js";
 
-const LEVELS: Level[] = ["A2", "B1", "B2", "C1"];
+const LEVELS: Level[] = ["A2", "B1", "B2", "C1", "C2"];
 const POOL_PRESETS: number[] = [10, 20, 30, 50, 0];
 const PRACTICE_SIZE_PRESETS: number[] = [5, 10, 20];
 const LANG_VALUES: ExplainLang[] = ["ru", "en", "es"];

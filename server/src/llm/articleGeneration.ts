@@ -10,15 +10,20 @@ const WEB_SEARCH_TOOL: Anthropic.WebSearchTool20250305 = {
   max_uses: 3,
 };
 
+export type CefrLevel = "A2" | "B1" | "B2" | "C1" | "C2";
+
 export interface GenerateArticleParams {
   userId: number;
-  level: "A2" | "B1" | "B2" | "C1";
+  level: CefrLevel;
   topic: string;
   targetTerms: string[];
 }
 
+/** Levels that cap vocabulary to the N most frequent words. C2 (near-native) is uncapped. */
+type CappedLevel = Exclude<CefrLevel, "C2">;
+
 /** How deep into the Spanish frequency list the article vocabulary may go. */
-export const LEVEL_FREQ_CAP: Record<GenerateArticleParams["level"], number> = {
+export const LEVEL_FREQ_CAP: Record<CappedLevel, number> = {
   A2: 1500,
   B1: 2500,
   B2: 3500,
@@ -26,7 +31,15 @@ export const LEVEL_FREQ_CAP: Record<GenerateArticleParams["level"], number> = {
 };
 
 /** Frequency framing for the write step; exported for tests. */
-export function frequencyInstruction(level: GenerateArticleParams["level"]): string {
+export function frequencyInstruction(level: CefrLevel): string {
+  if (level === "C2") {
+    // Near-native: no frequency ceiling. Encourage a rich, natural register instead.
+    return (
+      `Sin restricción de frecuencia léxica: usa vocabulario rico y natural de nivel casi nativo, ` +
+      `incluyendo palabras poco comunes, matices, expresiones idiomáticas y un registro de revista o literario cuando encaje. ` +
+      `El texto debe sonar auténtico para un hablante avanzado, sin simplificar el idioma.`
+    );
+  }
   const cap = LEVEL_FREQ_CAP[level];
   return (
     `Usa casi exclusivamente vocabulario dentro de las ~${cap} palabras más frecuentes del español. ` +

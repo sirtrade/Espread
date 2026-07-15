@@ -1,7 +1,7 @@
 import type { ThemeId } from "../lib/theme.js";
 import type { FontSizeId } from "../lib/fontSize.js";
 
-export type Level = "A2" | "B1" | "B2" | "C1";
+export type Level = "A2" | "B1" | "B2" | "C1" | "C2";
 export type ExplainLang = "ru" | "en" | "es";
 export type BankStatus = "active" | "learned" | "ignored" | "queued";
 
