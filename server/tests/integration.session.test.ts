@@ -168,6 +168,16 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     const activeAfterCycle1 = await getBankItems(userId, "active");
     const lemmas = activeAfterCycle1.map((i) => i.lemma).sort();
     expect(lemmas).toEqual(["durante meses", "hallazgo"]);
+    const firstHallazgoContexts = JSON.parse(
+      activeAfterCycle1.find((item) => item.lemma === "hallazgo")!.contexts!,
+    ) as Array<Record<string, unknown>>;
+    expect(firstHallazgoContexts).toHaveLength(1);
+    expect(firstHallazgoContexts[0]).toMatchObject({
+      sentence: "Los científicos anunciaron un hallazgo relevante.",
+      translation: "The scientists announced a relevant discovery.",
+      surfaceForm: "hallazgo",
+      articleId: article1.id,
+    });
 
     // Completion archives the session's marks and review onto the article
     // (reading history), even though the session row itself is deleted.
@@ -210,6 +220,14 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     const hallazgo2 = active2.find((i) => i.lemma === "hallazgo");
     expect(hallazgo2?.srsStage).toBe(1);
     expect(hallazgo2?.nextDueAt).not.toBeNull();
+    const hallazgoContexts = JSON.parse(hallazgo2!.contexts!) as Array<Record<string, unknown>>;
+    expect(hallazgoContexts).toHaveLength(2);
+    expect(hallazgoContexts[1]).toMatchObject({
+      sentence: expect.stringContaining("hallazgo otra vez"),
+      translation: null,
+      surfaceForm: "hallazgo",
+      articleId: article2!.id,
+    });
     // The phrase was never woven in, so it stayed at the bottom rung, due now.
     const phrase2 = active2.find((i) => i.lemma === "durante meses");
     expect(phrase2?.srsStage).toBe(0);

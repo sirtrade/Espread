@@ -20,6 +20,8 @@ import {
   type CardType,
   type QueueCardType,
 } from "../../domain/practice.js";
+import { contextByAddedAt, parseContexts, pickContext, type BankContext } from "../../domain/contexts.js";
+import type { BankItemRow } from "../../db/repositories/bank.js";
 import { clampPracticeSize } from "../../domain/practiceSize.js";
 import { gradeTypedAnswer, type TypedVerdict } from "../../domain/typedQuiz.js";
 import { checkPracticeSentence } from "../../llm/sentenceCheck.js";
@@ -52,6 +54,12 @@ export interface PracticeCard {
   contextTranslation: string | null;
   /** typed cards: the blanked sentence shown as a hint while answering (null for MC) */
   contextHint: string | null;
+  /** Opaque selector returned with typed answers to preserve chosen feedback. */
+  contextAddedAt: number | null;
+}
+
+export function pickPracticeContext(item: BankItemRow, random: () => number = Math.random): BankContext | null {
+  return pickContext(parseContexts(item.contexts, item), random);
 }
 
 practiceRoutes.get("/queue", async (c) => {
@@ -63,6 +71,7 @@ practiceRoutes.get("/queue", async (c) => {
 
   const candidates: Array<PracticeCard & { leakAnswers: string[] }> = [];
   for (const item of shufflePracticeCandidates(dueItems)) {
+    const selectedContext = pickPracticeContext(item);
     const poolLemmas = (await getDistractorPool(userId, item.id, { pos: item.pos, isPhrase: item.isPhrase })).map(
       (d) => d.lemma,
     );
@@ -77,9 +86,9 @@ practiceRoutes.get("/queue", async (c) => {
         lemma: item.lemma,
         isPhrase: item.isPhrase,
         translation: item.translation,
-        firstContext: item.firstContext,
-        surfaceForm: item.surfaceForm,
-        contextTranslation: item.contextTranslation,
+        firstContext: selectedContext?.sentence ?? item.firstContext,
+        surfaceForm: selectedContext?.surfaceForm ?? item.surfaceForm,
+        contextTranslation: selectedContext?.translation ?? item.contextTranslation,
         pos: item.pos,
         storedDistractors: parseStoredDistractors(item.distractors),
         poolLemmas,
@@ -106,7 +115,8 @@ practiceRoutes.get("/queue", async (c) => {
       context: card.type === "typed" ? null : card.context,
       contextTranslation: card.contextTranslation,
       contextHint: card.contextHint,
-      leakAnswers: [item.lemma, item.surfaceForm, card.answer].filter(
+      contextAddedAt: selectedContext?.addedAt ?? null,
+      leakAnswers: [item.lemma, selectedContext?.surfaceForm, item.surfaceForm, card.answer].filter(
         (term): term is string => typeof term === "string" && term.length > 0,
       ),
     });
@@ -142,13 +152,17 @@ practiceRoutes.post("/answer", async (c) => {
   if (body.data.typedAnswer != null) {
     const item = await getBankItemById(userId, itemId);
     if (!item) throw Errors.notFound("Palabra");
-    const accepted = [item.surfaceForm, item.lemma].filter((f): f is string => typeof f === "string" && f.length > 0);
+    const contexts = parseContexts(item.contexts, item);
+    const selectedContext = contextByAddedAt(contexts, body.data.contextAddedAt) ?? contexts[0] ?? null;
+    const accepted = [selectedContext?.surfaceForm, item.surfaceForm, item.lemma].filter(
+      (f): f is string => typeof f === "string" && f.length > 0,
+    );
     const grade = gradeTypedAnswer(body.data.typedAnswer, accepted);
     correct = grade.correct;
     verdict = grade.verdict;
     answer = grade.matched;
-    feedbackContext = item.firstContext;
-    feedbackContextTranslation = item.contextTranslation;
+    feedbackContext = selectedContext?.sentence ?? item.firstContext;
+    feedbackContextTranslation = selectedContext?.translation ?? item.contextTranslation;
   } else {
     correct = body.data.correct ?? false;
   }

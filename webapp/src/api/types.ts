@@ -152,6 +152,13 @@ export interface BankItem {
   note: string | null;
   firstContext: string | null;
   contextTranslation: string | null;
+  contexts?: Array<{
+    sentence: string;
+    translation: string | null;
+    surfaceForm: string;
+    articleId: number | null;
+    addedAt: number;
+  }>;
   distractors: string[] | null;
   freqBand: FreqBand | null;
   updatedAt: number;
@@ -238,6 +245,8 @@ export interface PracticeCard {
   contextTranslation: string | null;
   /** typed cards: the blanked sentence shown as a hint while answering (null for MC) */
   contextHint: string | null;
+  /** Opaque selector used to preserve the chosen typed-card feedback. */
+  contextAddedAt: number | null;
 }
 
 /** New SRS state returned after a practice/quiz answer, used to build the

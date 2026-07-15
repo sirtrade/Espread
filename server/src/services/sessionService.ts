@@ -1,8 +1,10 @@
 import { normalizeTerm } from "../domain/normalize.js";
 import { findTermContext } from "../domain/context.js";
+import { appendContext, parseContexts, type BankContext } from "../domain/contexts.js";
 import { dedupeMarks, type Mark } from "../domain/marks.js";
 import { applyReviewToBank, type BankItemRecord, type ReviewedItem } from "../domain/bank.js";
 import { readingEncounterLemmas } from "../domain/knownWords.js";
+import { termAppearsIn } from "../domain/weaving.js";
 import { reviewMarkedItems } from "../llm/review.js";
 import { reviewSchema, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
 import type { ArticleRow } from "../db/repositories/articles.js";
@@ -117,9 +119,89 @@ function bankItemDiffers(before: BankItemRecord | undefined, after: BankItemReco
     before.gender !== after.gender ||
     before.note !== after.note ||
     before.contextTranslation !== after.contextTranslation ||
+    before.contexts !== after.contexts ||
     before.distractors !== after.distractors ||
     before.freqBand !== after.freqBand
   );
+}
+
+function addReadingContexts(
+  bank: Map<string, BankItemRecord>,
+  exposedLemmas: readonly string[],
+  reviewedItems: readonly ReviewedItem[],
+  articleId: number,
+  articleBody: string,
+  addedAt: number,
+): void {
+  const reviewedByLemma = new Map(reviewedItems.map((item) => [item.lemma, item]));
+  const candidates: Array<{ lemma: string; context: BankContext }> = [];
+
+  for (const reviewed of reviewedItems) {
+    if (!reviewed.context) continue;
+    candidates.push({
+      lemma: reviewed.lemma,
+      context: {
+        sentence: reviewed.context,
+        translation: reviewed.contextTranslation,
+        surfaceForm: reviewed.surfaceForm ?? reviewed.lemma,
+        articleId,
+        addedAt,
+      },
+    });
+  }
+
+  for (const rawLemma of exposedLemmas) {
+    const lemma = normalizeTerm(rawLemma);
+    if (!lemma || reviewedByLemma.has(lemma)) continue;
+    const item = bank.get(lemma);
+    if (!item) continue;
+    const found = wovenContextForItem(item, articleBody);
+    if (!found) continue;
+    candidates.push({
+      lemma,
+      context: { ...found, translation: null, articleId, addedAt },
+    });
+  }
+
+  for (const { lemma, context } of candidates) {
+    const item = bank.get(lemma);
+    // targetTerms can contain stale/model-only values; never create a bank row
+    // merely to hold a context.
+    if (!item) continue;
+    const contexts = parseContexts(item.contexts, item);
+    item.contexts = JSON.stringify(appendContext(contexts, context));
+  }
+}
+
+function wovenContextForItem(
+  item: Pick<BankItemRecord, "lemma" | "surfaceForm">,
+  articleBody: string,
+): Pick<BankContext, "sentence" | "surfaceForm"> | null {
+  for (const surfaceForm of [item.surfaceForm, item.lemma]) {
+    if (!surfaceForm) continue;
+    const sentence = findTermContext(articleBody, surfaceForm);
+    if (sentence) return { sentence, surfaceForm };
+  }
+
+  // Weaving accepts Spanish inflections by stem. Recover the exact token used
+  // in that sentence so a rotated cloze blanks an answer that is really there.
+  const lemmaWords = normalizeTerm(item.lemma).split(/\s+/).filter(Boolean);
+  if (lemmaWords.length !== 1) return null;
+  for (const raw of articleBody.split(/(?<=[.!?…])\s+|\n+/)) {
+    const sentence = raw.trim();
+    if (!sentence || !termAppearsIn(sentence, item.lemma)) continue;
+    const lemma = lemmaWords[0]!;
+    const stemLength = Math.max(4, lemma.length - 2);
+    const stem = lemma.slice(0, Math.min(lemma.length, stemLength));
+    const surfaceForm = sentence
+      .match(/\p{L}+/gu)
+      ?.find((word) => {
+        const normalized = normalizeTerm(word);
+        return normalized.startsWith(stem) || stem.startsWith(normalized);
+      });
+    if (surfaceForm) return { sentence, surfaceForm };
+  }
+  return null;
 }
 
 /** The sentence the item was marked in: prefer the mark whose sentence
@@ -201,6 +283,7 @@ export async function completeSession(userId: number, choices: CompletionChoices
     const completedAt = Date.now();
     const before = await getBankItemsMap(userId);
     const after = applyReviewToBank(before, exposedLemmas, reviewedItems, overrides, user.activePoolLimit, completedAt, user.timezone);
+    addReadingContexts(after, exposedLemmas, reviewedItems, article.id, article.body, completedAt);
 
     // Only rows that actually changed get written — a completion typically
     // touches a handful of lemmas, not the user's whole bank.

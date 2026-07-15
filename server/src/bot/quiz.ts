@@ -2,6 +2,7 @@ import { InlineKeyboard } from "grammy";
 import type { Bot } from "grammy";
 import { logger } from "../lib/logger.js";
 import { buildCard, parseStoredDistractors } from "../domain/practice.js";
+import { contextByAddedAt, parseContexts, pickContext, type BankContext } from "../domain/contexts.js";
 import {
   buildTypedQuizCard,
   gradeTypedAnswer,
@@ -27,26 +28,27 @@ import { clearPendingQuiz, findUserByTgId, setPendingQuiz, type UserRow } from "
  * practice (caller then skips the lastBotQuizAt update so the next tick tries
  * again).
  */
-export async function sendBotQuiz(bot: Bot, user: UserRow): Promise<boolean> {
+export async function sendBotQuiz(bot: Bot, user: UserRow, random: () => number = Math.random): Promise<boolean> {
   const item = await getRandomDueItem(user.id, Date.now());
   if (!item) return false;
+  const selectedContext = pickContext(parseContexts(item.contexts, item), random);
 
   if (item.srsStage >= TYPED_QUIZ_MIN_STAGE) {
-    const sent = await sendTypedQuiz(bot, user, item);
+    const sent = await sendTypedQuiz(bot, user, item, selectedContext);
     if (sent) return true;
     // No safe typed card (e.g. missing translation) — fall back to buttons.
   }
 
-  return sendChoiceQuiz(bot, user, item);
+  return sendChoiceQuiz(bot, user, item, selectedContext, random);
 }
 
 /** Typed-recall quiz: translation shown, the Spanish word must be typed back. */
-async function sendTypedQuiz(bot: Bot, user: UserRow, item: BankItemRow): Promise<boolean> {
+async function sendTypedQuiz(bot: Bot, user: UserRow, item: BankItemRow, context: BankContext | null): Promise<boolean> {
   const card = buildTypedQuizCard({
     lemma: item.lemma,
     translation: item.translation,
-    firstContext: item.firstContext,
-    surfaceForm: item.surfaceForm,
+    firstContext: context?.sentence ?? item.firstContext,
+    surfaceForm: context?.surfaceForm ?? item.surfaceForm,
   });
   if (!card) return false;
 
@@ -57,12 +59,18 @@ async function sendTypedQuiz(bot: Bot, user: UserRow, item: BankItemRow): Promis
   await bot.api.sendMessage(user.tgUserId, question, {
     reply_markup: { force_reply: true, input_field_placeholder: "Tu respuesta..." },
   });
-  await setPendingQuiz(user.id, item.id, Date.now());
+  await setPendingQuiz(user.id, item.id, Date.now(), context?.addedAt ?? null);
   return true;
 }
 
 /** Multiple-choice quiz (cloze or recall) over inline keyboard buttons. */
-async function sendChoiceQuiz(bot: Bot, user: UserRow, item: BankItemRow): Promise<boolean> {
+async function sendChoiceQuiz(
+  bot: Bot,
+  user: UserRow,
+  item: BankItemRow,
+  context: BankContext | null,
+  random: () => number,
+): Promise<boolean> {
   const poolLemmas = (await getDistractorPool(user.id, item.id, { pos: item.pos, isPhrase: item.isPhrase })).map(
     (d) => d.lemma,
   );
@@ -71,13 +79,13 @@ async function sendChoiceQuiz(bot: Bot, user: UserRow, item: BankItemRow): Promi
     lemma: item.lemma,
     isPhrase: item.isPhrase,
     translation: item.translation,
-    firstContext: item.firstContext,
-    surfaceForm: item.surfaceForm,
-    contextTranslation: item.contextTranslation,
+    firstContext: context?.sentence ?? item.firstContext,
+    surfaceForm: context?.surfaceForm ?? item.surfaceForm,
+    contextTranslation: context?.translation ?? item.contextTranslation,
     pos: item.pos,
     storedDistractors: parseStoredDistractors(item.distractors),
     poolLemmas,
-  });
+  }, "cloze", random);
   // Nothing safely quizzable (no context/translation or too few distractors):
   // skip so the caller retries with another item on the next tick.
   if (!card) return false;
@@ -100,8 +108,8 @@ async function sendChoiceQuiz(bot: Bot, user: UserRow, item: BankItemRow): Promi
 }
 
 /** "lemma — translation" feedback line shown after any answer. */
-function answerLineFor(item: BankItemRow): string {
-  return item.translation ? `${item.lemma} — ${item.translation}` : item.lemma;
+function answerLineFor(item: BankItemRow, form = item.lemma): string {
+  return item.translation ? `${form} — ${item.translation}` : form;
 }
 
 export function registerQuizHandlers(bot: Bot): void {
@@ -149,12 +157,15 @@ export function registerQuizHandlers(bot: Bot): void {
     await clearPendingQuiz(user.id);
     if (!item) return next();
 
-    const accepted = [item.surfaceForm, item.lemma].filter((f): f is string => !!f);
+    const contexts = parseContexts(item.contexts, item);
+    const selectedContext = contextByAddedAt(contexts, user.pendingQuizContextAddedAt) ?? contexts[0] ?? null;
+    const accepted = [selectedContext?.surfaceForm, item.surfaceForm, item.lemma].filter((f): f is string => !!f);
     const grade = gradeTypedAnswer(text, accepted);
     await applyPracticeAnswer(user.id, item.id, grade.correct, Date.now(), false, user.timezone);
 
-    const answerLine = answerLineFor(item);
-    const contextLine = item.firstContext ? `\n\n${item.firstContext}` : "";
+    const answerLine = answerLineFor(item, grade.matched);
+    const feedbackContext = selectedContext?.sentence ?? item.firstContext;
+    const contextLine = feedbackContext ? `\n\n${feedbackContext}` : "";
     let verdict: string;
     if (grade.verdict === "exact") {
       verdict = "✅ ¡Correcto!";

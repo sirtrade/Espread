@@ -390,6 +390,13 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 - **Прочие помеченные слова** → апсерт по частотному бэнду; слово, впервые
   становящееся активным при полном пуле, паркуется в `queued`.
 
+**Контексты карточки** (`domain/contexts.ts`): `bank_items.contexts` — JSON-массив
+объектов `{sentence, translation, surfaceForm, articleId, addedAt}`, максимум
+`MAX_CONTEXTS = 5`. Парсер строго проверяет shape и при malformed/пустом JSON
+деградирует к сохранённым `firstContext`/`contextTranslation`/`surfaceForm`.
+Добавление дедуплицирует нормализованное предложение и при переполнении оставляет
+пять новейших. Легаси-поля не удалены и продолжают обновляться старым правилом.
+
 ### 8.2 Расписание интервальных повторений (`server/src/domain/srs.ts`)
 Общая лестница для чтения и тренировок:
 - `SRS_INTERVALS_DAYS = [1, 3, 7, 14, 30, 60, 120]`; `SRS_MAX_STAGE = 7`.
@@ -434,12 +441,20 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 `source=reading` и `known_since`; до порога `known_since=null` и в пользовательский
 список она не попадает.
 После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead }`.
+До вычисления changed rows completion накапливает контексты этой статьи:
+принятые/помеченные получают точное предложение через `contextForItem` и готовый
+`contextTranslation`; подтверждённые `targetTerms` получают предложение через
+`findTermContext` (с восстановлением точной флексии по stem при необходимости) и
+`translation=null`, без дополнительного LLM-вызова. Контекст добавляется только
+если соответствующая лемма уже присутствует в итоговом банке. Поле `contexts`
+участвует в `bankItemDiffers` и пишется атомарно в `applyCompletion`.
 
 ### 8.4 Экран банка (`webapp/src/screens/Bank.tsx`)
 Четыре вкладки: active («В прогрессе»), queued («В очереди»), learned
 («Выучено»), ignored («Отброшено»). Поиск появляется при > 10 элементов в
 вкладке (по лемме/переводу). Раскрытие строки (аккордеон): лемма, часть речи,
-бейдж редкости, перевод, заметка, первый контекст с подсветкой surface, для
+бейдж редкости, перевод, заметка, легаси-первый контекст с подсветкой surface
+(API совместимо отдаёт также массив `contexts` для дальнейшего UI), для
 active — таймер `nextDueLabel`. Смена статуса через `PATCH /api/bank/:id`:
 active → «Знаю»/«Отбросить»; queued → «Изучать сейчас»; learned/ignored →
 «Тренировать снова».
@@ -486,14 +501,18 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
   requested `limit`; инъецируемый `random` позволяет детерминированные тесты.
   `countDueForPractice` независимо возвращает полный счётчик `due`.
 - Для каждого — пул дистракторов `getDistractorPool` (той же части речи/формы) и
-  сборка карточки `buildQueueCard` (`server/src/domain/practice.ts`):
+  случайный `pickContext` из максимум пяти сохранённых контекстов (инъецируемый
+  `random`; при пустом/битом JSON — legacy fallback), затем сборка карточки
+  `buildQueueCard` (`server/src/domain/practice.ts`):
   - слова со `srsStage >= TYPED_QUIZ_MIN_STAGE` (=2) отдаются **typed**-карточкой
     (`buildTypedQuizCard`, §11): ввод с клавиатуры вместо кнопок — более сильное
     извлечение. Для typed `answer=""` и `options=[]` (ответ грейдится на сервере,
-    клиенту не передаётся), а `contextHint` несёт предложение с пропуском как
+    клиенту не передаётся), а `contextHint` несёт выбранное предложение с пропуском как
     безопасную подсказку; `lemma=null` и `context=null`, accepted-формы и
-    содержащий surface контекст не входят в queue payload. После попытки
-    `POST /practice/answer` возвращает только правильную форму для feedback;
+    содержащий surface контекст не входят в queue payload. Непрозрачный
+    `contextAddedAt` не содержит ответа; клиент возвращает его с typed-попыткой,
+    после которой `POST /practice/answer` раскрывает правильную форму и именно
+    выбранный контекст для feedback;
   - слова ниже ступени 2, либо когда безопасная typed-карточка не строится (нет
     перевода / перевод содержит ответ), — множественный выбор `buildCard` с
     чередованием предпочтения по чётности индекса (even→cloze, odd→recall).
@@ -515,8 +534,9 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 `POST /practice/answer` принимает либо `correct` (множественный выбор — клиент
 сам знает верность), либо `typedAnswer` (typed recall — сырой текст). Для
 `typedAnswer` сервер сам грейдит ответ через `gradeTypedAnswer` по accepted-
-формам слова (`surfaceForm`, `lemma`), игнорируя присланный `correct` (клиенту не
-доверяем), и возвращает дополнительно `verdict` (`exact | spelling | wrong`),
+формам выбранного контекста (`surfaceForm`) и легаси-карточки/лемме, игнорируя
+присланный `correct` (клиенту не доверяем), и возвращает дополнительно `verdict`
+(`exact | spelling | wrong`),
 вычисленный `correct` и правильную форму `answer` для показа фидбэка. Далее —
 общий `applyPracticeAnswer`:
 
@@ -606,9 +626,10 @@ Práctica в webapp (§10): слова со ступени 2+ спрашиваю
 
 ### 12.2 Чат-викторины (`bot/quiz.ts`)
 `sendBotQuiz(bot, user)` берёт случайное due-слово (`getRandomDueItem`):
+- перед сборкой случайно выбирает сохранённый контекст (инъецируемый `random`);
 - `srsStage >= 2` → **typed recall** (`sendTypedQuiz`, `force_reply`, сохранение
-  `pending_quiz_item_id`/`pending_quiz_sent_at`); при невозможности — fallback в
-  выбор.
+  `pending_quiz_item_id`/`pending_quiz_sent_at` и непрозрачного
+  `pending_quiz_context_added_at`); при невозможности — fallback в выбор.
 - иначе → **множественный выбор** (`sendChoiceQuiz`, inline-кнопки,
   `callback_data = pq:{itemId}:{idx}:{correctIdx}`).
 Если ничего due — возвращает `false` (планировщик не обновит `last_bot_quiz_at`,
@@ -620,7 +641,7 @@ Práctica в webapp (§10): слова со ступени 2+ спрашиваю
 - `message:text` — для ответов на typed-quiz: пропускает команды и чужие тексты,
   игнорит протухшие (> 24 ч) pending'и, грейдит через `gradeTypedAnswer`,
   `applyPracticeAnswer`, показывает вердикт (`exact`/`spelling`/`wrong`) с
-  правильной формой и контекстом.
+  правильной формой и тем же выбранным контекстом.
 
 ---
 
@@ -836,9 +857,9 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
+| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
-| `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, `first_context`, `surface_form`, `pos`, `gender`, `note`, `context_translation`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
+| `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
 | `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
 | `daily_activity` | История полезных локальных дней для устойчивого стрика | unique `(user_id, local_day)`; `reading`, `practice`, `created_at`, `updated_at` |
@@ -873,6 +894,9 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
   существующими статьями).
 - `0013` — `daily_activity` с unique `(user_id, local_day)` и флагами
   чтения/практики; новая таблица не меняет существующие строки.
+- `0014` — nullable/default-compatible `bank_items.contexts` (JSON, default
+  `[]`) и nullable `users.pending_quiz_context_added_at` для сохранения
+  выбранного typed-контекста бота до grading.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -930,6 +954,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `bot_quizzes_per_day` | 0–12 | `users` |
 | `practice_size` (карточек за тренировку) | пресеты 5/10/20, клемп 1–30, default 10 | `users`, `domain/practiceSize.ts` |
 | `PRACTICE_CANDIDATE_MULTIPLIER` | 3 | `db/repositories/bank.ts` |
+| `MAX_CONTEXTS` | 5 | `domain/contexts.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |
 | Предгенерация | за 5 мин до доставки | `scheduler.ts` |
@@ -974,7 +999,6 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 ## 24. Известные ограничения
 
-- Контекст карточки не ротируется (всегда `firstContext`) — запланировано.
 - Легаси-пометки без `pos` не могут точно закрепиться за одним вхождением при
   восстановлении подсветки в истории (допустимая деградация).
 - Docker-образ и сквозной прогон в реальном Telegram-клиенте на момент написания
@@ -1026,5 +1050,5 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 ---
 
-*Последнее обновление реестра: 2026-07-15.*
+*Последнее обновление реестра: 2026-07-15 (F-6: ротация контекстов).*
 *Не забудь обновить дату и содержимое при следующем изменении функционала.*

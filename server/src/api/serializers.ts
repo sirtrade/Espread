@@ -3,6 +3,7 @@ import type { ArticleRow, ReadArticleSummary } from "../db/repositories/articles
 import type { SessionRow } from "../db/repositories/sessions.js";
 import type { BankItemRow } from "../db/repositories/bank.js";
 import type { Mark } from "../domain/marks.js";
+import { parseContexts } from "../domain/contexts.js";
 
 export function serializeProfile(user: UserRow, topics: string[]) {
   return {
@@ -79,6 +80,7 @@ export function serializeBankItem(item: BankItemRow) {
     note: item.note,
     firstContext: item.firstContext,
     contextTranslation: item.contextTranslation,
+    contexts: parseContexts(item.contexts, item),
     distractors: item.distractors ? (JSON.parse(item.distractors) as string[]) : null,
     freqBand: item.freqBand,
     nextDueAt: item.nextDueAt,

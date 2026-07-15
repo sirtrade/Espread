@@ -99,7 +99,10 @@ export function Practice() {
       pendingCount={due}
       onAnswer={(card, correct, usedHint) => api.postPracticeAnswer({ itemId: card.itemId! }, { correct, usedHint })}
       onTypedAnswer={async (card, typedAnswer) => {
-        const res = await api.postPracticeAnswer({ itemId: card.itemId! }, { typedAnswer });
+        const res = await api.postPracticeAnswer(
+          { itemId: card.itemId! },
+          { typedAnswer, contextAddedAt: card.contextAddedAt },
+        );
         // Typed queue payloads intentionally omit the lemma. Reveal only the
         // server-returned proper form after the first attempt for feedback,
         // summary, retries and the optional writing exercise.

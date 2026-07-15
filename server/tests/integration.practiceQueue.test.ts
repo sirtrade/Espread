@@ -112,6 +112,40 @@ describe("practice queue + typed answer (route level)", () => {
     expect((await getBankItemById(userId, id))?.srsStage).toBe(4);
   });
 
+  it("grades and returns feedback from the context selected by the queue", async () => {
+    const id = await seedItem({
+      lemma: "fortalecer",
+      translation: "укреплять",
+      surfaceForm: "fortalece",
+      firstContext: "El equipo fortalece su posición.",
+      srsStage: 3,
+      contexts: JSON.stringify([
+        {
+          sentence: "El equipo fortalece su posición.",
+          translation: "Команда укрепляет свои позиции.",
+          surfaceForm: "fortalece",
+          articleId: 1,
+          addedAt: 101,
+        },
+        {
+          sentence: "Las empresas fortalecieron el acuerdo.",
+          translation: null,
+          surfaceForm: "fortalecieron",
+          articleId: 2,
+          addedAt: 202,
+        },
+      ]),
+    });
+    const { body } = await answer({ itemId: id, typedAnswer: "fortalecieron", contextAddedAt: 202 });
+    expect(body).toMatchObject({
+      verdict: "exact",
+      correct: true,
+      answer: "fortalecieron",
+      context: "Las empresas fortalecieron el acuerdo.",
+      contextTranslation: null,
+    });
+  });
+
   it("forgives a missing accent with a spelling verdict (still correct)", async () => {
     const id = await seedItem({ lemma: "género", translation: "жанр", surfaceForm: "género", firstContext: "El género musical crece.", srsStage: 2 });
     const { body } = await answer({ itemId: id, typedAnswer: "genero" });

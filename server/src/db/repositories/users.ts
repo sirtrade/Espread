@@ -45,12 +45,18 @@ export async function setLastBotQuizAt(userId: number, ts: number): Promise<void
 }
 
 /** Marks a typed bot quiz as awaiting the user's free-text answer. */
-export async function setPendingQuiz(userId: number, itemId: number, ts: number): Promise<void> {
-  await db.update(users).set({ pendingQuizItemId: itemId, pendingQuizSentAt: ts }).where(eq(users.id, userId));
+export async function setPendingQuiz(userId: number, itemId: number, ts: number, contextAddedAt: number | null): Promise<void> {
+  await db
+    .update(users)
+    .set({ pendingQuizItemId: itemId, pendingQuizSentAt: ts, pendingQuizContextAddedAt: contextAddedAt })
+    .where(eq(users.id, userId));
 }
 
 export async function clearPendingQuiz(userId: number): Promise<void> {
-  await db.update(users).set({ pendingQuizItemId: null, pendingQuizSentAt: null }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({ pendingQuizItemId: null, pendingQuizSentAt: null, pendingQuizContextAddedAt: null })
+    .where(eq(users.id, userId));
 }
 
 export async function markDailyDelivered(userId: number, dateStr: string): Promise<void> {
