@@ -5,8 +5,11 @@ import {
   buildClozeCard,
   buildOptions,
   buildQueueCard,
+  containsLeakTerm,
   isPhraseText,
   parseStoredDistractors,
+  protectCrossCardLeaks,
+  shufflePracticeCandidates,
   type CardSource,
   type QueueItemSource,
 } from "../src/domain/practice.js";
@@ -42,6 +45,58 @@ describe("buildOptions", () => {
     const options = buildOptions("uno", ["dos", "tres", "cuatro", "cinco", "seis"], 3, seeded(3));
     expect(options).toHaveLength(3);
     expect(options).toContain("uno");
+  });
+});
+
+describe("interleaving and cross-card anti-leak", () => {
+  it("shuffles candidates deterministically with injected randomness", () => {
+    expect(shufflePracticeCandidates([1, 2, 3, 4, 5], seeded(7))).toEqual(
+      shufflePracticeCandidates([1, 2, 3, 4, 5], seeded(7)),
+    );
+    expect(shufflePracticeCandidates([1, 2, 3, 4, 5], () => 0)).toEqual([2, 3, 4, 5, 1]);
+  });
+
+  it("matches accents, case and multi-word phrases only at word boundaries", () => {
+    expect(containsLeakTerm("La CANCIÓN terminó.", "cancion")).toBe(true);
+    expect(containsLeakTerm("Se dio   cuenta ayer.", "dió cuenta")).toBe(true);
+    expect(containsLeakTerm("La casación terminó.", "casa")).toBe(false);
+    expect(containsLeakTerm("casablanca", "casa")).toBe(false);
+  });
+
+  it("sanitizes leaking contexts on both cards", () => {
+    const cards = protectCrossCardLeaks(
+      [
+        {
+          prompt: "first prompt",
+          context: "Aquí aparece ÁRBOL.",
+          contextHint: "También árbol.",
+          leakAnswers: ["casa"],
+        },
+        {
+          prompt: "second prompt",
+          context: "La casa queda lejos.",
+          contextHint: null,
+          leakAnswers: ["árbol"],
+        },
+      ],
+      2,
+    );
+    expect(cards).toHaveLength(2);
+    expect(cards[0]!.context).toBeNull();
+    expect(cards[0]!.contextHint).toBeNull();
+    expect(cards[1]!.context).toBeNull();
+  });
+
+  it("drops prompt conflicts and refills from later candidates", () => {
+    const cards = protectCrossCardLeaks(
+      [
+        { prompt: "translation one", context: null, contextHint: null, leakAnswers: ["casa"] },
+        { prompt: "Una CASA bonita", context: null, contextHint: null, leakAnswers: ["árbol"] },
+        { prompt: "translation three", context: null, contextHint: null, leakAnswers: ["puerta"] },
+      ],
+      2,
+    );
+    expect(cards.map((card) => card.leakAnswers[0])).toEqual(["casa", "puerta"]);
   });
 });
 

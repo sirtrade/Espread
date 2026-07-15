@@ -70,14 +70,16 @@ describe("practice queue + typed answer (route level)", () => {
   afterAll(() => sqlite.close());
 
   it("serves a typed card for a stage-2 word", async () => {
-    await seedItem({ lemma: "abarcar", srsStage: 2 });
+    const id = await seedItem({ lemma: "abarcar", srsStage: 2 });
     const { cards } = await queue();
-    const card = cards.find((c) => c.lemma === "abarcar")!;
+    const card = cards.find((c) => c.itemId === id)!;
     expect(card.type).toBe("typed");
+    expect(card.lemma).toBeNull(); // accepted forms stay server-side until grading
     expect(card.answer).toBe(""); // graded on the server, never sent to the client
     expect(card.options).toEqual([]);
     expect(card.prompt).toBe("охватывать");
     expect(card.contextHint).toBe("Los planes _____ varios sectores.");
+    expect(card.context).toBeNull(); // accepted surface is not in the queue payload
   });
 
   it("keeps multiple choice for a stage-0 word", async () => {
@@ -89,9 +91,9 @@ describe("practice queue + typed answer (route level)", () => {
   });
 
   it("exposes the SRS rung on each card (webapp surfaces free-writing on upper rungs)", async () => {
-    await seedItem({ lemma: "reforzar", translation: "укреплять", srsStage: 5, surfaceForm: "refuerza", firstContext: "El plan refuerza la seguridad." });
+    const id = await seedItem({ lemma: "reforzar", translation: "укреплять", srsStage: 5, surfaceForm: "refuerza", firstContext: "El plan refuerza la seguridad." });
     const { cards } = await queue();
-    const card = cards.find((c) => c.lemma === "reforzar")!;
+    const card = cards.find((c) => c.itemId === id)!;
     expect(card.srsStage).toBe(5);
   });
 
@@ -100,7 +102,13 @@ describe("practice queue + typed answer (route level)", () => {
     // The client sends the raw text; a bogus `correct:true` must be ignored.
     const { status, body } = await answer({ itemId: id, typedAnswer: "consolida", correct: false });
     expect(status).toBe(200);
-    expect(body).toMatchObject({ verdict: "exact", correct: true, advanced: true, srsStage: 4 });
+    expect(body).toMatchObject({
+      verdict: "exact",
+      correct: true,
+      advanced: true,
+      srsStage: 4,
+      context: "El equipo consolida su posición.",
+    });
     expect((await getBankItemById(userId, id))?.srsStage).toBe(4);
   });
 
