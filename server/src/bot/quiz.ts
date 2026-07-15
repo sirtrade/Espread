@@ -17,6 +17,33 @@ import {
   type BankItemRow,
 } from "../db/repositories/bank.js";
 import { clearPendingQuiz, findUserByTgId, setPendingQuiz, type UserRow } from "../db/repositories/users.js";
+import type { PracticeCardType } from "../domain/practiceAnswer.js";
+
+const CHOICE_CALLBACK_RE = /^pq:(\d+):(?:([cr]):)?(\d+):(\d+)$/;
+
+export interface ChoiceCallbackData {
+  itemId: number;
+  cardType: Exclude<PracticeCardType, "typed">;
+  chosenIdx: number;
+  correctIdx: number;
+}
+
+export function encodeChoiceCallback(data: ChoiceCallbackData): string {
+  const typeCode = data.cardType === "cloze" ? "c" : "r";
+  return `pq:${data.itemId}:${typeCode}:${data.chosenIdx}:${data.correctIdx}`;
+}
+
+/** Legacy callbacks without a type are treated as recall for compatibility. */
+export function parseChoiceCallback(data: string): ChoiceCallbackData | null {
+  const match = CHOICE_CALLBACK_RE.exec(data);
+  if (!match) return null;
+  return {
+    itemId: Number(match[1]),
+    cardType: match[2] === "c" ? "cloze" : "recall",
+    chosenIdx: Number(match[3]),
+    correctIdx: Number(match[4]),
+  };
+}
 
 /**
  * Sends one vocabulary quiz to the user's chat. Words still low on the SRS
@@ -99,8 +126,12 @@ async function sendChoiceQuiz(
 
   const kb = new InlineKeyboard();
   card.options.forEach((opt, idx) => {
-    // Answers carry only ids/indexes: callback_data is limited to 64 bytes.
-    kb.text(opt, `pq:${item.id}:${idx}:${correctIdx}`).row();
+    // Persist the server-built MC type in callback_data (well under Telegram's
+    // 64-byte limit); never infer it from user-controlled button text.
+    kb.text(
+      opt,
+      encodeChoiceCallback({ itemId: item.id, cardType: card.type, chosenIdx: idx, correctIdx }),
+    ).row();
   });
 
   await bot.api.sendMessage(user.tgUserId, question, { reply_markup: kb });
@@ -113,10 +144,11 @@ function answerLineFor(item: BankItemRow, form = item.lemma): string {
 }
 
 export function registerQuizHandlers(bot: Bot): void {
-  bot.callbackQuery(/^pq:(\d+):(\d+):(\d+)$/, async (ctx) => {
-    const [, itemIdStr, chosenStr, correctStr] = ctx.match!;
-    const itemId = Number(itemIdStr);
-    const correct = chosenStr === correctStr;
+  // The optional type segment keeps already-sent legacy buttons valid.
+  bot.callbackQuery(CHOICE_CALLBACK_RE, async (ctx) => {
+    const callback = parseChoiceCallback(ctx.callbackQuery.data)!;
+    const { itemId, cardType } = callback;
+    const correct = callback.chosenIdx === callback.correctIdx;
 
     const user = ctx.from ? await findUserByTgId(ctx.from.id) : undefined;
     if (!user) {
@@ -125,7 +157,10 @@ export function registerQuizHandlers(bot: Bot): void {
     }
 
     const item = await getBankItemById(user.id, itemId);
-    await applyPracticeAnswer(user.id, itemId, correct, Date.now(), false, user.timezone);
+    await applyPracticeAnswer(user.id, itemId, correct, Date.now(), false, user.timezone, {
+      cardType,
+      latencyMs: null,
+    });
 
     await ctx.answerCallbackQuery({ text: correct ? "✅ ¡Correcto!" : "❌ Casi..." });
 
@@ -161,7 +196,10 @@ export function registerQuizHandlers(bot: Bot): void {
     const selectedContext = contextByAddedAt(contexts, user.pendingQuizContextAddedAt) ?? contexts[0] ?? null;
     const accepted = [selectedContext?.surfaceForm, item.surfaceForm, item.lemma].filter((f): f is string => !!f);
     const grade = gradeTypedAnswer(text, accepted);
-    await applyPracticeAnswer(user.id, item.id, grade.correct, Date.now(), false, user.timezone);
+    await applyPracticeAnswer(user.id, item.id, grade.correct, Date.now(), false, user.timezone, {
+      cardType: "typed",
+      latencyMs: null,
+    });
 
     const answerLine = answerLineFor(item, grade.matched);
     const feedbackContext = selectedContext?.sentence ?? item.firstContext;

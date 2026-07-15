@@ -46,6 +46,11 @@ interface QueueEntry {
 /** A wrong card comes back at most twice within the session, so a lapse always
  *  gets a follow-up retrieval but the queue can't grow without bound. */
 const MAX_RETRIES = 2;
+const MAX_LATENCY_MS = 600_000;
+
+function elapsedCardLatency(shownAt: number): number {
+  return Math.min(MAX_LATENCY_MS, Math.max(0, Math.round(Date.now() - shownAt)));
+}
 
 interface QuizSessionProps {
   title: string;
@@ -55,11 +60,11 @@ interface QuizSessionProps {
   /** Sends a multiple-choice answer to the server; returns the new learning
    *  state (or void). Only ever called for a card's FIRST attempt — retries
    *  stay client-side. */
-  onAnswer: (card: SessionCard, correct: boolean, usedHint: boolean) => Promise<AnswerOutcome | void>;
+  onAnswer: (card: SessionCard, correct: boolean, usedHint: boolean, latencyMs: number) => Promise<AnswerOutcome | void>;
   /** Sends a typed-recall answer to the server, which grades it and returns the
    *  verdict + correct form. Required when the batch may contain `typed` cards
    *  (Práctica); only called for a card's FIRST attempt. */
-  onTypedAnswer?: (card: SessionCard, typedAnswer: string) => Promise<TypedAnswerResult | void>;
+  onTypedAnswer?: (card: SessionCard, typedAnswer: string, latencyMs: number) => Promise<TypedAnswerResult | void>;
   /** Called from the final summary's button. */
   onFinish: (summary: { correct: number; total: number }) => void;
   finishLabel?: string;
@@ -105,6 +110,7 @@ export function QuizSession({
   const [typedGrade, setTypedGrade] = useState<TypedGradeState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const answerByCard = useRef(new Map<SessionCard, string>());
+  const shownAt = useRef(Date.now());
   // One entry per distinct card, recorded on its FIRST attempt only. Drives the
   // summary counts and the server writes; retries never touch it.
   const [firstAttempts, setFirstAttempts] = useState<RecordedAnswer[]>([]);
@@ -161,7 +167,7 @@ export function QuizSession({
 
     setFirstAttempts((a) => [...a, { card, correct, outcome: null }]);
     try {
-      const res = await onAnswer(card, correct, showHint);
+      const res = await onAnswer(card, correct, showHint, elapsedCardLatency(shownAt.current));
       if (res) setFirstAttempts((a) => a.map((e) => (e.card === card ? { ...e, outcome: res } : e)));
     } catch {
       /* best-effort: a lost answer just leaves the word due */
@@ -190,7 +196,7 @@ export function QuizSession({
 
     setSubmitting(true);
     try {
-      const res = await onTypedAnswer?.(card, value);
+      const res = await onTypedAnswer?.(card, value, elapsedCardLatency(shownAt.current));
       const correct = res?.correct ?? false;
       setChosen(value);
       setTypedGrade(res ? { correct: res.correct, verdict: res.verdict, answer: res.answer } : null);
@@ -219,6 +225,7 @@ export function QuizSession({
     setTypedInput("");
     setTypedGrade(null);
     setSubmitting(false);
+    shownAt.current = Date.now();
     onNext?.();
     setPos((i) => i + 1);
   }

@@ -4,6 +4,7 @@ import type { FontSizeId } from "../lib/fontSize.js";
 export type Level = "A2" | "B1" | "B2" | "C1" | "C2";
 export type ExplainLang = "ru" | "en" | "es";
 export type BankStatus = "active" | "learned" | "ignored" | "queued";
+export type PracticeCardType = "cloze" | "recall" | "typed";
 
 export interface LevelSuggestion {
   direction: "up" | "down";
@@ -241,7 +242,7 @@ export interface PracticeCard {
   translation: string | null;
   /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
    *  word (graded on the server, so `answer` is empty and `options` is `[]`). */
-  type: "cloze" | "recall" | "typed";
+  type: PracticeCardType;
   prompt: string;
   /** the correct option: blanked surface form (cloze) or lemma (recall); empty for typed */
   answer: string;

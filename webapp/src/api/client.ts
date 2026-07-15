@@ -9,6 +9,7 @@ import type {
   HistoryItem,
   Mark,
   PracticeAnswerResult,
+  PracticeCardType,
   PracticeCard,
   Profile,
   ReadArticle,
@@ -144,7 +145,19 @@ export const api = {
   // it. Both drive the same learning + SRS update.
   postPracticeAnswer: (
     target: { itemId: number } | { lemma: string },
-    answer: { correct: boolean; usedHint?: boolean } | { typedAnswer: string; contextAddedAt?: number | null },
+    answer:
+      | {
+          correct: boolean;
+          usedHint?: boolean;
+          cardType: PracticeCardType;
+          latencyMs: number;
+        }
+      | {
+          typedAnswer: string;
+          contextAddedAt?: number | null;
+          cardType: "typed";
+          latencyMs: number;
+        },
   ) =>
     request<PracticeAnswerResult>("/practice/answer", {
       method: "POST",

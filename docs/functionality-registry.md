@@ -487,7 +487,8 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
   детерминированно без статистических проверок.
 
 Ответы уходят через `POST /practice/answer` **по лемме** (Quiz не видит id
-элементов банка). Слова здесь на ступени 0 — узнавание уместно.
+элементов банка), с фактическим `cardType` и latency первой попытки. Слова здесь
+на ступени 0 — узнавание уместно.
 
 ---
 
@@ -558,12 +559,23 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 - **Верно, но кредит уже был сегодня** → расписание не трогается.
 Возвращает `{ srsStage, nextDueAt, status, advanced }`.
 
+Каждый принятый сервером первый ответ атомарно с изменением `bank_items` пишет
+строку `practice_answers`: время, фактический `cardType`, итоговую server-side
+верность, hint, latency и ступень SRS до/после. Для typed клиентский `correct`
+игнорируется и в журнал попадает результат `gradeTypedAnswer`. Даже
+`correct + usedHint` и повторный успех в те же локальные сутки журналируются,
+хотя расписание не меняется. Несуществующий item не создаёт запись.
+
 ### 10.3 Runner викторины (`webapp/src/components/QuizSession.tsx`)
 Общий для Quiz и Práctica.
 - **Повтор ошибок в сессии**: неверная карточка ставится в хвост очереди
   (`MAX_RETRIES = 2`). Ретраи — **чисто клиентские** пере-дриллы: не пишутся на
   сервер и не считаются первой попыткой (SRS-исход слова определяет только первый
   ответ).
+- **Latency**: для каждого показа первой попытки runner запоминает время; при
+  submit передаёт elapsed milliseconds, клемпнутые в `0..600000`. При переходе
+  к следующей карточке таймер сбрасывается. Клиентские retry не вызывают API и
+  поэтому не создают ни latency-сигнала, ни строки журнала.
 - **cloze**: перевод-подсказка (`contextTranslation`) спрятана за кнопку «Показать
   перевод»; факт использования уходит как `usedHint`. После ответа перевод
   показывается всегда.
@@ -639,17 +651,21 @@ Práctica в webapp (§10): слова со ступени 2+ спрашиваю
   `pending_quiz_item_id`/`pending_quiz_sent_at` и непрозрачного
   `pending_quiz_context_added_at`); при невозможности — fallback в выбор.
 - иначе → **множественный выбор** (`sendChoiceQuiz`, inline-кнопки,
-  `callback_data = pq:{itemId}:{idx}:{correctIdx}`).
+  `callback_data = pq:{itemId}:{c|r}:{idx}:{correctIdx}`; тип создаётся сервером
+  и укладывается в лимит 64 байта; старый формат без типа принимается как
+  `recall`).
 Если ничего due — возвращает `false` (планировщик не обновит `last_bot_quiz_at`,
 следующий тик попробует снова).
 
 **Обработчики**:
 - callback `pq:*` — грейдит выбор, `applyPracticeAnswer`, показывает вердикт,
-  редактирует сообщение (убирает клавиатуру, чтобы нельзя было ответить дважды).
+  редактирует сообщение (убирает клавиатуру, чтобы нельзя было ответить дважды);
+  в журнал передаёт сохранённый server-side тип карточки и `latency=null`.
 - `message:text` — для ответов на typed-quiz: пропускает команды и чужие тексты,
   игнорит протухшие (> 24 ч) pending'и, грейдит через `gradeTypedAnswer`,
   `applyPracticeAnswer`, показывает вердикт (`exact`/`spelling`/`wrong`) с
-  правильной формой и тем же выбранным контекстом.
+  правильной формой и тем же выбранным контекстом; журналирует `cardType=typed`,
+  server-side верность и `latency=null`.
 
 ---
 
@@ -716,7 +732,8 @@ IANA-таймзоной.
   (distributed practice).
 - **Сброс прогресса** (деструктивно) — нативный `confirmDialog` → `DELETE
   /me/progress` (стирает банк, реестр известных слов, статьи и статистику;
-  аккаунт и настройки остаются; metadata предложения уровня также очищается).
+  строки `practice_answers` удаляются каскадом от bank item; аккаунт и настройки
+  остаются; metadata предложения уровня также очищается).
 
 Тема/шрифт хранятся и в профиле (следуют за пользователем между устройствами), и
 локально (мгновенное применение). `applyDisplayPrefs` при логине пушит серверные
@@ -835,7 +852,7 @@ hermitdave FrequencyWords и распространяется с атрибуц�
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
 | `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); pool `limit*3`, shuffle, cross-card anti-leak; typed для stage≥2 без lemma/accepted до ответа |
-| `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint`; `typedAnswer` грейдится сервером |
+| `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `cardType?` (текущие клиенты передают обязательно), `latencyMs?` integer/null 0..600000; `usedHint`; `typedAnswer` грейдится сервером и всегда журналируется как typed |
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
 | `GET /api/stats` | Статистика | Счётчики + стрик + 12 недель + read-only nullable level suggestion |
 | `GET /api/known-words` | Список известных лемм | Только `known_since != null` |
@@ -902,6 +919,7 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 | `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
+| `practice_answers` | Append-only журнал первых ответов практики/Quiz/бота | FK `user_id` и `item_id` cascade; `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
 | `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
 | `daily_activity` | История полезных локальных дней для устойчивого стрика | unique `(user_id, local_day)`; `reading`, `practice`, `created_at`, `updated_at` |
@@ -911,7 +929,8 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 Транзакции: `applyCompletion` (включая reading activity),
-`resetUserProgress`, `setUserTopics`.
+`applyPracticeAnswer` (SRS update + answer journal), `resetUserProgress`,
+`setUserTopics`.
 
 ### 20.1 Карта миграций (`server/drizzle/`)
 - `0000` — исходная схема (тогда `bank_items` имел `term`/`clean_streak`).
@@ -942,6 +961,8 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `0015` — три nullable metadata-поля предложения уровня:
   `level_suggestion_direction`, `level_suggestion_shown_at`,
   `level_suggestion_dismissed_at`; существующие пользователи получают null.
+- `0016` — append-only `practice_answers` с FK cascade, полной metadata ответа и
+  индексами `(user_id, ts)` / `(item_id, ts)`; существующие строки не меняются.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -988,6 +1009,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `PENDING_QUIZ_TTL_MS` | 24 ч | `domain/typedQuiz.ts` |
 | Прощение опечатки | ≥6 символов, 1 правка | `domain/typedQuiz.ts` |
 | `MAX_RETRIES` (ретраи в сессии) | 2 | `webapp/.../QuizSession.tsx` |
+| Максимальная latency первого ответа | 600000 мс (10 мин) | `domain/practiceAnswer.ts`, `QuizSession.tsx` |
 | Длина статьи (идеал / жёсткие границы) | 250–320 / 200–400 слов | `domain/articleQuality.ts` |
 | Частотный потолок A2/B1/B2/C1 | 1500 / 2500 / 3500 / 5000 (C2 — без потолка) | `llm/articleRubric.ts` |
 | `MAX_REWRITE_ATTEMPTS` (переработки качества) | 2 | `llm/articleQuality.ts` |
@@ -1037,9 +1059,9 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 > Часть рекомендаций из аудита уже реализована (мягкий откат, подсказка по
 > запросу, повтор ошибок, прерываемость, typed recall в webapp, пониженный вес
-> пассивного чтения, interleaving и cross-card anti-leak), часть — в плане
-> (`docs/retention-roadmap.md`: ротация контекстов, качество дистракторов,
-> журнал ответов для FSRS). При работе
+> пассивного чтения, interleaving, cross-card anti-leak, ротация контекстов,
+> дистракторы и журнал ответов), часть — в плане (`docs/retention-roadmap.md`:
+> дальнейший адаптивный планировщик поверх накопленных данных). При работе
 > над этими этапами обновляй и этот раздел, и роадмап.
 
 ---
@@ -1098,5 +1120,5 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 ---
 
-*Последнее обновление реестра: 2026-07-15 (F-8: адаптивное предложение уровня CEFR).*
+*Последнее обновление реестра: 2026-07-15 (T-2: журнал ответов практики и latency).*
 *Не забудь обновить дату и содержимое при следующем изменении функционала.*
