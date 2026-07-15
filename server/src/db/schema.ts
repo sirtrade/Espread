@@ -129,9 +129,14 @@ export const practiceAnswers = sqliteTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    itemId: integer("item_id")
+    // Polymorphic target (F-15): exactly one of item_id/grammar_item_id is
+    // set, discriminated by item_kind — a grammar attempt never carries a
+    // fake bank_items FK. Enforced by the two writer paths + tests.
+    itemId: integer("item_id").references(() => bankItems.id, { onDelete: "cascade" }),
+    itemKind: text("item_kind", { enum: ["word", "grammar"] })
       .notNull()
-      .references(() => bankItems.id, { onDelete: "cascade" }),
+      .default("word"),
+    grammarItemId: integer("grammar_item_id").references(() => grammarItems.id, { onDelete: "cascade" }),
     ts: integer("ts").notNull(),
     cardType: text("card_type", { enum: ["cloze", "recall", "typed"] }).notNull(),
     correct: integer("correct", { mode: "boolean" }).notNull(),
@@ -143,6 +148,7 @@ export const practiceAnswers = sqliteTable(
   (t) => ({
     userTsIdx: index("practice_answers_user_ts_idx").on(t.userId, t.ts),
     itemTsIdx: index("practice_answers_item_ts_idx").on(t.itemId, t.ts),
+    grammarItemTsIdx: index("practice_answers_grammar_item_ts_idx").on(t.grammarItemId, t.ts),
   }),
 );
 

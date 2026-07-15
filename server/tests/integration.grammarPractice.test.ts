@@ -150,6 +150,36 @@ describe("grammar practice: queue mixing, grading and SRS (F-14)", () => {
     expect(body.advanced).toBe(true);
   });
 
+  it("journals grammar attempts polymorphically, atomically with the SRS change (F-15)", async () => {
+    const rows = await db
+      .select()
+      .from(schema.practiceAnswers)
+      .where(eq(schema.practiceAnswers.userId, userId));
+    // Every accepted grammar answer above produced exactly one journal row.
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    for (const row of rows) {
+      // Exactly one target per row, discriminated by item_kind.
+      expect(row.itemKind).toBe("grammar");
+      expect(row.itemId).toBeNull();
+      expect(row.grammarItemId).not.toBeNull();
+    }
+
+    const typedRow = rows.find((row) => row.cardType === "typed")!;
+    expect(typedRow).toMatchObject({ correct: true, usedHint: false, srsStageBefore: 3, srsStageAfter: 4 });
+    expect(typedRow.latencyMs).toBe(700);
+
+    const hintedRow = rows.find((row) => row.usedHint)!;
+    // No credit: the stage is journaled as unchanged.
+    expect(hintedRow.srsStageBefore).toBe(hintedRow.srsStageAfter);
+
+    // The streak counts a grammar answer as practice activity.
+    const activity = await db
+      .select()
+      .from(schema.dailyActivity)
+      .where(eq(schema.dailyActivity.userId, userId));
+    expect(activity.some((day) => day.practice)).toBe(true);
+  });
+
   it("404s a foreign grammar item", async () => {
     const { findOrCreateUser } = await import("../src/db/repositories/users.js");
     const { signSession } = await import("../src/auth/jwt.js");

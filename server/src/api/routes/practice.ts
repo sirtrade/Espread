@@ -223,6 +223,10 @@ practiceRoutes.post("/answer", async (c) => {
       Date.now(),
       body.data.usedHint ?? false,
       user?.timezone ?? "UTC",
+      {
+        cardType: body.data.typedAnswer != null ? "typed" : "cloze",
+        latencyMs: body.data.latencyMs,
+      },
     );
     if (!result) throw Errors.notFound("Construcción");
     return c.json({

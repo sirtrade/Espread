@@ -668,8 +668,13 @@ anti-leak; `due` в ответе включает грамматику).
   (−2 ступени, повтор через 10 мин), успех на верхней ступени — graduation в
   `learned`. Чтение/weaving grammar SRS не двигают; клиентские ретраи на
   сервер не уходят (first-attempt-only, как у слов).
-- **Журнал**: ответы грамматики пока НЕ пишутся в `practice_answers`
-  (лексический FK) — полиморфный журнал — это F-15.
+- **Журнал (F-15)**: каждый принятый первый ответ грамматики пишется в
+  полиморфный `practice_answers` **атомарно** с изменением SRS (одна
+  транзакция): `item_kind='grammar'`, `grammar_item_id` (FK cascade),
+  `item_id=NULL`, фактический `cardType` (cloze/typed), `correct`,
+  `used_hint`, `latency_ms`, `srs_stage_before/after`. Ровно один target на
+  строку (word-строки — наоборот: `item_id` set, `grammar_item_id=NULL`).
+  Ответ грамматики также ставит `daily_activity.practice=true` (стрик).
 - UI: бейдж «Грамматика · <категория>», после ответа показываются pattern и
   объяснение; свободное письмо к грамматическим карточкам не предлагается.
 
@@ -1047,7 +1052,7 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 | `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `grammar_active_pool_limit` (default 10, Zod 0–50, `0` = без лимита), `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
-| `practice_answers` | Append-only журнал первых ответов практики/Quiz/бота | FK `user_id` и `item_id` cascade; `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)` |
+| `practice_answers` | Append-only полиморфный журнал первых ответов (слова и грамматика) | FK `user_id`/`item_id`/`grammar_item_id` cascade; `item_kind=word/grammar` (ровно один target на строку), nullable `item_id`/`grammar_item_id`, `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)`, `(grammar_item_id, ts)` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
 | `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
 | `grammar_items` | Грамматические единицы (трек F-12) | unique `(user_id, canonical_key)`; `pattern`, `category` (9 значений), `explanation`, `status=active/queued/learned/ignored`, `contexts` (JSON ≤5), `exercise` (JSON), `srs_stage`, `next_due_at`, `last_credit_at`; индекс `(user_id, status, next_due_at)` |
@@ -1096,6 +1101,10 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
   `(user_id, status, next_due_at)`, FK cascade) и
   `users.grammar_active_pool_limit` (default 10); существующие строки не
   меняются.
+- `0018` — полиморфный `practice_answers`: пересоздание таблицы (SQLite) с
+  nullable `item_id`, `item_kind` (default `'word'`) и nullable
+  `grammar_item_id` (FK cascade) + индекс `(grammar_item_id, ts)`;
+  существующие строки переносятся как `item_kind='word'`.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).

@@ -1,7 +1,10 @@
 import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { grammarItems } from "../schema.js";
+import { grammarItems, practiceAnswers } from "../schema.js";
 import { queuedPromotionCount } from "../../domain/bank.js";
+import { clampPracticeLatency } from "../../domain/practiceAnswer.js";
+import { recordPracticeActivity } from "./activity.js";
+import { localDayKey } from "../../lib/timezone.js";
 import {
   advanceSrs,
   creditAllowedToday,
@@ -104,6 +107,10 @@ export interface GrammarPracticeAnswerResult {
  * `learned`, a hinted correct answer earns no credit, and a wrong answer
  * soft-lapses (2 rungs down, due again shortly). Practice is the ONLY thing
  * that moves grammar SRS — reading/weaving never call this (design §6).
+ *
+ * The SRS update and the polymorphic journal row (`practice_answers` with
+ * `item_kind='grammar'`, `grammar_item_id` set, `item_id` NULL — F-15) land
+ * in one transaction; retries never reach this function (first-attempt-only).
  */
 export async function applyGrammarPracticeAnswer(
   userId: number,
@@ -112,6 +119,7 @@ export async function applyGrammarPracticeAnswer(
   now = Date.now(),
   usedHint = false,
   timeZone = "UTC",
+  metadata: { cardType?: "cloze" | "typed"; latencyMs?: number | null } = {},
 ): Promise<GrammarPracticeAnswerResult | undefined> {
   const item = await getGrammarItemById(userId, itemId);
   if (!item) return undefined;
@@ -143,10 +151,32 @@ export async function applyGrammarPracticeAnswer(
     }
   }
 
-  await db
-    .update(grammarItems)
-    .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
-    .where(eq(grammarItems.id, itemId));
+  db.transaction((trx) => {
+    trx
+      .update(grammarItems)
+      .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
+      .where(eq(grammarItems.id, itemId))
+      .run();
+    trx
+      .insert(practiceAnswers)
+      .values({
+        userId,
+        itemId: null,
+        itemKind: "grammar",
+        grammarItemId: itemId,
+        ts: now,
+        cardType: metadata.cardType ?? "cloze",
+        correct,
+        usedHint,
+        latencyMs: clampPracticeLatency(metadata.latencyMs),
+        srsStageBefore: item.srsStage,
+        srsStageAfter: srsStage,
+      })
+      .run();
+  });
+
+  // A grammar answer is a useful action for the streak, same as a word answer.
+  await recordPracticeActivity(userId, localDayKey(now, timeZone));
 
   return { itemId, pattern: item.pattern, srsStage, nextDueAt, status, advanced };
 }
