@@ -42,6 +42,9 @@ export const practiceAnswerSchema = z
     // other is required. When `typedAnswer` is present `correct` is ignored.
     correct: z.boolean().optional(),
     typedAnswer: z.string().trim().min(1).max(120).optional(),
+    // Opaque context selector from the queue. It carries no answer text and is
+    // used only to grade/show feedback against the randomly selected example.
+    contextAddedAt: z.number().int().nonnegative().optional(),
     // The reader revealed the context translation before answering: a correct
     // answer then earns no SRS credit (retrieval was scaffolded, not recalled).
     usedHint: z.boolean().optional(),

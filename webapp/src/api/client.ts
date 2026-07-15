@@ -141,7 +141,7 @@ export const api = {
   // it. Both drive the same learning + SRS update.
   postPracticeAnswer: (
     target: { itemId: number } | { lemma: string },
-    answer: { correct: boolean; usedHint?: boolean } | { typedAnswer: string },
+    answer: { correct: boolean; usedHint?: boolean } | { typedAnswer: string; contextAddedAt?: number | null },
   ) =>
     request<PracticeAnswerResult>("/practice/answer", {
       method: "POST",

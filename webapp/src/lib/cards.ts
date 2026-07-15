@@ -28,6 +28,8 @@ export interface SessionCard {
   contextHint?: string | null;
   /** SRS ladder rung (Práctica only); absent for post-reading Quiz cards. */
   srsStage?: number;
+  /** Opaque server selector for the randomly chosen stored context. */
+  contextAddedAt?: number | null;
 }
 
 /** POS-aware padding, mirroring the server's last-resort distractor lists. */
@@ -249,5 +251,6 @@ export function fromPracticeCard(card: PracticeCard): SessionCard {
     contextTranslation: card.contextTranslation,
     contextHint: card.contextHint,
     srsStage: card.srsStage,
+    contextAddedAt: card.contextAddedAt,
   };
 }

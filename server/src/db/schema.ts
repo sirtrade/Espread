@@ -33,6 +33,9 @@ export const users = sqliteTable("users", {
   // and when it was sent (stale pendings expire so old texts aren't graded).
   pendingQuizItemId: integer("pending_quiz_item_id"),
   pendingQuizSentAt: integer("pending_quiz_sent_at"),
+  // Identifies the randomly selected context for typed bot feedback without
+  // exposing its surface form before the answer is graded.
+  pendingQuizContextAddedAt: integer("pending_quiz_context_added_at"),
   onboardedAt: integer("onboarded_at"),
   lastDailyDeliveredDate: text("last_daily_delivered_date"),
   lastPrefetchDate: text("last_prefetch_date"),
@@ -82,6 +85,9 @@ export const bankItems = sqliteTable(
     note: text("note"),
     // Translation of firstContext into the user's explain language.
     contextTranslation: text("context_translation"),
+    // Up to five contextual encounters. Nullable/default-compatible so rows
+    // from before F-6 keep using the legacy fields above.
+    contexts: text("contexts").default("[]"),
     // JSON array of 3 same-POS Spanish words, for quiz options.
     distractors: text("distractors"),
     freqBand: text("freq_band", { enum: ["top1000", "top3000", "top5000", "rare"] }),

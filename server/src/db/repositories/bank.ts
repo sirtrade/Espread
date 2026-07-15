@@ -35,6 +35,7 @@ export async function getBankItemsMap(userId: number): Promise<Map<string, BankI
         gender: r.gender,
         note: r.note,
         contextTranslation: r.contextTranslation,
+        contexts: r.contexts,
         distractors: r.distractors,
         freqBand: r.freqBand,
       },
