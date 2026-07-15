@@ -7,7 +7,7 @@ export const authTelegramSchema = z.object({
 });
 
 export const patchMeSchema = z.object({
-  level: z.enum(["A2", "B1", "B2", "C1"]).optional(),
+  level: z.enum(["A2", "B1", "B2", "C1", "C2"]).optional(),
   explainLang: z.enum(["ru", "en", "es"]).optional(),
   timezone: z
     .string()

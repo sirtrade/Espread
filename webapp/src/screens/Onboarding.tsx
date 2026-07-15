@@ -7,7 +7,7 @@ import { hapticSelect, initialLang } from "../telegram/telegram.js";
 import { t } from "../lib/i18n.js";
 import { langLabel } from "../lib/langs.js";
 
-const LEVELS: Level[] = ["A2", "B1", "B2", "C1"];
+const LEVELS: Level[] = ["A2", "B1", "B2", "C1", "C2"];
 const LANG_VALUES: ExplainLang[] = ["ru", "en", "es"];
 const DEFAULT_TOPICS = ["Tecnología", "Deporte y fitness", "Cocina", "Ciencia", "Videojuegos", "América Latina"];
 

@@ -144,7 +144,7 @@
 Показывается, пока `profile.onboarded === false`. Мастер из 3 шагов; язык всего
 экрана меняется мгновенно при смене «языка объяснений».
 
-- **Шаг 0 — Уровень и язык объяснений.** Уровень: сетка A2/B1/B2/C1 (default A2).
+- **Шаг 0 — Уровень и язык объяснений.** Уровень: сетка A2/B1/B2/C1/C2 (default A2).
   Язык объяснений: ru/en/es (по умолчанию выводится из `languageCode` Telegram).
 - **Шаг 1 — Темы.** Чипы из `DEFAULT_TOPICS` (Tecnología, Deporte y fitness,
   Cocina, Ciencia, Videojuegos, América Latina; по умолчанию выбраны Tecnología и
@@ -222,7 +222,11 @@
   журнальный стиль, под уровень CEFR, **250–320 слов**, короткие абзацы.
 - **Частотный потолок** (`LEVEL_FREQ_CAP`): A2=1500, B1=2500, B2=3500, C1=5000 —
   «использовать почти исключительно N самых частотных слов; редкие слова только
-  если необходимо, макс 2–3 на статью».
+  если необходимо, макс 2–3 на статью». **C2 (near-native) — без частотного
+  потолка**: `LEVEL_FREQ_CAP` не содержит ключа C2, а `frequencyInstruction("C2")`
+  возвращает мягкую инструкцию (богатая естественная лексика уровня почти носителя,
+  редкие слова/идиомы/журнальный или литературный регистр, без ограничения по
+  частотному списку).
 - **Блок целевых слов** (если есть): вплести слова банка естественно и без
   пометок, только где уместно; не форсировать (лучше меньше и по месту); слова
   даны как леммы — использовать любую естественную форму; вернуть в `usedTerms`
@@ -573,7 +577,7 @@ IANA-таймзоной.
   Сохраняется локально (`localStorage`, `data-theme`) + best-effort в профиль.
 - **Размер шрифта** — `sm` (1rem) / `md` (1.125rem, default) / `lg` (1.3rem) /
   `xl` (1.5rem) + живой образец. Локально + best-effort в профиль.
-- **Уровень** — A2/B1/B2/C1 (сохраняется по «Сохранить»).
+- **Уровень** — A2/B1/B2/C1/C2 (сохраняется по «Сохранить»).
 - **Темы интересов** — чипы с удалением + добавление своей (макс 20, каждая 1–60
   символов).
 - **Ежедневное чтение** — чекбокс + время.
@@ -706,7 +710,7 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level`, `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
+| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, `first_context`, `surface_form`, `pos`, `gender`, `note`, `context_translation`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
@@ -782,7 +786,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | Прощение опечатки | ≥6 символов, 1 правка | `domain/typedQuiz.ts` |
 | `MAX_RETRIES` (ретраи в сессии) | 2 | `webapp/.../QuizSession.tsx` |
 | Длина статьи | 250–320 слов | `llm/articleGeneration.ts` |
-| Частотный потолок A2/B1/B2/C1 | 1500 / 2500 / 3500 / 5000 | `llm/articleGeneration.ts` |
+| Частотный потолок A2/B1/B2/C1 | 1500 / 2500 / 3500 / 5000 (C2 — без потолка) | `llm/articleGeneration.ts` |
 | Ротация тем | избегать 2 последних | `domain/topicRotation.ts` |
 | `active_pool_limit` | 0–200 (0 = без лимита), default 20 | `users` |
 | `bot_quizzes_per_day` | 0–12 | `users` |

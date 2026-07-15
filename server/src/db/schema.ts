@@ -5,7 +5,7 @@ export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tgUserId: integer("tg_user_id").notNull(),
   username: text("username"),
-  level: text("level", { enum: ["A2", "B1", "B2", "C1"] })
+  level: text("level", { enum: ["A2", "B1", "B2", "C1", "C2"] })
     .notNull()
     .default("A2"),
   explainLang: text("explain_lang", { enum: ["ru", "en", "es"] })

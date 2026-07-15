@@ -4,6 +4,45 @@
 > `- **Выполнено:** <дата>, <ветка или PR #N>` в начало карточки и удали её из
 > исходного списка (в том же PR, что и реализация). Порядок — новые сверху.
 
+## M-3. Добавить уровень CEFR C2
+- **Выполнено:** 2026-07-15, ветка `claude/backlog-task-impl-x161z0`
+- **Приоритет:** P2
+- **Проблема/мотивация:** Приложение поддерживало только уровни A2/B1/B2/C1,
+  поэтому продвинутые читатели упирались в потолок C1 (5000 самых частотных слов)
+  и получали статьи проще, чем им нужно. Верхняя ступень CEFR — C2 (владение,
+  близкое к носителю) — отсутствовала.
+- **Что сделано:** C2 добавлен как опция уровня во всех точках. Тип уровня
+  расширен до `A2|B1|B2|C1|C2`: `Level` (`webapp/src/api/types.ts`), массивы
+  `LEVELS` (`Onboarding.tsx`, `Settings.tsx`), `CefrLevel`
+  (`server/src/llm/articleGeneration.ts`), локальный тип в
+  `server/src/db/repositories/users.ts`, enum в `server/src/db/schema.ts`,
+  Zod-схема `level` в `server/src/api/validation.ts`. **По согласованию с
+  владельцем:** для C2 частотный потолок снят полностью — `LEVEL_FREQ_CAP`
+  типизирован как `Record<CappedLevel, number>` (без ключа C2), а
+  `frequencyInstruction("C2")` возвращает мягкую инструкцию (богатая
+  естественная лексика near-native, редкие слова/идиомы/журнальный или
+  литературный регистр, без ограничения по частотному списку). **Миграция БД не
+  добавлялась** (тоже по согласованию): колонка `users.level` — `text DEFAULT
+  'A2' NOT NULL` без CHECK-констрейнта, existing БД уже принимает `"C2"`; enum
+  действует на уровне TypeScript и Zod-валидации `PATCH /api/me`. Дефолт остаётся
+  `A2`. Пер-уровневых i18n-ключей не требуется (метки уровней выводятся как есть).
+  Обновлён `docs/functionality-registry.md` §4, §6.3, §14, §20, §22.
+- **Критерии приёмки:** C2 доступен в онбординге и настройках, выбор персистит
+  (`PATCH /api/me { level: "C2" }` проходит валидацию); генерация статьи для C2
+  использует мягкую инструкцию без потолка (`frequencyInstruction("C2")` не падает
+  и не ссылается на частотный список); обновлённый `server/tests/reviewSchema.test.ts`
+  зелёный (C2 отсутствует в `LEVEL_FREQ_CAP`, инструкция C2 без «palabras más
+  frecuentes»). `npm run typecheck` и `npm test` в `server/` проходят (181 тест);
+  webapp типизируется и собирается.
+- **Детали/ссылки:** `server/src/llm/articleGeneration.ts` (`CefrLevel`,
+  `LEVEL_FREQ_CAP`, `frequencyInstruction`), `server/src/api/validation.ts`,
+  `server/src/db/schema.ts`, `server/src/db/repositories/users.ts`,
+  `webapp/src/api/types.ts`, `webapp/src/screens/Onboarding.tsx`,
+  `webapp/src/screens/Settings.tsx`, `server/tests/reviewSchema.test.ts`,
+  `docs/functionality-registry.md` §4, §6.3, §14, §20, §22. Связано с F-8.
+
+---
+
 ## M-2. Свободное письмо — предлагать явно на верхних ступенях SRS
 - **Выполнено:** 2026-07-15, ветка `claude/backlog-task-impl-fe3sk2`
 - **Приоритет:** P2

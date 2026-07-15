@@ -69,4 +69,12 @@ describe("article generation frequency frame", () => {
     // Woven bank lemmas and proper nouns are exempt from the frame.
     expect(instruction).toContain("nombres propios");
   });
+
+  it("does not cap C2 (near-native): no frequency ceiling, richer register instead", () => {
+    // C2 is intentionally absent from the numeric cap map.
+    expect("C2" in LEVEL_FREQ_CAP).toBe(false);
+    const instruction = frequencyInstruction("C2");
+    expect(instruction).not.toContain("palabras más frecuentes");
+    expect(instruction).toContain("Sin restricción de frecuencia");
+  });
 });

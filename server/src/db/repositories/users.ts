@@ -5,7 +5,7 @@ import { userStats, users } from "../schema.js";
 export type UserRow = typeof users.$inferSelect;
 
 export type UserPatch = Partial<{
-  level: "A2" | "B1" | "B2" | "C1";
+  level: "A2" | "B1" | "B2" | "C1" | "C2";
   explainLang: "ru" | "en" | "es";
   timezone: string;
   theme: "claro" | "sepia" | "oscuro" | "ambar";
