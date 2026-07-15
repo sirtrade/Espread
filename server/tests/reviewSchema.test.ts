@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { reviewItemSchema, reviewSchema, shortTranslationSchema } from "../src/llm/schemas.js";
+import {
+  reviewItemSchema,
+  reviewSchema,
+  sanitizeShortTranslation,
+  shortTranslationSchema,
+} from "../src/llm/schemas.js";
 import { frequencyInstruction, LEVEL_FREQ_CAP } from "../src/llm/articleGeneration.js";
 
 function validItem(overrides: Record<string, unknown> = {}) {
@@ -22,19 +27,33 @@ describe("review schema: translation must be a plain short translation", () => {
     expect(reviewItemSchema.safeParse(validItem()).success).toBe(true);
   });
 
-  it("rejects a translation with parentheses (the old dumping-ground format)", () => {
+  it("heals a translation with parentheses (the old dumping-ground format) instead of failing the batch", () => {
     const result = reviewItemSchema.safeParse(
       validItem({ translation: "ранний, досрочный (acceso anticipado — ранний доступ)" }),
     );
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.translation).toBe("ранний, досрочный");
   });
 
-  it("rejects a translation with an em dash", () => {
-    expect(shortTranslationSchema.safeParse("ранний — досрочный").success).toBe(false);
+  it("heals a translation with an em dash down to the part before it", () => {
+    const result = shortTranslationSchema.safeParse("ранний — досрочный");
+    expect(result.success).toBe(true);
+    expect(result.success && result.data).toBe("ранний");
   });
 
-  it("rejects a translation longer than 60 characters", () => {
-    expect(shortTranslationSchema.safeParse("очень ".repeat(11) + "длинно").success).toBe(false);
+  it("keeps the words after a leading dash rather than collapsing to empty", () => {
+    expect(sanitizeShortTranslation("— досрочный")).toBe("досрочный");
+  });
+
+  it("still rejects a translation that is empty once the leaked parts are stripped", () => {
+    expect(shortTranslationSchema.safeParse("(solo la explicación)").success).toBe(false);
+  });
+
+  it("truncates an over-long translation to whole words within the cap", () => {
+    const parsed = shortTranslationSchema.safeParse("очень ".repeat(11) + "длинно");
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.length).toBeLessThanOrEqual(60);
+    expect(parsed.success && parsed.data.endsWith("очень")).toBe(true);
   });
 
   it("requires exactly 3 distractors", () => {
