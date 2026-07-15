@@ -88,13 +88,18 @@ function dueForPracticeWhere(userId: number, now: number) {
   );
 }
 
-/** Active items whose spaced-repetition timer has expired (or never started). */
+/** Extra due candidates fetched so route-level shuffling can interleave words
+ * and refill cards dropped by safe construction / cross-card anti-leak. */
+export const PRACTICE_CANDIDATE_MULTIPLIER = 3;
+
+/** Active items whose spaced-repetition timer has expired (or never started).
+ * Returns an oversampled candidate pool; the route shuffles and caps output. */
 export async function getDueForPractice(userId: number, now: number, limit: number): Promise<BankItemRow[]> {
   return db.query.bankItems.findMany({
     where: dueForPracticeWhere(userId, now),
     // Nulls (never practiced) sort first in SQLite ASC — new words come first.
     orderBy: [asc(bankItems.nextDueAt)],
-    limit,
+    limit: limit * PRACTICE_CANDIDATE_MULTIPLIER,
   });
 }
 

@@ -73,6 +73,97 @@ function shuffleInPlace<T>(arr: T[], random: () => number): T[] {
   return arr;
 }
 
+/** Fisher-Yates shuffle with injectable randomness for deterministic tests. */
+export function shufflePracticeCandidates<T>(items: readonly T[], random: () => number = Math.random): T[] {
+  return shuffleInPlace([...items], random);
+}
+
+/** Lowercase and remove accents while retaining spaces for phrase matching. */
+function normalizeLeakText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/**
+ * True when a word or multi-word phrase occurs as a complete lexical unit.
+ * Matching is case/accent-insensitive; phrase whitespace may vary.
+ */
+export function containsLeakTerm(text: string, term: string): boolean {
+  const words = normalizeLeakText(term).trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  const phrase = words.map(escapeRegex).join(String.raw`\s+`);
+  return new RegExp(String.raw`(^|[^\p{L}\p{N}])${phrase}(?=$|[^\p{L}\p{N}])`, "u").test(normalizeLeakText(text));
+}
+
+export interface CrossCardLeakSource {
+  prompt: string;
+  context: string | null;
+  contextHint: string | null;
+  /** All forms which count as this card's answer; never serialized to clients. */
+  leakAnswers: readonly string[];
+}
+
+/**
+ * Greedily builds a safe batch in candidate order.
+ *
+ * Prompt conflicts drop the later candidate so a question remains meaningful.
+ * Context/contextHint conflicts are sanitized to null on either card. Continuing
+ * through the oversampled candidates refills dropped cards where possible.
+ */
+export function protectCrossCardLeaks<T extends CrossCardLeakSource>(candidates: readonly T[], limit: number): T[] {
+  const selected: T[] = [];
+
+  for (const original of candidates) {
+    if (selected.length >= limit) break;
+    const candidate = { ...original };
+
+    const leaksSelectedPrompt = selected.some((card) =>
+      card.leakAnswers.some((term) => containsLeakTerm(candidate.prompt, term)),
+    );
+    const leaksExistingPrompt = selected.some((card) =>
+      candidate.leakAnswers.some((term) => containsLeakTerm(card.prompt, term)),
+    );
+    if (leaksSelectedPrompt || leaksExistingPrompt) continue;
+
+    if (
+      candidate.context &&
+      selected.some((card) => card.leakAnswers.some((term) => containsLeakTerm(candidate.context!, term)))
+    ) {
+      candidate.context = null;
+    }
+    if (
+      candidate.contextHint &&
+      selected.some((card) => card.leakAnswers.some((term) => containsLeakTerm(candidate.contextHint!, term)))
+    ) {
+      candidate.contextHint = null;
+    }
+
+    for (let i = 0; i < selected.length; i++) {
+      const card = selected[i]!;
+      const context =
+        card.context && candidate.leakAnswers.some((term) => containsLeakTerm(card.context!, term))
+          ? null
+          : card.context;
+      const contextHint =
+        card.contextHint && candidate.leakAnswers.some((term) => containsLeakTerm(card.contextHint!, term))
+          ? null
+          : card.contextHint;
+      if (context !== card.context || contextHint !== card.contextHint) {
+        selected[i] = { ...card, context, contextHint };
+      }
+    }
+
+    selected.push(candidate);
+  }
+  return selected;
+}
+
 /**
  * Builds a shuffled multiple-choice option list: the correct term plus up to
  * `count - 1` distinct distractors drawn from `pool` (already ordered by

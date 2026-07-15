@@ -458,6 +458,13 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
 - **recall**: prompt = перевод, ответ = лемма; отбрасывается при утечке леммы в
   перевод.
 - Чередование стиля по чётности позиции; неудобные слова пропускаются.
+- После построения применяется cross-card anti-leak: ни `prompt`, ни
+  `context`/`contextHint` карточки не содержат answer/lemma другой карточки.
+  Сопоставление регистро- и акцентонезависимое, по границам слов и с поддержкой
+  многословных фраз. Prompt-конфликт отбрасывает более позднюю карточку,
+  контекстная утечка зануляет контекст; сборка продолжает refill до максимума 5.
+- Перемешивание и сборка принимают инъецируемый `random`, поэтому тестируются
+  детерминированно без статистических проверок.
 
 Ответы уходят через `POST /practice/answer` **по лемме** (Quiz не видит id
 элементов банка). Слова здесь на ступени 0 — узнавание уместно.
@@ -473,19 +480,32 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 
 ### 10.1 Сборка очереди на сервере (`server/src/api/routes/practice.ts`)
 - `getDueForPractice(userId, now, limit)` — активные due-слова по `nextDueAt ASC`
-  (NULL/новые — первыми) + `countDueForPractice` для счётчика `due`.
+  (NULL/новые — первыми), но выбирает candidate pool размером
+  `limit * PRACTICE_CANDIDATE_MULTIPLIER`, где multiplier = **3**. Route
+  перемешивает кандидатов Fisher–Yates до сборки, затем возвращает максимум
+  requested `limit`; инъецируемый `random` позволяет детерминированные тесты.
+  `countDueForPractice` независимо возвращает полный счётчик `due`.
 - Для каждого — пул дистракторов `getDistractorPool` (той же части речи/формы) и
   сборка карточки `buildQueueCard` (`server/src/domain/practice.ts`):
   - слова со `srsStage >= TYPED_QUIZ_MIN_STAGE` (=2) отдаются **typed**-карточкой
     (`buildTypedQuizCard`, §11): ввод с клавиатуры вместо кнопок — более сильное
     извлечение. Для typed `answer=""` и `options=[]` (ответ грейдится на сервере,
     клиенту не передаётся), а `contextHint` несёт предложение с пропуском как
-    безопасную подсказку;
+    безопасную подсказку; `lemma=null` и `context=null`, accepted-формы и
+    содержащий surface контекст не входят в queue payload. После попытки
+    `POST /practice/answer` возвращает только правильную форму для feedback;
   - слова ниже ступени 2, либо когда безопасная typed-карточка не строится (нет
     перевода / перевод содержит ответ), — множественный выбор `buildCard` с
     чередованием предпочтения по чётности индекса (even→cloze, odd→recall).
     Защита от утечки: утекающий recall деградирует в cloze; невозможные карточки
     пропускаются.
+- После построения кандидатов чистая cross-card защита сравнивает
+  `prompt`/`context`/`contextHint` каждой карточки с answer, lemma и surface-form
+  остальных: case/accent-insensitive, по корректным границам слов, включая
+  multi-word phrases. Prompt-конфликт отбрасывает более позднюю карточку;
+  утечки в `context`/`contextHint` зануляются. Сборка продолжает кандидатов из
+  трёхкратного запаса; если безопасно набрать requested limit нельзя, выдача
+  короче, но утечки не допускаются.
 - Карточка: `{ itemId, lemma, isPhrase, srsStage, translation, type, prompt,
   answer, options[], context, contextTranslation, contextHint }`, где `type` —
   `cloze | recall | typed`. `srsStage` отдаётся, чтобы клиент мог заметнее
@@ -751,7 +771,7 @@ hermitdave FrequencyWords и распространяется с атрибуц�
 | `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100 |
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
-| `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); typed для stage≥2 |
+| `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); pool `limit*3`, shuffle, cross-card anti-leak; typed для stage≥2 без lemma/accepted до ответа |
 | `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint`; `typedAnswer` грейдится сервером |
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
 | `GET /api/stats` | Статистика | Счётчики + текущий локальный стрик + 12 недель чтений/learned-слов |
@@ -909,6 +929,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `active_pool_limit` | 0–200 (0 = без лимита), default 20 | `users` |
 | `bot_quizzes_per_day` | 0–12 | `users` |
 | `practice_size` (карточек за тренировку) | пресеты 5/10/20, клемп 1–30, default 10 | `users`, `domain/practiceSize.ts` |
+| `PRACTICE_CANDIDATE_MULTIPLIER` | 3 | `db/repositories/bank.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |
 | Предгенерация | за 5 мин до доставки | `scheduler.ts` |
@@ -944,16 +965,16 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 > Часть рекомендаций из аудита уже реализована (мягкий откат, подсказка по
 > запросу, повтор ошибок, прерываемость, typed recall в webapp, пониженный вес
-> пассивного чтения), часть — в плане (`docs/retention-roadmap.md`: interleaving,
-> ротация контекстов, качество дистракторов, журнал ответов для FSRS). При работе
+> пассивного чтения, interleaving и cross-card anti-leak), часть — в плане
+> (`docs/retention-roadmap.md`: ротация контекстов, качество дистракторов,
+> журнал ответов для FSRS). При работе
 > над этими этапами обновляй и этот раздел, и роадмап.
 
 ---
 
 ## 24. Известные ограничения
 
-- Контекст карточки не ротируется (всегда `firstContext`); слова из одной статьи
-  могут идти блоком (нет interleaving) — запланировано.
+- Контекст карточки не ротируется (всегда `firstContext`) — запланировано.
 - Легаси-пометки без `pos` не могут точно закрепиться за одним вхождением при
   восстановлении подсветки в истории (допустимая деградация).
 - Docker-образ и сквозной прогон в реальном Telegram-клиенте на момент написания

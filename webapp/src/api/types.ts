@@ -218,7 +218,8 @@ export type TypedVerdict = "exact" | "spelling" | "wrong";
 
 export interface PracticeCard {
   itemId: number;
-  lemma: string;
+  /** Null for typed cards until the answer endpoint reveals the proper form. */
+  lemma: string | null;
   isPhrase: boolean;
   /** SRS ladder rung of the word; drives whether the free-writing exercise is
    *  offered upfront (upper rungs) or behind a link. */
@@ -231,7 +232,7 @@ export interface PracticeCard {
   /** the correct option: blanked surface form (cloze) or lemma (recall); empty for typed */
   answer: string;
   options: string[];
-  /** the article sentence, shown as after-answer feedback */
+  /** article sentence; null for typed cards to keep accepted forms server-side */
   context: string | null;
   /** translation of the context sentence, shown as a cloze hint */
   contextTranslation: string | null;
@@ -254,6 +255,9 @@ export interface PracticeAnswerResult {
   correct?: boolean;
   /** typed answers only: the proper form to show as feedback */
   answer?: string;
+  /** typed answers only: revealed after grading for corrective feedback */
+  context?: string | null;
+  contextTranslation?: string | null;
 }
 
 export interface SentenceCheckResult {
