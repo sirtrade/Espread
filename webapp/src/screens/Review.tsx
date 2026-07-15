@@ -64,7 +64,7 @@ export function Review() {
     try {
       const accepted = result.items.filter((it) => decisions[it.lemma] === "bank");
       const rejected = result.items.filter((it) => decisions[it.lemma] === "skip");
-      const { queued } = await api.completeSession({
+      const { queued, levelSuggestion } = await api.completeSession({
         accepted: accepted.map((it) => it.lemma),
         rejected: rejected.map((it) => it.lemma),
       });
@@ -72,9 +72,9 @@ export function Review() {
       // Queued words aren't in study yet, so they're not quizzed — but the
       // count still rides along to the Home banner.
       if (accepted.length > 0) {
-        navigate("/quiz", { state: { items: accepted, queued } });
+        navigate("/quiz", { state: { items: accepted, queued, levelSuggestion } });
       } else {
-        navigate("/", { state: { queued } });
+        navigate("/", { state: { queued, levelSuggestion } });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("review.saveError"));

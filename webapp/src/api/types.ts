@@ -5,6 +5,11 @@ export type Level = "A2" | "B1" | "B2" | "C1" | "C2";
 export type ExplainLang = "ru" | "en" | "es";
 export type BankStatus = "active" | "learned" | "ignored" | "queued";
 
+export interface LevelSuggestion {
+  direction: "up" | "down";
+  targetLevel: Level;
+}
+
 export interface Profile {
   id: number;
   tgUserId: number;
@@ -137,6 +142,7 @@ export interface CompleteResult {
   /** lemmas parked in the queue because the active pool was full */
   queued: string[];
   articlesRead: number;
+  levelSuggestion: LevelSuggestion | null;
 }
 
 export interface BankItem {
@@ -190,6 +196,7 @@ export interface Stats {
   itemsQueued: number;
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
+  levelSuggestion: LevelSuggestion | null;
   currentStreak: number;
   weeklyProgress: Array<{
     /** Monday in the user's local calendar, YYYY-MM-DD */

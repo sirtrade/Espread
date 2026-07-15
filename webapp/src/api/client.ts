@@ -17,6 +17,7 @@ import type {
   Session,
   Stats,
   KnownWord,
+  LevelSuggestion,
   VocabularyStats,
 } from "./types.js";
 
@@ -117,6 +118,8 @@ export const api = {
   patchMe: (patch: Partial<Omit<Profile, "id" | "tgUserId" | "username" | "onboarded">> & { markOnboarded?: boolean }) =>
     request<Profile>("/me", { method: "PATCH", body: JSON.stringify(patch) }),
   resetProgress: () => request<{ ok: true }>("/me/progress", { method: "DELETE" }),
+  markLevelSuggestion: (interaction: LevelSuggestion & { action: "seen" | "dismissed" }) =>
+    request<{ ok: true }>("/me/level-suggestion", { method: "PATCH", body: JSON.stringify(interaction) }),
   createArticle: () => request<{ article: Article; session: Session }>("/articles", { method: "POST" }),
   getSession: () => request<{ session: Session | null; article: Article | null }>("/session"),
   putSession: (marks: Mark[]) =>

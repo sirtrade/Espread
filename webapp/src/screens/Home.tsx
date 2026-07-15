@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api, ApiRequestError } from "../api/client.js";
-import type { BankItem, Stats } from "../api/types.js";
+import type { BankItem, LevelSuggestion, Stats } from "../api/types.js";
 import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
 import { BankChip } from "../components/BankChip.js";
 import { hapticImpact } from "../telegram/telegram.js";
 import { locale, useT } from "../lib/i18n.js";
+import { LevelSuggestionBanner } from "../components/LevelSuggestionBanner.js";
 
 export function Home() {
   const { t, lang } = useT();
   const navigate = useNavigate();
-  const location = useLocation() as { state?: { queued?: string[] } };
+  const location = useLocation() as { state?: { queued?: string[]; levelSuggestion?: LevelSuggestion | null } };
   const [stats, setStats] = useState<Stats | null>(null);
   const [bank, setBank] = useState<BankItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +21,9 @@ export function Home() {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [practiceDue, setPracticeDue] = useState(0);
+  const [levelSuggestion, setLevelSuggestion] = useState<LevelSuggestion | null>(
+    location.state?.levelSuggestion ?? null,
+  );
 
   async function load() {
     setLoading(true);
@@ -32,6 +36,7 @@ export function Home() {
       }
       const [s, b, p] = await Promise.all([api.getStats(), api.getBank("active"), api.getPracticeQueue(1)]);
       setStats(s);
+      setLevelSuggestion((current) => current ?? s.levelSuggestion);
       setBank(b.items);
       setPracticeDue(p.due);
     } catch (err) {
@@ -81,6 +86,10 @@ export function Home() {
         <div className="mb-4 rounded-xl bg-surface px-4 py-3 text-sm text-subtext">
           {t("home.queuedBanner", { count: location.state.queued.length })}
         </div>
+      )}
+
+      {levelSuggestion && (
+        <LevelSuggestionBanner suggestion={levelSuggestion} onResolved={() => setLevelSuggestion(null)} />
       )}
 
       {stats && (

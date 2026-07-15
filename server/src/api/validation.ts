@@ -31,6 +31,12 @@ export const patchMeSchema = z.object({
   practiceSize: z.number().int().min(PRACTICE_SIZE_MIN).max(PRACTICE_SIZE_MAX).optional(),
 });
 
+export const levelSuggestionInteractionSchema = z.object({
+  action: z.enum(["seen", "dismissed"]),
+  direction: z.enum(["up", "down"]),
+  targetLevel: z.enum(["A2", "B1", "B2", "C1", "C2"]),
+});
+
 // Práctica answers carry an itemId; the post-reading Quiz carries a lemma
 // (the client never sees bank item ids). Exactly one identifier is required.
 export const practiceAnswerSchema = z

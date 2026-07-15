@@ -58,6 +58,19 @@ export async function getArticleById(articleId: number): Promise<ArticleRow | un
   return db.query.articles.findFirst({ where: eq(articles.id, articleId) });
 }
 
+/** Latest completed readings for deterministic level-suggestion evaluation. */
+export async function getRecentCompletedReadings(
+  userId: number,
+  limit: number,
+): Promise<Array<Pick<ArticleRow, "body" | "marks">>> {
+  return db.query.articles.findMany({
+    where: and(eq(articles.userId, userId), isNotNull(articles.readAt)),
+    orderBy: [desc(articles.readAt)],
+    limit,
+    columns: { body: true, marks: true },
+  });
+}
+
 export interface ReadArticleSummary {
   id: number;
   title: string;

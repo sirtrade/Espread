@@ -63,6 +63,8 @@ interface QuizSessionProps {
   /** Called from the final summary's button. */
   onFinish: (summary: { correct: number; total: number }) => void;
   finishLabel?: string;
+  /** Optional flow-level banner shown immediately below the title. */
+  headerExtra?: ReactNode;
   /** Optional per-card extra UI (e.g. Práctica's free-writing exercise).
    *  `chosen` is whether an answer was submitted; `correct` whether it was
    *  right (false until answered). */
@@ -84,9 +86,10 @@ export function QuizSession({
   onTypedAnswer,
   onFinish,
   finishLabel,
+  headerExtra,
   renderExtra,
   onNext,
-}: QuizSessionProps) {
+}: Readonly<QuizSessionProps>) {
   const { t } = useT();
   const [queue, setQueue] = useState<QueueEntry[]>(() =>
     cards.map((card, i) => ({ card, isRetry: false, retriesLeft: MAX_RETRIES, ordinal: i + 1 })),
@@ -228,6 +231,7 @@ export function QuizSession({
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6 pb-28">
         <h1 className="mb-6 text-xl font-semibold">{title}</h1>
+        {headerExtra}
         <div className="rounded-2xl bg-surface px-5 py-6 text-center">
           <p className="text-3xl">🎯</p>
           <p className="mt-2 text-lg font-semibold">
@@ -299,6 +303,7 @@ export function QuizSession({
           </button>
         </div>
       </div>
+      {headerExtra}
 
       {card.type === "typed" ? (
         <>

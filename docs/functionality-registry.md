@@ -442,7 +442,9 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 `encounters >= READING_KNOWN_THRESHOLD = 3` строка получает
 `source=reading` и `known_since`; до порога `known_since=null` и в пользовательский
 список она не попадает.
-После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead }`.
+После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead,
+levelSuggestion }`: предложение вычисляется уже по окну, включающему только что
+завершённую статью, поэтому post-reading UI может показать его сразу.
 До вычисления changed rows completion накапливает контексты этой статьи:
 принятые/помеченные получают точное предложение через `contextForItem` и готовый
 `contextTranslation`; подтверждённые `targetTerms` получают предложение через
@@ -698,6 +700,8 @@ IANA-таймзоной.
 - **Размер шрифта** — `sm` (1rem) / `md` (1.125rem, default) / `lg` (1.3rem) /
   `xl` (1.5rem) + живой образец. Локально + best-effort в профиль.
 - **Уровень** — A2/B1/B2/C1/C2 (сохраняется по «Сохранить»).
+  Любая фактическая ручная или принятая из баннера смена уровня очищает
+  метаданные старого предложения; PATCH с тем же уровнем их не трогает.
 - **Темы интересов** — чипы с удалением + добавление своей (макс 20, каждая 1–60
   символов).
 - **Ежедневное чтение** — чекбокс + время.
@@ -712,7 +716,7 @@ IANA-таймзоной.
   (distributed practice).
 - **Сброс прогресса** (деструктивно) — нативный `confirmDialog` → `DELETE
   /me/progress` (стирает банк, реестр известных слов, статьи и статистику;
-  аккаунт и настройки остаются).
+  аккаунт и настройки остаются; metadata предложения уровня также очищается).
 
 Тема/шрифт хранятся и в профиле (следуют за пользователем между устройствами), и
 локально (мгновенное применение). `applyDisplayPrefs` при логине пушит серверные
@@ -745,7 +749,38 @@ IANA-таймзоной.
 itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
 `weeklyProgress` — `{ weekStart: "YYYY-MM-DD", articlesRead, wordsLearned }`.
 
-### 16.1 Стрик и недельная динамика
+### 16.1 Адаптивное предложение уровня CEFR (F-8)
+`server/src/domain/levelSuggestion.ts` — чистая логика, без автосмены уровня:
+- Окно — **последние 5 завершённых чтений** (`read_at`, newest first). При <5
+  предложения нет. Для каждого чтения `density = markedLexicalTokens /
+  bodyLexicalTokens`; при нулевом знаменателе density=0.
+- Lexical token — последовательность испанских/латинских букв, тем же правилом,
+  что word-токены Reader. Числитель берётся именно из `mark.text`: span и
+  sentence поэтому весят столько слов, сколько пользователь реально охватил
+  пометкой, а не «одну метку». При наличии `pos` лексические позиции
+  проецируются на токены содержащего предложения: одинаковые и перекрывающиеся
+  word/span/sentence считаются один раз. Legacy без пригодного `pos`
+  нормализуется (регистр/диакритика), одинаковые и вложенные последовательности
+  схлопываются насколько это возможно без координат. Числитель всегда capped
+  `wordCount(body)`, поэтому битые legacy-данные не дают >100%.
+- Сигнал устойчив только если **все 5** density строго `<
+  LEVEL_SUGGESTION_LOW_DENSITY = 0.02` (предложить один соседний уровень вверх)
+  либо строго `> LEVEL_SUGGESTION_HIGH_DENSITY = 0.08` (один вниз). Равенство
+  порогу и mixed window не срабатывают. Лестница A2→B1→B2→C1→C2; A2 не
+  понижается, C2 не повышается.
+- Cooldown — **14 локальных календарных дней** по `users.timezone`, а не 14×24
+  часа. Он direction-specific и считается от более позднего `shown_at` /
+  `dismissed_at`. `GET /stats` только вычисляет и ничего скрыто не пишет.
+  Клиент вызывает `PATCH /me/level-suggestion {action:"seen", direction,
+  targetLevel}` именно при рендере баннера; «Оставить» пишет `dismissed`.
+  Endpoint под per-user lock заново проверяет level/window/target и отвечает 409
+  stale-вкладке, поэтому она не может затереть актуальное решение.
+- `GET /stats` и `POST /session/complete` возвращают nullable
+  `{direction,targetLevel}`. Баннер показывается на Home и немедленно в
+  post-reading flow (в Quiz либо на Home, если карточек нет), локализован ru/en/es.
+  Кнопки: «перейти на X» через существующий `PATCH /me {level:X}` и «оставить».
+
+### 16.2 Стрик и недельная динамика
 - Полезный день — локальный календарный день пользователя с завершённым чтением
   или практикой. История хранится в `daily_activity` (unique
   `(user_id, local_day)`, независимые boolean-флаги `reading`/`practice`);
@@ -763,7 +798,7 @@ itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
   `articles.read_at`, слова — только из `known_words.known_since` с
   `source=learned`. Дневная цель не включена.
 
-### 16.2 Словарный запас (`webapp/src/screens/Vocabulary.tsx`)
+### 16.3 Словарный запас (`webapp/src/screens/Vocabulary.tsx`)
 Вход с Home ведёт на `/vocabulary`. Экран показывает число признанных известных
 лемм (`known_since != null`), разбивку `learned/reading/manual`, прирост по каждой
 из последних 12 UTC-недель, список лемм и покрытие пяти диапазонов по 1000.
@@ -787,6 +822,7 @@ hermitdave FrequencyWords и распространяется с атрибуц�
 | `POST /api/auth/telegram` | Логин по initData | Валидация HMAC → JWT + профиль |
 | `GET /api/me` | Профиль | |
 | `PATCH /api/me` | Обновить профиль | Валидация уровня/языка/таймзоны/темы/шрифта/тем/времени/лимитов |
+| `PATCH /api/me/level-suggestion` | Записать показ/отказ | `{action: seen/dismissed, direction, targetLevel}`; re-check под lock, stale → `409` |
 | `DELETE /api/me/progress` | Сброс прогресса | |
 | `POST /api/articles` | Старт/текущее чтение | Rate-limit `DAILY_ARTICLE_LIMIT`; `429`/`503` |
 | `GET /api/articles` | История | `limit` 1–100 (20), `offset` |
@@ -795,13 +831,13 @@ hermitdave FrequencyWords и распространяется с атрибуц�
 | `PUT /api/session` | Сохранить пометки | ≤300 пометок |
 | `DELETE /api/session` | Бросить сессию | |
 | `POST /api/session/review` | LLM-разбор | Идемпотентно; rate-limit `DAILY_REVIEW_LIMIT` |
-| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100 |
+| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100; возвращает nullable level suggestion |
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
 | `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); pool `limit*3`, shuffle, cross-card anti-leak; typed для stage≥2 без lemma/accepted до ответа |
 | `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint`; `typedAnswer` грейдится сервером |
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
-| `GET /api/stats` | Статистика | Счётчики + текущий локальный стрик + 12 недель чтений/learned-слов |
+| `GET /api/stats` | Статистика | Счётчики + стрик + 12 недель + read-only nullable level suggestion |
 | `GET /api/known-words` | Список известных лемм | Только `known_since != null` |
 | `GET /api/known-words/stats` | Размер, источники, 12 недель, покрытие top-5000 | 5 диапазонов по 1000 |
 | `GET /api/admin/usage` | Расход LLM по юзерам | Только `ADMIN_TG_IDS` (`403` иначе) |
@@ -863,7 +899,7 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
+| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
@@ -903,6 +939,9 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `0014` — nullable/default-compatible `bank_items.contexts` (JSON, default
   `[]`) и nullable `users.pending_quiz_context_added_at` для сохранения
   выбранного typed-контекста бота до grading.
+- `0015` — три nullable metadata-поля предложения уровня:
+  `level_suggestion_direction`, `level_suggestion_shown_at`,
+  `level_suggestion_dismissed_at`; существующие пользователи получают null.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -961,6 +1000,8 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `practice_size` (карточек за тренировку) | пресеты 5/10/20, клемп 1–30, default 10 | `users`, `domain/practiceSize.ts` |
 | `PRACTICE_CANDIDATE_MULTIPLIER` | 3 | `db/repositories/bank.ts` |
 | `MAX_CONTEXTS` | 5 | `domain/contexts.ts` |
+| Окно / low / high level suggestion | 5 / `<2%` / `>8%` (все 5) | `domain/levelSuggestion.ts` |
+| Cooldown level suggestion | 14 локальных календарных дней | `domain/levelSuggestion.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |
 | Предгенерация | за 5 мин до доставки | `scheduler.ts` |
@@ -1023,15 +1064,16 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `db/` — клиент, миграции, `schema.ts`, репозитории (`repositories/*`).
 - `domain/` — **чистая логика без I/O**: `srs.ts`, `bank.ts`, `practice.ts`,
   `typedQuiz.ts`, `weaving.ts`, `marks.ts`, `context.ts`, `normalize.ts`,
-  `knownWords.ts`, `vocabularyStats.ts`, `motivation.ts`, `topicRotation.ts` (покрыты
+  `knownWords.ts`, `vocabularyStats.ts`, `motivation.ts`, `levelSuggestion.ts`,
+  `topicRotation.ts` (покрыты
   юнит-тестами в `server/tests/`).
 - `data/spanishFrequencyV1.ts` — версионированный CC BY-SA 3.0 частотный
   список для оценки покрытия.
 - `llm/` — интеграция с Anthropic: генерация статей, разбор, обогащение,
   проверка предложений, схемы, тарифы, клиент, `callJson`.
 - `scheduler/` — cron и хелперы времени.
-- `services/` — `articleService.ts`, `sessionService.ts` (оркестрация домена + БД
-  + LLM).
+- `services/` — `articleService.ts`, `sessionService.ts`,
+  `levelSuggestionService.ts` (оркестрация домена + БД + LLM).
 - `lib/` — config, locks, logger, timezone.
 
 **Клиент (`webapp/src/`)**
@@ -1056,5 +1098,5 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 ---
 
-*Последнее обновление реестра: 2026-07-15 (F-6: ротация контекстов).*
+*Последнее обновление реестра: 2026-07-15 (F-8: адаптивное предложение уровня CEFR).*
 *Не забудь обновить дату и содержимое при следующем изменении функционала.*

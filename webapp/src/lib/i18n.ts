@@ -86,6 +86,12 @@ export interface Dict {
   "home.startError": string;
   "home.progressLoading": string;
 
+  "levelSuggestion.up": (p: { level: string }) => string;
+  "levelSuggestion.down": (p: { level: string }) => string;
+  "levelSuggestion.change": (p: { level: string }) => string;
+  "levelSuggestion.keep": string;
+  "levelSuggestion.error": string;
+
   "vocabulary.title": string;
   "vocabulary.loading": string;
   "vocabulary.loadError": string;
@@ -307,6 +313,12 @@ const es: Dict = {
   "home.loadError": "No se pudieron cargar tus datos",
   "home.startError": "No se pudo generar la lectura",
   "home.progressLoading": "Cargando tu progreso...",
+
+  "levelSuggestion.up": ({ level }) => `Estas lecturas parecen fáciles. ¿Quieres probar el nivel ${level}?`,
+  "levelSuggestion.down": ({ level }) => `Estas lecturas parecen difíciles. ¿Quieres probar el nivel ${level}?`,
+  "levelSuggestion.change": ({ level }) => `Cambiar a ${level}`,
+  "levelSuggestion.keep": "Mantener mi nivel",
+  "levelSuggestion.error": "No se pudo guardar tu elección",
 
   "vocabulary.title": "Vocabulario",
   "vocabulary.loading": "Cargando tu vocabulario...",
@@ -539,6 +551,12 @@ const ru: Dict = {
   "home.startError": "Не удалось создать чтение",
   "home.progressLoading": "Загрузка вашего прогресса...",
 
+  "levelSuggestion.up": ({ level }) => `Похоже, эти тексты вам легки. Попробовать уровень ${level}?`,
+  "levelSuggestion.down": ({ level }) => `Похоже, эти тексты вам сложны. Попробовать уровень ${level}?`,
+  "levelSuggestion.change": ({ level }) => `Перейти на ${level}`,
+  "levelSuggestion.keep": "Оставить мой уровень",
+  "levelSuggestion.error": "Не удалось сохранить выбор",
+
   "vocabulary.title": "Словарный запас",
   "vocabulary.loading": "Загрузка словарного запаса...",
   "vocabulary.loadError": "Не удалось загрузить словарный запас",
@@ -770,6 +788,12 @@ const en: Dict = {
   "home.loadError": "Couldn't load your data",
   "home.startError": "Couldn't generate the reading",
   "home.progressLoading": "Loading your progress...",
+
+  "levelSuggestion.up": ({ level }) => `These readings seem easy. Would you like to try level ${level}?`,
+  "levelSuggestion.down": ({ level }) => `These readings seem difficult. Would you like to try level ${level}?`,
+  "levelSuggestion.change": ({ level }) => `Change to ${level}`,
+  "levelSuggestion.keep": "Keep my level",
+  "levelSuggestion.error": "Couldn't save your choice",
 
   "vocabulary.title": "Vocabulary",
   "vocabulary.loading": "Loading your vocabulary...",
