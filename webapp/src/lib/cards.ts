@@ -34,15 +34,33 @@ export interface SessionCard {
 
 /** POS-aware padding, mirroring the server's last-resort distractor lists. */
 const FALLBACK: Record<"noun" | "verb" | "adj", readonly string[]> = {
-  noun: ["desarrollo", "esfuerzo", "amenaza", "propuesta", "recurso", "acuerdo", "fuente", "medida", "nivel", "crecimiento"],
-  verb: ["desarrollar", "proponer", "alcanzar", "establecer", "impulsar", "señalar", "lograr", "mantener", "generar", "sostener"],
-  adj: ["importante", "reciente", "evidente", "complejo", "notable", "frecuente", "amplio", "profundo", "escaso", "sólido"],
+  noun: [
+    "desarrollo", "esfuerzo", "amenaza", "propuesta", "recurso", "acuerdo", "fuente", "medida", "nivel", "crecimiento",
+    "resultado", "proceso", "decisión", "cambio", "objetivo", "informe", "entorno", "debate", "impacto", "desafío",
+    "estrategia", "tendencia", "iniciativa", "avance", "criterio", "conjunto", "alcance", "riesgo", "enfoque", "contexto",
+  ],
+  verb: [
+    "desarrollar", "proponer", "alcanzar", "establecer", "impulsar", "señalar", "lograr", "mantener", "generar", "sostener",
+    "considerar", "analizar", "mejorar", "reducir", "aumentar", "aplicar", "evaluar", "permitir", "evitar", "reconocer",
+    "observar", "definir", "asumir", "abordar", "destacar", "avanzar", "conservar", "determinar", "plantear", "favorecer",
+  ],
+  adj: [
+    "importante", "reciente", "evidente", "complejo", "notable", "frecuente", "amplio", "profundo", "escaso", "sólido",
+    "relevante", "general", "principal", "actual", "posible", "distinto", "adecuado", "significativo", "específico", "común",
+    "estable", "positivo", "negativo", "necesario", "disponible", "fundamental", "habitual", "diverso", "concreto", "eficaz",
+  ],
 };
+
+const FALLBACK_SAMPLE_SIZE = 8;
 
 function fallbackForPos(pos: Pos): readonly string[] {
   if (pos === "verb") return FALLBACK.verb;
   if (pos === "adj") return FALLBACK.adj;
   return FALLBACK.noun;
+}
+
+function sampleFallback(pos: Pos, random: () => number): string[] {
+  return shuffle(fallbackForPos(pos), random).slice(0, FALLBACK_SAMPLE_SIZE);
 }
 
 function isPhraseText(text: string): boolean {
@@ -58,13 +76,13 @@ function shuffle<T>(arr: readonly T[], random: () => number): T[] {
   return out;
 }
 
-const MIN_OPTIONS = 3;
+const MIN_OPTIONS = 4;
 
 /** Correct term plus up to count-1 distinct distractors from the pool. */
 function buildOptions(correct: string, pool: readonly string[], count: number, random: () => number): string[] {
   const seen = new Set([correct.toLowerCase()]);
   const distractors: string[] = [];
-  for (const c of shuffle(pool, random)) {
+  for (const c of pool) {
     if (distractors.length >= count - 1) break;
     const key = c.toLowerCase();
     if (seen.has(key)) continue;
@@ -115,10 +133,10 @@ interface ClientSource {
   poolLemmas: readonly string[];
 }
 
-function distractorPool(src: ClientSource): string[] {
+function distractorPool(src: ClientSource, random: () => number): string[] {
   const base = [...src.storedDistractors, ...src.poolLemmas];
   if (src.isPhrase) return base.filter(isPhraseText);
-  return [...base.filter((w) => !isPhraseText(w)), ...fallbackForPos(src.pos)];
+  return [...base.filter((w) => !isPhraseText(w)), ...sampleFallback(src.pos, random)];
 }
 
 function buildClozeVariant(src: ClientSource, pool: string[], random: () => number): SessionCard | null {
@@ -175,12 +193,12 @@ export function buildQuizCards(items: readonly ReviewItem[], max = 5, random: ()
       context: item.contextSentence,
       contextTranslation: item.contextTranslation,
       storedDistractors: item.distractors,
-      // Other accepted words of the same shape make plausible, non-mixed decoys.
+      // Other accepted words of the same POS/shape make plausible, non-mixed decoys.
       poolLemmas: items
-        .filter((o) => o.lemma !== item.lemma && (o.pos === "phrase") === isPhrase)
+        .filter((o) => o.lemma !== item.lemma && o.pos === item.pos)
         .map((o) => o.lemma),
     };
-    const pool = distractorPool(src);
+    const pool = distractorPool(src, random);
     const cloze = buildClozeVariant(src, pool, random);
     const recall = buildRecallVariant(src, pool, random);
     // Alternate the preferred style by position; fall back to whichever exists.

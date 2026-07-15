@@ -18,6 +18,11 @@ export interface ReviewParams {
   marks: Mark[];
 }
 
+export const REVIEW_DISTRACTOR_INSTRUCTION =
+  `- "distractors": genera entre 5 y 8 opciones españolas semánticamente plausibles de la misma categoría ` +
+  `gramatical, relacionadas con un tema cercano y de longitud y registro parecidos. No deben ser sinónimos, ` +
+  `variantes flexionadas ni formas derivadas del lemma; deben funcionar como respuestas incorrectas creíbles en un quiz.\n`;
+
 /**
  * Single LLM call implementing the "Terminé" review: turns the reader's
  * marks into structured vocabulary cards (lemma, POS, short translation,
@@ -36,7 +41,7 @@ export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewRes
     `Convierte las marcas en fichas de vocabulario. Responde ÚNICAMENTE con JSON: ` +
     `{"items": [{"surface": string, "lemma": string, "pos": "verb"|"noun"|"adj"|"adv"|"phrase"|"other", ` +
     `"gender": "m"|"f"|null, "translation": string, "note": string|null, "contextTranslation": string|null, ` +
-    `"freqBand": "top1000"|"top3000"|"top5000"|"rare", "distractors": [string, string, string]}]}.\n` +
+    `"freqBand": "top1000"|"top3000"|"top5000"|"rare", "distractors": [string, ...]}]}.\n` +
     `Reglas para cada ficha:\n` +
     `- "surface": la forma EXACTA tal como aparece en el texto (p. ej. "perfila", "lanzamientos", "se llama").\n` +
     `- "lemma": la forma de diccionario: verbo en infinitivo (con -se si es pronominal: "perfilarse", "llamarse"), ` +
@@ -51,8 +56,7 @@ export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewRes
     `Null solo si la marca no trae oración.\n` +
     `- "freqBand": banda de frecuencia del lemma en español: "top1000", "top3000", "top5000" (dentro de las ` +
     `1000/3000/5000 palabras más frecuentes) o "rare" (fuera de las 5000 más frecuentes, término especializado o nombre propio).\n` +
-    `- "distractors": exactamente 3 palabras españolas de la MISMA categoría gramatical y nivel parecido, ` +
-    `que NO sean sinónimos del lemma (se usan como opciones incorrectas en un quiz).\n` +
+    REVIEW_DISTRACTOR_INSTRUCTION +
     `Reglas de agrupación:\n` +
     `- Marcas vecinas de la misma oración que forman UNA construcción se combinan en UNA sola ficha: ` +
     `clítico + verbo ("se" + "llama" → lemma "llamarse"), perífrasis ("llega" + "cargado de" → "llegar cargado de").\n` +

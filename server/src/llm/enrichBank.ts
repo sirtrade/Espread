@@ -27,6 +27,11 @@ export interface EnrichBankInput {
   context: string | null;
 }
 
+export const ENRICHMENT_DISTRACTOR_INSTRUCTION =
+  `- "distractors": genera entre 5 y 8 opciones españolas semánticamente plausibles de la misma categoría ` +
+  `gramatical, relacionadas con un tema cercano y de longitud y registro parecidos. No deben ser sinónimos, ` +
+  `variantes flexionadas ni formas derivadas del lemma; deben funcionar como respuestas incorrectas creíbles.\n`;
+
 /**
  * One-off backfill for bank rows created before the lemma migration: turns a
  * legacy (term, dirty translation, context) triple into the structured card
@@ -49,7 +54,7 @@ export async function enrichBankItems(params: {
     `Para cada entrada devuelve una ficha limpia. Responde ÚNICAMENTE con JSON: ` +
     `{"items": [{"id": number, "lemma": string, "pos": "verb"|"noun"|"adj"|"adv"|"phrase"|"other", ` +
     `"gender": "m"|"f"|null, "translation": string, "note": string|null, "contextTranslation": string|null, ` +
-    `"freqBand": "top1000"|"top3000"|"top5000"|"rare", "distractors": [string, string, string]}]}.\n` +
+    `"freqBand": "top1000"|"top3000"|"top5000"|"rare", "distractors": [string, ...]}]}.\n` +
     `Reglas:\n` +
     `- "lemma": forma de diccionario del term: verbo en infinitivo (con -se si es pronominal), sustantivo en singular, ` +
     `adjetivo en masculino singular; expresiones en forma neutra.\n` +
@@ -59,7 +64,7 @@ export async function enrichBankItems(params: {
     `- "note": opcional, en ${lang}: matices de uso y todo lo que no sea la traducción.\n` +
     `- "contextTranslation": traducción de "context" en ${lang}; null si context es null.\n` +
     `- "freqBand": "top1000", "top3000", "top5000" o "rare" (fuera de las 5000 más frecuentes o muy especializado).\n` +
-    `- "distractors": exactamente 3 palabras españolas de la misma categoría gramatical, no sinónimas del lemma.\n` +
+    ENRICHMENT_DISTRACTOR_INSTRUCTION +
     `- Devuelve una ficha por cada entrada, con su mismo "id".`;
 
   const result = await callJsonLLM({
