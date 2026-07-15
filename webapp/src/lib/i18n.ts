@@ -167,6 +167,8 @@ export interface Dict {
   "settings.poolUnlimited": string;
   "settings.poolNoLimitNote": string;
   "settings.poolLimitNote": (p: { count: number }) => string;
+  "settings.practiceSize": string;
+  "settings.practiceSizeNote": (p: { count: number }) => string;
   "settings.saved": string;
   "settings.saveChanges": string;
   "settings.saveError": string;
@@ -368,6 +370,9 @@ const es: Dict = {
   "settings.poolNoLimitNote": "Sin límite: todas las palabras que guardes entran en estudio.",
   "settings.poolLimitNote": ({ count }) =>
     `Mantendrás hasta ${count} palabras en estudio a la vez. Las demás esperan en cola y entran a medida que dominas o descartas otras.`,
+  "settings.practiceSize": "Tarjetas por entrenamiento",
+  "settings.practiceSizeNote": ({ count }) =>
+    `Cada sesión de práctica pedirá hasta ${count} ${plural("es", count, ["tarjeta", "tarjetas"])}. Varias sesiones cortas fijan mejor que una larga.`,
   "settings.saved": "Guardado",
   "settings.saveChanges": "Guardar cambios",
   "settings.saveError": "No se pudo guardar",
@@ -572,6 +577,9 @@ const ru: Dict = {
   "settings.poolNoLimitNote": "Без лимита: все сохранённые слова входят в изучение.",
   "settings.poolLimitNote": ({ count }) =>
     `Одновременно в изучении будет до ${count} слов. Остальные ждут в очереди и входят по мере того, как вы осваиваете или отклоняете другие.`,
+  "settings.practiceSize": "Карточек за тренировку",
+  "settings.practiceSizeNote": ({ count }) =>
+    `Каждая тренировка запросит до ${count} ${plural("ru", count, ["карточка", "карточки", "карточек"])}. Несколько коротких сессий закрепляют лучше одной длинной.`,
   "settings.saved": "Сохранено",
   "settings.saveChanges": "Сохранить изменения",
   "settings.saveError": "Не удалось сохранить",
@@ -776,6 +784,9 @@ const en: Dict = {
   "settings.poolNoLimitNote": "No limit: every word you save enters study.",
   "settings.poolLimitNote": ({ count }) =>
     `You'll keep up to ${count} words in study at a time. The rest wait in the queue and enter as you master or discard others.`,
+  "settings.practiceSize": "Cards per session",
+  "settings.practiceSizeNote": ({ count }) =>
+    `Each practice session will request up to ${count} ${plural("en", count, ["card", "cards"])}. Several short sessions beat one long one.`,
   "settings.saved": "Saved",
   "settings.saveChanges": "Save changes",
   "settings.saveError": "Couldn't save",

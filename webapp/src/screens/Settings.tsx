@@ -12,6 +12,7 @@ import { langLabel } from "../lib/langs.js";
 
 const LEVELS: Level[] = ["A2", "B1", "B2", "C1"];
 const POOL_PRESETS: number[] = [10, 20, 30, 50, 0];
+const PRACTICE_SIZE_PRESETS: number[] = [5, 10, 20];
 const LANG_VALUES: ExplainLang[] = ["ru", "en", "es"];
 
 export function Settings() {
@@ -26,6 +27,7 @@ export function Settings() {
   const [dailyTime, setDailyTime] = useState(profile!.dailyTime);
   const [botQuizzesPerDay, setBotQuizzesPerDay] = useState(profile!.botQuizzesPerDay);
   const [activePoolLimit, setActivePoolLimit] = useState(profile!.activePoolLimit);
+  const [practiceSize, setPracticeSize] = useState(profile!.practiceSize);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -71,6 +73,7 @@ export function Settings() {
         dailyTime,
         botQuizzesPerDay,
         activePoolLimit,
+        practiceSize,
         timezone: deviceTimezone(),
       });
       setProfile(updated);
@@ -257,6 +260,24 @@ export function Settings() {
               ? t("settings.poolNoLimitNote")
               : t("settings.poolLimitNote", { count: activePoolLimit })}
           </p>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-medium">{t("settings.practiceSize")}</p>
+          <div className="grid grid-cols-3 gap-2">
+            {PRACTICE_SIZE_PRESETS.map((value) => (
+              <button
+                key={value}
+                onClick={() => setPracticeSize(value)}
+                className={`rounded-xl py-3 text-sm font-medium ${
+                  value === practiceSize ? "bg-accent text-white" : "bg-surface"
+                }`}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-subtext">{t("settings.practiceSizeNote", { count: practiceSize })}</p>
         </div>
 
         {message && <p className="text-sm text-teal">{message}</p>}

@@ -391,7 +391,10 @@ active → «Знаю»/«Отбросить»; queued → «Изучать се
 
 ## 10. Тренировка Práctica (`webapp/src/screens/Practice.tsx`)
 
-Интервальное дриллирование due-слов. `GET /practice/queue?limit=10` (клемп 1–30).
+Интервальное дриллирование due-слов. `GET /practice/queue?limit=` (клемп
+`clampPracticeSize`, 1–30, дефолт 10). Длину сессии задаёт пользователь в
+Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práctica передаёт её
+как `limit`.
 
 ### 10.1 Сборка очереди на сервере (`server/src/api/routes/practice.ts`)
 - `getDueForPractice(userId, now, limit)` — активные due-слова по `nextDueAt ASC`
@@ -571,6 +574,11 @@ IANA-таймзоной.
 - **Слова в изучении (`activePoolLimit`)** — пресеты `[10, 20, 30, 50, 0]` (0 =
   без лимита, диапазон 0–200). Повышение лимита триггерит `rebalanceActivePool`
   (долив очереди в освободившиеся слоты; понижение никогда не демоутит).
+- **Карточек за тренировку (`practiceSize`)** — пресеты `[5, 10, 20]` (дефолт
+  10). Сохраняется в профиле по «Сохранить»; экран Práctica запрашивает
+  `GET /practice/queue?limit=practiceSize` (сервер клемпит 1–30 через
+  `clampPracticeSize`). Несколько коротких сессий закрепляют лучше одной длинной
+  (distributed practice).
 - **Сброс прогресса** (деструктивно) — нативный `confirmDialog` → `DELETE
   /me/progress` (стирает банк, статьи, статистику; аккаунт и настройки остаются).
 
@@ -691,7 +699,7 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level`, `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
+| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level`, `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, `first_context`, `surface_form`, `pos`, `gender`, `note`, `context_translation`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
@@ -720,6 +728,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
   удаление `clean_streak`.
 - `0009` — `pending_quiz_item_id`, `pending_quiz_sent_at` (typed бот-квиз).
 - `0010` — `theme`, `font_size` (display-настройки в профиле).
+- `0011` — `practice_size` (размер сессии Práctica, default 10).
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -770,6 +779,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | Ротация тем | избегать 2 последних | `domain/topicRotation.ts` |
 | `active_pool_limit` | 0–200 (0 = без лимита), default 20 | `users` |
 | `bot_quizzes_per_day` | 0–12 | `users` |
+| `practice_size` (карточек за тренировку) | пресеты 5/10/20, клемп 1–30, default 10 | `users`, `domain/practiceSize.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |
 | Предгенерация | за 5 мин до доставки | `scheduler.ts` |
@@ -865,5 +875,5 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 
 ---
 
-*Последнее обновление реестра: 2026-07-13.*
+*Последнее обновление реестра: 2026-07-15.*
 *Не забудь обновить дату и содержимое при следующем изменении функционала.*
