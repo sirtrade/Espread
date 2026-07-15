@@ -11,7 +11,7 @@ import {
   type ReviewedItem,
   type SelectableItem,
 } from "../src/domain/bank.js";
-import { SRS_INTERVALS_DAYS } from "../src/domain/srs.js";
+import { READING_CREDIT_MAX_STAGE, SRS_INTERVALS_DAYS } from "../src/domain/srs.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 5, 1, 12, 0, 0);
@@ -134,19 +134,51 @@ describe("applyReviewToBank", () => {
     });
   });
 
-  it("graduates a top-rung word to learned on a clean exposure", () => {
-    const existing = new Map([["casa", item({ srsStage: SRS_INTERVALS_DAYS.length })]]);
+  it("advances a low-rung word on a clean exposure (at the reading-credit ceiling)", () => {
+    // stage 2 == READING_CREDIT_MAX_STAGE: reading still advances it one rung.
+    const existing = new Map([["casa", item({ srsStage: READING_CREDIT_MAX_STAGE, exposures: 2 })]]);
     const result = applyReviewToBank(existing, ["casa"], [], undefined, 0, NOW);
-    // Survived the whole ladder plus the final review — learned automatically.
-    expect(result.get("casa")).toMatchObject({ srsStage: SRS_INTERVALS_DAYS.length, status: "learned" });
+    expect(result.get("casa")).toMatchObject({
+      srsStage: READING_CREDIT_MAX_STAGE + 1,
+      exposures: 3,
+      lastCreditAt: NOW,
+      nextDueAt: NOW + SRS_INTERVALS_DAYS[READING_CREDIT_MAX_STAGE]! * DAY,
+      status: "active",
+    });
   });
 
-  it("does not graduate a top-rung word whose daily credit is already spent", () => {
+  it("does not advance a word past the reading-credit ceiling on a clean exposure", () => {
+    // stage 3 > READING_CREDIT_MAX_STAGE: passive reading counts the exposure
+    // but leaves the schedule untouched — only practice/bot advances it now.
+    const dueAt = NOW + 7 * DAY;
     const existing = new Map([
-      ["casa", item({ srsStage: SRS_INTERVALS_DAYS.length, lastCreditAt: NOW - 60_000 })],
+      ["casa", item({ srsStage: READING_CREDIT_MAX_STAGE + 1, exposures: 2, nextDueAt: dueAt })],
     ]);
     const result = applyReviewToBank(existing, ["casa"], [], undefined, 0, NOW);
-    expect(result.get("casa")?.status).toBe("active");
+    expect(result.get("casa")).toMatchObject({
+      srsStage: READING_CREDIT_MAX_STAGE + 1,
+      exposures: 3,
+      nextDueAt: dueAt,
+      lastCreditAt: null,
+      status: "active",
+    });
+  });
+
+  it("never graduates a top-rung word to learned from a clean reading exposure", () => {
+    // Reading can't graduate: a word at the top rung stays active with its
+    // schedule untouched. Graduation only happens through active recall.
+    const dueAt = NOW + 120 * DAY;
+    const existing = new Map([
+      ["casa", item({ srsStage: SRS_INTERVALS_DAYS.length, exposures: 5, nextDueAt: dueAt })],
+    ]);
+    const result = applyReviewToBank(existing, ["casa"], [], undefined, 0, NOW);
+    expect(result.get("casa")).toMatchObject({
+      srsStage: SRS_INTERVALS_DAYS.length,
+      exposures: 6,
+      nextDueAt: dueAt,
+      lastCreditAt: null,
+      status: "active",
+    });
   });
 
   it("soft-lapses a top-rung word instead of graduating it when re-marked", () => {
@@ -284,13 +316,17 @@ describe("applyReviewToBank with an active-pool limit", () => {
     expect(result.get("a0")?.status).toBe("active");
   });
 
-  it("gives a slot freed by a word maturing this session to a new word", () => {
-    // a0 is one clean exposure away from maturing past the slot threshold.
+  it("keeps a ceiling-stage word in its slot on a clean reading exposure (reading no longer matures it out)", () => {
+    // a0 sits at POOL_SLOT_MAX_STAGE, above the reading-credit ceiling
+    // (READING_CREDIT_MAX_STAGE): a clean reading exposure no longer advances it,
+    // so it keeps occupying its slot and a new word is queued. Only active recall
+    // in practice can push it past the pool threshold now.
+    expect(POOL_SLOT_MAX_STAGE).toBeGreaterThan(READING_CREDIT_MAX_STAGE);
     const bank = activeBank(20);
     bank.set("a0", item({ lemma: "a0", srsStage: POOL_SLOT_MAX_STAGE }));
     const result = applyReviewToBank(bank, ["a0"], [reviewed({ lemma: "nuevo" })], undefined, 20, NOW);
-    expect(result.get("a0")?.srsStage).toBe(POOL_SLOT_MAX_STAGE + 1);
-    expect(result.get("nuevo")?.status).toBe("active");
+    expect(result.get("a0")?.srsStage).toBe(POOL_SLOT_MAX_STAGE);
+    expect(result.get("nuevo")?.status).toBe("queued");
   });
 
   it("ignores rejected/rare words regardless of the limit", () => {

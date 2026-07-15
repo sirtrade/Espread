@@ -103,6 +103,7 @@ export interface Dict {
   "review.wovenHint": (p: { streak: number }) => string;
   "review.wovenHintSrs": string;
   "review.markedAgain": string;
+  "review.wovenPractice": string;
   "review.readyToMaster": string;
   "review.streakProgress": (p: { filled: number; total: number }) => string;
   "review.wovenNextIn": (p: { days: number }) => string;
@@ -302,8 +303,10 @@ const es: Dict = {
   "review.yourWords": "Tus palabras en este artículo",
   "review.wovenHint": ({ streak }) =>
     `Cada lectura sin volver a marcarlas te acerca a dominarlas (${streak} de ${streak}).`,
-  "review.wovenHintSrs": "Cada lectura sin volver a marcarlas las espacia más en el tiempo.",
+  "review.wovenHintSrs":
+    "La lectura espacia las palabras nuevas; practícalas para avanzar más y dominarlas.",
   "review.markedAgain": "Vuelta a marcar · vuelve pronto",
+  "review.wovenPractice": "Practícala para avanzar",
   "review.readyToMaster": "¡Lista para dominar!",
   "review.streakProgress": ({ filled, total }) => `${filled} / ${total} para dominarla`,
   "review.wovenNextIn": ({ days }) => (days <= 1 ? "Vuelve mañana" : `Vuelve en ${days} días`),
@@ -509,8 +512,10 @@ const ru: Dict = {
   "review.yourWords": "Ваши слова в этой статье",
   "review.wovenHint": ({ streak }) =>
     `Каждое чтение без повторной отметки приближает вас к их освоению (${streak} из ${streak}).`,
-  "review.wovenHintSrs": "Каждое чтение без повторной отметки отодвигает слово дальше по времени.",
+  "review.wovenHintSrs":
+    "Чтение отодвигает новые слова; тренируй их, чтобы продвинуть дальше и освоить.",
   "review.markedAgain": "Отмечено снова · скоро вернётся",
+  "review.wovenPractice": "Тренируй, чтобы продвинуть",
   "review.readyToMaster": "Готово к освоению!",
   "review.streakProgress": ({ filled, total }) => `${filled} / ${total} до освоения`,
   "review.wovenNextIn": ({ days }) => (days <= 1 ? "Вернётся завтра" : `Вернётся через ${days} дн.`),
@@ -717,8 +722,10 @@ const en: Dict = {
   "review.yourWords": "Your words in this article",
   "review.wovenHint": ({ streak }) =>
     `Each reading without marking them again brings you closer to mastering them (${streak} of ${streak}).`,
-  "review.wovenHintSrs": "Each reading without re-marking spaces the word out further.",
+  "review.wovenHintSrs":
+    "Reading spaces out newer words; practice them to advance further and master them.",
   "review.markedAgain": "Marked again · back soon",
+  "review.wovenPractice": "Practice to advance",
   "review.readyToMaster": "Ready to master!",
   "review.streakProgress": ({ filled, total }) => `${filled} / ${total} to master it`,
   "review.wovenNextIn": ({ days }) => (days <= 1 ? "Back tomorrow" : `Back in ${days} days`),

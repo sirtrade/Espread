@@ -3,6 +3,12 @@ export const SRS_INTERVALS_DAYS = [1, 3, 7, 14, 30, 60, 120] as const;
 
 export const SRS_MAX_STAGE = SRS_INTERVALS_DAYS.length;
 
+/** Highest rung a clean reading exposure may advance a word from. Mirrors the
+ *  server (`READING_CREDIT_MAX_STAGE` in server/src/domain/srs.ts): past this
+ *  rung, reading no longer moves the schedule — the word advances only through
+ *  practice/bot. Used on the Review screen to describe what a reading did. */
+export const READING_CREDIT_MAX_STAGE = 2;
+
 /** Days until the next review for a 1-based stage (clamped into the ladder). */
 export function intervalDaysForStage(stage: number): number {
   const idx = Math.min(Math.max(stage, 1), SRS_INTERVALS_DAYS.length) - 1;
