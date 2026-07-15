@@ -645,6 +645,34 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 `correct + usedHint` и повторный успех в те же локальные сутки журналируются,
 хотя расписание не меняется. Несуществующий item не создаёт запись.
 
+### 10.2.1 Грамматические карточки в Práctica (F-14)
+Due-единицы `grammar_items` (active, таймер истёк) подмешиваются в ту же
+очередь `/practice/queue` (общий `practiceSize`, общий шафл и cross-card
+anti-leak; `due` в ответе включает грамматику).
+- **Сборка карточки** (`domain/grammarPractice.ts`, `buildGrammarQueueCard`):
+  на ступенях `< GRAMMAR_TYPED_MIN_STAGE = 2` — MC cloze (пропуск `___`,
+  4 варианта: правильная форма + сохранённые options); от 2 — **typed cloze**
+  (в payload `answer: ""`, `options: []`, accepted-формы не покидают сервер).
+  Битый/небезопасный exercise (нет пропуска, ответ читается в prompt, < 4
+  вариантов) пропускается, карточка не выдаётся. `leakAnswers` — все
+  accepted-формы (участвуют в cross-card защите).
+- **Подсказка** — `pattern` + `explanation` (дизайн §7): показываются по
+  запросу; значения, содержащие accepted-форму, обнуляются в payload; для
+  typed подсказка тоже кнопкой, `usedHint` уезжает с ответом.
+- **Ответ** — `POST /practice/answer {grammarItemId, ...}` (взаимоисключим с
+  `itemId`/`lemma`): typed грейдится на сервере `gradeTypedAnswer` по
+  `acceptedAnswers` (те же правила акцентов/опечатки), фидбек — форма +
+  восстановленное предложение + pattern/explanation.
+  `applyGrammarPracticeAnswer` зеркалит лексические правила: кредит не чаще
+  раза в локальные сутки, `usedHint` — без кредита, ошибка — мягкий lapse
+  (−2 ступени, повтор через 10 мин), успех на верхней ступени — graduation в
+  `learned`. Чтение/weaving grammar SRS не двигают; клиентские ретраи на
+  сервер не уходят (first-attempt-only, как у слов).
+- **Журнал**: ответы грамматики пока НЕ пишутся в `practice_answers`
+  (лексический FK) — полиморфный журнал — это F-15.
+- UI: бейдж «Грамматика · <категория>», после ответа показываются pattern и
+  объяснение; свободное письмо к грамматическим карточкам не предлагается.
+
 ### 10.3 Runner викторины (`webapp/src/components/QuizSession.tsx`)
 Общий для Quiz и Práctica.
 - **Повтор ошибок в сессии**: неверная карточка ставится в хвост очереди
@@ -1131,6 +1159,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `MAX_CONTEXTS` | 5 | `domain/contexts.ts` |
 | Окно / low / high level suggestion | 5 / `<2%` / `>8%` (все 5) | `domain/levelSuggestion.ts` |
 | `MAX_GRAMMAR_CANDIDATES_PER_REVIEW` | 5 | `domain/grammar.ts` |
+| `GRAMMAR_TYPED_MIN_STAGE` (typed cloze грамматики) | 2 | `domain/grammarPractice.ts` |
 | `grammar_active_pool_limit` | 0–50 (0 = без лимита), default 10 | `users`, `domain/grammarLifecycle.ts` |
 | Cooldown level suggestion | 14 локальных календарных дней | `domain/levelSuggestion.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |

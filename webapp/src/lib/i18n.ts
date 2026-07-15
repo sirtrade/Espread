@@ -255,6 +255,8 @@ export interface Dict {
   "quizSession.retry": string;
   "quizSession.exit": string;
   "quizSession.typeWord": string;
+  "quizSession.typeForm": string;
+  "practice.grammarBadge": string;
   "quizSession.typePlaceholder": string;
   "quizSession.submit": string;
   "quizSession.verdictExact": string;
@@ -516,6 +518,8 @@ const es: Dict = {
   "quizSession.retry": "repaso",
   "quizSession.exit": "Terminar",
   "quizSession.typeWord": "Escribe la palabra en español:",
+  "quizSession.typeForm": "Escribe la forma que falta:",
+  "practice.grammarBadge": "Gramática",
   "quizSession.typePlaceholder": "Tu respuesta...",
   "quizSession.submit": "Responder",
   "quizSession.verdictExact": "✅ ¡Correcto!",
@@ -778,6 +782,8 @@ const ru: Dict = {
   "quizSession.retry": "повтор",
   "quizSession.exit": "Завершить",
   "quizSession.typeWord": "Напишите слово по-испански:",
+  "quizSession.typeForm": "Впишите пропущенную форму:",
+  "practice.grammarBadge": "Грамматика",
   "quizSession.typePlaceholder": "Ваш ответ...",
   "quizSession.submit": "Ответить",
   "quizSession.verdictExact": "✅ Верно!",
@@ -1040,6 +1046,8 @@ const en: Dict = {
   "quizSession.retry": "retry",
   "quizSession.exit": "Finish",
   "quizSession.typeWord": "Type the word in Spanish:",
+  "quizSession.typeForm": "Type the missing form:",
+  "practice.grammarBadge": "Grammar",
   "quizSession.typePlaceholder": "Your answer...",
   "quizSession.submit": "Answer",
   "quizSession.verdictExact": "✅ Correct!",

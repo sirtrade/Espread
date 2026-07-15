@@ -298,7 +298,16 @@ export interface VocabularyStats {
 export type TypedVerdict = "exact" | "spelling" | "wrong";
 
 export interface PracticeCard {
-  itemId: number;
+  /** lexical bank item; null for grammar cards */
+  itemId: number | null;
+  /** grammar unit; null/absent for word cards */
+  grammarItemId?: number | null;
+  /** what the card drills; treat absence as "word" */
+  kind?: "word" | "grammar";
+  /** grammar cards: closed category + leak-safe hint material */
+  category?: GrammarCategory | null;
+  pattern?: string | null;
+  explanation?: string | null;
   /** Null for typed cards until the answer endpoint reveals the proper form. */
   lemma: string | null;
   isPhrase: boolean;
@@ -341,6 +350,9 @@ export interface PracticeAnswerResult {
   /** typed answers only: revealed after grading for corrective feedback */
   context?: string | null;
   contextTranslation?: string | null;
+  /** grammar answers only: display pattern + explanation for feedback */
+  pattern?: string | null;
+  explanation?: string | null;
 }
 
 export interface SentenceCheckResult {

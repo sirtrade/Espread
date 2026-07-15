@@ -1,8 +1,15 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { grammarItems } from "../schema.js";
 import { queuedPromotionCount } from "../../domain/bank.js";
-import { resetSrs } from "../../domain/srs.js";
+import {
+  advanceSrs,
+  creditAllowedToday,
+  graduatesOnSuccess,
+  lapseSrs,
+  PRACTICE_RETRY_MS,
+  resetSrs,
+} from "../../domain/srs.js";
 import type { GrammarStatus } from "../../domain/grammarLifecycle.js";
 
 export type GrammarItemRow = typeof grammarItems.$inferSelect;
@@ -47,6 +54,101 @@ export async function countGrammarByStatus(userId: number, status: GrammarStatus
     .from(grammarItems)
     .where(and(eq(grammarItems.userId, userId), eq(grammarItems.status, status)));
   return row?.count ?? 0;
+}
+
+export async function getGrammarItemById(userId: number, itemId: number): Promise<GrammarItemRow | undefined> {
+  return db.query.grammarItems.findFirst({
+    where: and(eq(grammarItems.userId, userId), eq(grammarItems.id, itemId)),
+  });
+}
+
+function dueGrammarWhere(userId: number, now: number) {
+  return and(
+    eq(grammarItems.userId, userId),
+    eq(grammarItems.status, "active"),
+    or(isNull(grammarItems.nextDueAt), lte(grammarItems.nextDueAt, now)),
+  );
+}
+
+/** Active grammar units whose SRS timer has expired (or never started). */
+export async function getDueGrammarForPractice(userId: number, now: number, limit: number): Promise<GrammarItemRow[]> {
+  return db.query.grammarItems.findMany({
+    where: dueGrammarWhere(userId, now),
+    orderBy: [asc(grammarItems.nextDueAt)],
+    limit,
+  });
+}
+
+export async function countDueGrammarForPractice(userId: number, now: number): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(grammarItems)
+    .where(dueGrammarWhere(userId, now));
+  return row?.count ?? 0;
+}
+
+export interface GrammarPracticeAnswerResult {
+  itemId: number;
+  pattern: string;
+  srsStage: number;
+  nextDueAt: number;
+  status: GrammarStatus;
+  /** the unit climbed a rung this answer (first-try correct, within the daily cap) */
+  advanced: boolean;
+}
+
+/**
+ * Applies one grammar practice answer to the shared SRS ladder, mirroring the
+ * lexical `applyPracticeAnswer` semantics exactly: first-try-correct climbs a
+ * rung at most once per local calendar day, top-rung success graduates to
+ * `learned`, a hinted correct answer earns no credit, and a wrong answer
+ * soft-lapses (2 rungs down, due again shortly). Practice is the ONLY thing
+ * that moves grammar SRS — reading/weaving never call this (design §6).
+ */
+export async function applyGrammarPracticeAnswer(
+  userId: number,
+  itemId: number,
+  correct: boolean,
+  now = Date.now(),
+  usedHint = false,
+  timeZone = "UTC",
+): Promise<GrammarPracticeAnswerResult | undefined> {
+  const item = await getGrammarItemById(userId, itemId);
+  if (!item) return undefined;
+
+  let srsStage = item.srsStage;
+  let nextDueAt = item.nextDueAt ?? now;
+  let lastCreditAt = item.lastCreditAt;
+  let status = item.status;
+  let advanced = false;
+
+  if (!correct) {
+    const s = lapseSrs(item.srsStage, now, PRACTICE_RETRY_MS);
+    srsStage = s.srsStage;
+    nextDueAt = s.nextDueAt;
+  } else if (usedHint) {
+    // Correct after revealing the pattern/explanation hint: no credit, the
+    // schedule stays put so the construction must be retrieved unaided later.
+  } else if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
+    if (graduatesOnSuccess(item.srsStage)) {
+      status = "learned";
+      lastCreditAt = now;
+      advanced = true;
+    } else {
+      const s = advanceSrs(item.srsStage, now);
+      srsStage = s.srsStage;
+      nextDueAt = s.nextDueAt;
+      lastCreditAt = now;
+      advanced = true;
+    }
+  }
+
+  await db
+    .update(grammarItems)
+    .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
+    .where(eq(grammarItems.id, itemId));
+
+  return { itemId, pattern: item.pattern, srsStage, nextDueAt, status, advanced };
 }
 
 /**

@@ -52,6 +52,9 @@ export const practiceAnswerSchema = z
   .object({
     itemId: z.number().int().positive().optional(),
     lemma: z.string().trim().min(1).max(80).optional(),
+    // Grammar-track cards answer by their own id (F-14); mutually exclusive
+    // with the lexical identifiers above.
+    grammarItemId: z.number().int().positive().optional(),
     // Multiple-choice answers report their own correctness; typed-recall answers
     // send the raw text and the server grades it (`typedAnswer`) — one or the
     // other is required. When `typedAnswer` is present `correct` is ignored.
@@ -71,7 +74,10 @@ export const practiceAnswerSchema = z
     // answer then earns no SRS credit (retrieval was scaffolded, not recalled).
     usedHint: z.boolean().optional(),
   })
-  .refine((d) => d.itemId != null || d.lemma != null, "Se requiere itemId o lemma")
+  .refine(
+    (d) => d.itemId != null || d.lemma != null || d.grammarItemId != null,
+    "Se requiere itemId, lemma o grammarItemId",
+  )
   .refine((d) => d.correct != null || d.typedAnswer != null, "Se requiere correct o typedAnswer");
 
 export const practiceSentenceSchema = z.object({

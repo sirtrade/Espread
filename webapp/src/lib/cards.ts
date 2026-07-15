@@ -1,4 +1,4 @@
-import type { PracticeCard, Pos, ReviewItem } from "../api/types.js";
+import type { GrammarCategory, PracticeCard, Pos, ReviewItem } from "../api/types.js";
 
 /**
  * The unified question model shared by both training screens (post-reading
@@ -9,8 +9,16 @@ import type { PracticeCard, Pos, ReviewItem } from "../api/types.js";
 export interface SessionCard {
   /** stable React key + answer routing id */
   key: string;
-  /** present for Práctica (server cards); absent for Quiz (routed by lemma) */
+  /** present for Práctica word cards (server cards); absent for Quiz (routed by lemma) */
   itemId?: number;
+  /** present for Práctica grammar cards, which route answers by this id */
+  grammarItemId?: number;
+  /** what the card drills; treat absence as "word" */
+  kind?: "word" | "grammar";
+  /** grammar cards: category + hint material (pattern/explanation, leak-safe) */
+  category?: GrammarCategory | null;
+  pattern?: string | null;
+  explanation?: string | null;
   lemma: string;
   /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
    *  word (Práctica only; the answer is graded on the server). */
@@ -256,10 +264,18 @@ export function buildQuizCards(items: readonly ReviewItem[], max = 5, random: ()
 
 /** Maps a server-built Práctica card into the shared session model. */
 export function fromPracticeCard(card: PracticeCard): SessionCard {
+  const grammar = card.kind === "grammar";
   return {
-    key: String(card.itemId),
-    itemId: card.itemId,
-    lemma: card.lemma ?? "",
+    key: grammar ? `g${card.grammarItemId}` : String(card.itemId),
+    itemId: card.itemId ?? undefined,
+    grammarItemId: card.grammarItemId ?? undefined,
+    kind: card.kind ?? "word",
+    category: card.category ?? null,
+    pattern: card.pattern ?? null,
+    explanation: card.explanation ?? null,
+    // Grammar cards are titled by their pattern in summaries/feedback (typed
+    // cards may carry null until the answer response reveals it).
+    lemma: grammar ? (card.pattern ?? "") : (card.lemma ?? ""),
     type: card.type,
     prompt: card.prompt,
     answer: card.answer,

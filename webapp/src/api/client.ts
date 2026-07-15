@@ -150,7 +150,7 @@ export const api = {
   // correctness; typed-recall answers send the raw text and the server grades
   // it. Both drive the same learning + SRS update.
   postPracticeAnswer: (
-    target: { itemId: number } | { lemma: string },
+    target: { itemId: number } | { lemma: string } | { grammarItemId: number },
     answer:
       | {
           correct: boolean;
@@ -161,6 +161,7 @@ export const api = {
       | {
           typedAnswer: string;
           contextAddedAt?: number | null;
+          usedHint?: boolean;
           cardType: "typed";
           latencyMs: number;
         },

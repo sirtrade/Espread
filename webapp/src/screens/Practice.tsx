@@ -98,23 +98,30 @@ export function Practice() {
       cards={cards}
       pendingCount={due}
       onAnswer={(card, correct, usedHint, latencyMs) =>
-        api.postPracticeAnswer({ itemId: card.itemId! }, { correct, usedHint, cardType: card.type, latencyMs })
+        api.postPracticeAnswer(
+          card.kind === "grammar" ? { grammarItemId: card.grammarItemId! } : { itemId: card.itemId! },
+          { correct, usedHint, cardType: card.type, latencyMs },
+        )
       }
-      onTypedAnswer={async (card, typedAnswer, latencyMs) => {
+      onTypedAnswer={async (card, typedAnswer, latencyMs, usedHint) => {
         const res = await api.postPracticeAnswer(
-          { itemId: card.itemId! },
-          { typedAnswer, contextAddedAt: card.contextAddedAt, cardType: "typed", latencyMs },
+          card.kind === "grammar" ? { grammarItemId: card.grammarItemId! } : { itemId: card.itemId! },
+          { typedAnswer, contextAddedAt: card.contextAddedAt, usedHint, cardType: "typed", latencyMs },
         );
-        // Typed queue payloads intentionally omit the lemma. Reveal only the
-        // server-returned proper form after the first attempt for feedback,
-        // summary, retries and the optional writing exercise.
-        card.lemma = res.answer ?? "";
+        // Typed queue payloads intentionally omit the lemma (and a grammar
+        // card's leaking pattern/explanation). Reveal only the server-returned
+        // material after the first attempt for feedback, summary and retries.
+        card.lemma = (card.kind === "grammar" ? res.pattern : res.answer) ?? res.answer ?? "";
         card.context = res.context ?? null;
         card.contextTranslation = res.contextTranslation ?? null;
+        if (card.kind === "grammar") {
+          card.pattern = res.pattern ?? card.pattern ?? null;
+          card.explanation = res.explanation ?? card.explanation ?? null;
+        }
         return {
           correct: res.correct ?? false,
           verdict: res.verdict ?? "wrong",
-          answer: card.lemma,
+          answer: res.answer ?? "",
           outcome: res,
         };
       }}

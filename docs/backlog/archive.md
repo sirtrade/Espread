@@ -4,6 +4,25 @@
 > `- **Выполнено:** <дата>, <ветка или PR #N>` в начало карточки и удали её из
 > исходного списка (в том же PR, что и реализация). Порядок — новые сверху.
 
+## F-14. Грамматические карточки в Práctica
+- **Выполнено:** 2026-07-15, ветка `claude/learned-words-tracking-bugs-ntktwe`
+- **Приоритет:** P3
+- **Проблема/мотивация:** Одного объяснения недостаточно: конструкцию нужно
+  активно выбирать и воспроизводить с интервальными повторениями.
+- **Что сделать:** Добавить grammar MC cloze на ступенях 0–1 и серверно
+  проверяемый typed cloze на 2+, смешивание с лексикой, подсказку без кредита,
+  мягкий lapse, daily credit, graduation и cross-card anti-leak. Telegram и
+  weaving не включать.
+- **Критерии приёмки:** answer отсутствует в видимом prompt/переводе; typed
+  грейдится по accepted forms на сервере; клиентские ретраи не пишут SRS;
+  grammar reading exposure не двигает ступень; доменные и интеграционные тесты,
+  typecheck/test/build проходят.
+- **Детали/ссылки:** `docs/grammar-track-design.md` §6–8;
+  `server/src/domain/practice.ts`, `webapp/src/components/QuizSession.tsx`.
+- **Зависимость:** F-13.
+
+---
+
 ## F-13. Grammar Review и Bank UX
 - **Выполнено:** 2026-07-15, ветка `claude/learned-words-tracking-bugs-ntktwe`
 - **Приоритет:** P3
