@@ -16,7 +16,7 @@ export interface CallJsonParams<T> {
   messages: Anthropic.MessageParam[];
   // Input typed as unknown so schemas with transforms (input ≠ output) fit.
   schema: z.ZodType<T, z.ZodTypeDef, unknown>;
-  kind: "search" | "generate" | "review" | "practice" | "enrich";
+  kind: "search" | "generate" | "review" | "practice" | "enrich" | "audit" | "rewrite";
   userId: number | null;
   model: string;
   maxTokens: number;

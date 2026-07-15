@@ -33,6 +33,31 @@ function fakeMessage(body: unknown): Anthropic.Message {
   } as Anthropic.Message;
 }
 
+// Neutral filler used to pad the tiny test bodies past the pipeline's minimum
+// word count so the deterministic length check doesn't force a rewrite. Chosen
+// to avoid stem-collisions with any woven term asserted in these tests.
+const FILLER_SENTENCE =
+  "Por su parte, muchos grupos siguen la situación muy cerca y comparten sus opiniones con gran interés cada semana.";
+
+function padBody(core: string): string {
+  return [core, ...Array(13).fill(FILLER_SENTENCE)].join(" ");
+}
+
+/** A quality verdict that passes cleanly, so no rewrite is triggered. */
+function passingVerdict() {
+  return {
+    estimatedLevel: "B1",
+    naturalness: 5,
+    cefrFit: 5,
+    readability: 5,
+    factualGrounding: 5,
+    issues: [],
+  };
+}
+
+// Each article generation now makes three LLM calls: search, write, and an
+// independent quality audit. The audit is mocked to pass so the pipeline keeps
+// the written draft unchanged.
 function mockSearchAndWrite(title: string, body: string) {
   createMock
     .mockResolvedValueOnce(
@@ -42,7 +67,8 @@ function mockSearchAndWrite(title: string, body: string) {
         source_url: "https://example.com/noticia",
       }),
     )
-    .mockResolvedValueOnce(fakeMessage({ title, body }));
+    .mockResolvedValueOnce(fakeMessage({ title, body: padBody(body) }))
+    .mockResolvedValueOnce(fakeMessage(passingVerdict()));
 }
 
 describe("generate -> review -> complete cycle (mocked LLM)", () => {
@@ -162,8 +188,9 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     );
 
     const { session: session2 } = await startReading(userId);
-    // calls: 0=cycle1 search, 1=cycle1 write, 2=cycle1 review, 3=cycle2 search, 4=cycle2 write
-    const writeCallArgs = createMock.mock.calls[4]?.[0] as { system: string };
+    // calls: 0=cycle1 search, 1=cycle1 write, 2=cycle1 audit, 3=cycle1 review,
+    //        4=cycle2 search, 5=cycle2 write, 6=cycle2 audit
+    const writeCallArgs = createMock.mock.calls[5]?.[0] as { system: string };
     expect(writeCallArgs.system).toContain("hallazgo");
     // Woven lemmas may be inflected; the exact-form requirement is gone.
     expect(writeCallArgs.system).toContain("cualquier forma flexionada");
@@ -559,6 +586,87 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
 
     // The review item also carries the marked sentence for the card.
     expect(view.items[0]?.contextSentence).toBe(sentence);
+  });
+
+  it("saves the rewritten version when the audit fails, keeping source metadata and re-verifying woven terms", async () => {
+    const user = await findOrCreateUser(999010, "rewritetest");
+    await setUserTopics(user.id, ["Arte"]);
+
+    // Cycle 1: seed "escultura" into the active bank so cycle 2 offers it for weaving.
+    const seedSentence = "La escultura del parque atrajo a muchos visitantes.";
+    mockSearchAndWrite("Arte urbano", `${seedSentence} La ciudad planea más obras.`);
+    const { session: seedSession } = await startReading(user.id);
+    createMock.mockResolvedValueOnce(
+      fakeMessage({
+        items: [
+          {
+            surface: "escultura",
+            lemma: "escultura",
+            pos: "noun",
+            gender: "f",
+            translation: "скульптура",
+            note: null,
+            contextTranslation: "Скульптура в парке привлекла много посетителей.",
+            freqBand: "top5000",
+            distractors: ["pintura", "estatura", "fachada"],
+          },
+        ],
+      }),
+    );
+    await updateSessionMarks(seedSession.id, [{ text: "escultura", sentence: seedSentence, kind: "word" }]);
+    await reviewSession(user.id);
+    await completeSession(user.id);
+
+    // Cycle 2: the draft does NOT contain the target word and fails the audit;
+    // the rewrite weaves it in and passes. The draft body must not survive.
+    const draftBody = padBody("El museo abrió una sala nueva con obras clásicas de gran valor.");
+    const rewrittenBody = padBody("El museo abrió una sala nueva y presentó una escultura moderna al público.");
+    createMock
+      .mockResolvedValueOnce(
+        fakeMessage({
+          facts: "Un museo de la región inauguró una sala nueva este mes.",
+          source_name: "Diario de Prueba",
+          source_url: "https://example.com/noticia",
+        }),
+      )
+      .mockResolvedValueOnce(fakeMessage({ title: "Sala nueva", body: draftBody, usedTerms: [] }))
+      .mockResolvedValueOnce(
+        fakeMessage({
+          estimatedLevel: "B2",
+          naturalness: 2,
+          cefrFit: 3,
+          readability: 4,
+          factualGrounding: 5,
+          issues: [
+            {
+              category: "collocation",
+              severity: "major",
+              excerpt: "obras clásicas de gran valor",
+              suggestion: "suena a cliché vacío; reformula con naturalidad",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(fakeMessage({ title: "Sala nueva", body: rewrittenBody, usedTerms: ["escultura"] }))
+      .mockResolvedValueOnce(fakeMessage(passingVerdict()));
+
+    const { article } = await startReading(user.id);
+
+    // The final (rewritten) version is what got persisted, not the draft.
+    expect(article.body).toBe(rewrittenBody);
+    expect(article.title).toBe("Sala nueva");
+    // Source metadata comes from the search step and survives the rewrite.
+    expect(article.sourceName).toBe("Diario de Prueba");
+    expect(article.sourceUrl).toBe("https://example.com/noticia");
+    // Woven-term verification ran against the FINAL body: the draft lacked the
+    // word, the rewrite added it, so it counts as woven.
+    expect(JSON.parse(article.targetTerms)).toEqual(["escultura"]);
+
+    // The rewrite prompt carried the auditor's concrete complaint to the editor.
+    const calls = createMock.mock.calls;
+    const rewriteCall = calls[calls.length - 2]?.[0] as { system: string; messages: { content: string }[] };
+    expect(rewriteCall.system).toContain("CORRIGE");
+    expect(rewriteCall.messages[0]?.content).toContain("obras clásicas de gran valor");
   });
 
   it("sends a rare word to ignored instead of the active bank", async () => {

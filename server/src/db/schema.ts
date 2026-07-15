@@ -169,7 +169,9 @@ export const llmCalls = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-    kind: text("kind", { enum: ["search", "generate", "review", "practice", "enrich"] }).notNull(),
+    kind: text("kind", {
+      enum: ["search", "generate", "review", "practice", "enrich", "audit", "rewrite"],
+    }).notNull(),
     model: text("model").notNull(),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),

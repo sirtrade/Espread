@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Запуск проекта локально: cloudflared quick tunnel + сервер.
-# Туннельный URL меняется при каждом запуске, скрипт сам прописывает его в server/.env.
+# Туннельный URL меняется при каждом запуске, скрипт сам прописывает его в корневой .env.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -39,11 +39,15 @@ if [ -z "$TUNNEL_URL" ]; then
 fi
 echo "Туннель: $TUNNEL_URL"
 
-# --- Прописываем URL в server/.env -------------------------------------------
-sed -i '' "s|^WEBAPP_URL=.*|WEBAPP_URL=$TUNNEL_URL|" server/.env
-echo "WEBAPP_URL обновлён в server/.env"
+# --- Прописываем URL в корневой .env -----------------------------------------
+sed -i '' "s|^WEBAPP_URL=.*|WEBAPP_URL=$TUNNEL_URL|" .env
+echo "WEBAPP_URL обновлён в .env"
 
 # --- Сервер (foreground; Ctrl+C останавливает и сервер, и туннель) ------------
 cd server
 echo "Запускаю сервер на порту $PORT..."
-node --env-file=.env dist/main.js
+NODE_ENV=development \
+PORT="$PORT" \
+DB_PATH=./data/lector.db \
+STATIC_DIR=../webapp/dist \
+node --env-file=../.env dist/main.js

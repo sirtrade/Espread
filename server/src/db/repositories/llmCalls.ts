@@ -5,7 +5,7 @@ import { computeCostMicros } from "../../llm/pricing.js";
 
 export async function recordLlmCall(params: {
   userId: number | null;
-  kind: "search" | "generate" | "review" | "practice" | "enrich";
+  kind: "search" | "generate" | "review" | "practice" | "enrich" | "audit" | "rewrite";
   model: string;
   inputTokens: number;
   outputTokens: number;

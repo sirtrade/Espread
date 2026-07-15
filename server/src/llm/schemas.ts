@@ -24,6 +24,53 @@ export const articleStepSchema = z.object({
 });
 export type ArticleStepResult = z.infer<typeof articleStepSchema>;
 
+/** Categories of quality problems the auditor (or local checks) can flag. */
+export const qualityIssueCategorySchema = z.enum([
+  "collocation",
+  "register",
+  "grammar",
+  "lexicon",
+  "facts",
+  "length",
+  "forced_vocab",
+  "cohesion",
+]);
+export type QualityIssueCategory = z.infer<typeof qualityIssueCategorySchema>;
+
+export const qualityIssueSchema = z.object({
+  category: qualityIssueCategorySchema,
+  severity: z.enum(["minor", "major"]),
+  // Optional verbatim fragment from the article that illustrates the problem.
+  excerpt: z
+    .string()
+    .max(200)
+    .nullish()
+    .transform((v) => v || null),
+  suggestion: z.string().min(1).max(300),
+});
+export type QualityIssue = z.infer<typeof qualityIssueSchema>;
+
+/**
+ * The independent quality auditor's verdict on a draft. Deliberately does NOT
+ * include a boolean "pass": the server decides whether to rewrite from the
+ * scores, the major issues and its own deterministic checks, so a lenient model
+ * cannot wave a weak text through.
+ */
+export const articleQualityVerdictSchema = z.object({
+  estimatedLevel: z.enum(["A2", "B1", "B2", "C1", "C2"]),
+  // 1 = poor, 5 = excellent.
+  naturalness: z.number().int().min(1).max(5),
+  cefrFit: z.number().int().min(1).max(5),
+  readability: z.number().int().min(1).max(5),
+  factualGrounding: z.number().int().min(1).max(5),
+  issues: z
+    .array(qualityIssueSchema)
+    .max(12)
+    .nullish()
+    .transform((v) => v ?? []),
+});
+export type ArticleQualityVerdict = z.infer<typeof articleQualityVerdictSchema>;
+
 export const sentenceCheckSchema = z.object({
   ok: z.boolean(),
   feedback: z.string().min(1),

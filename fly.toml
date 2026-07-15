@@ -1,0 +1,32 @@
+app = "espreading-lector"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  LOG_LEVEL = "info"
+  DB_PATH = "/data/lector.db"
+  MODEL = "claude-sonnet-4-6"
+  JWT_TTL_SECONDS = "3600"
+  DAILY_ARTICLE_LIMIT = "10"
+  DAILY_REVIEW_LIMIT = "20"
+  DAILY_PRACTICE_LLM_LIMIT = "30"
+
+[mounts]
+  source = "lector_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # The bot uses long polling, so the machine must never be stopped.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
