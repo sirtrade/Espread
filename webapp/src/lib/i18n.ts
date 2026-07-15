@@ -185,6 +185,7 @@ export interface Dict {
   "practice.emptyTitle": string;
   "practice.emptyBody": string;
   "practice.writeSentence": (p: { lemma: string }) => string;
+  "practice.writePrompt": string;
   "practice.writePlaceholder": (p: { lemma: string }) => string;
   "practice.check": string;
   "practice.checking": string;
@@ -391,6 +392,7 @@ const es: Dict = {
   "practice.emptyBody":
     "Las palabras aparecen aquí cuando les toca repaso. ¡Sigue leyendo para llenar tu banco!",
   "practice.writeSentence": ({ lemma }) => `✍️ Escribir una frase con «${lemma}»`,
+  "practice.writePrompt": "Ya dominas esta palabra: reafírmala escribiendo tu propia frase.",
   "practice.writePlaceholder": ({ lemma }) => `Escribe una frase usando «${lemma}»...`,
   "practice.check": "Revisar",
   "practice.checking": "Revisando...",
@@ -598,6 +600,7 @@ const ru: Dict = {
   "practice.emptyBody":
     "Слова появляются здесь, когда им пора на повтор. Продолжайте читать, чтобы наполнить свой банк!",
   "practice.writeSentence": ({ lemma }) => `✍️ Написать фразу со словом «${lemma}»`,
+  "practice.writePrompt": "Ты хорошо знаешь это слово — закрепи его, написав своё предложение.",
   "practice.writePlaceholder": ({ lemma }) => `Напишите фразу со словом «${lemma}»...`,
   "practice.check": "Проверить",
   "practice.checking": "Проверка...",
@@ -805,6 +808,7 @@ const en: Dict = {
   "practice.emptyBody":
     "Words appear here when they're due for review. Keep reading to fill your bank!",
   "practice.writeSentence": ({ lemma }) => `✍️ Write a sentence with «${lemma}»`,
+  "practice.writePrompt": "You know this word well — reinforce it by writing your own sentence.",
   "practice.writePlaceholder": ({ lemma }) => `Write a sentence using «${lemma}»...`,
   "practice.check": "Check",
   "practice.checking": "Checking...",

@@ -63,8 +63,10 @@ interface QuizSessionProps {
   /** Called from the final summary's button. */
   onFinish: (summary: { correct: number; total: number }) => void;
   finishLabel?: string;
-  /** Optional per-card extra UI (e.g. Práctica's free-writing exercise). */
-  renderExtra?: (card: SessionCard, chosen: boolean) => ReactNode;
+  /** Optional per-card extra UI (e.g. Práctica's free-writing exercise).
+   *  `chosen` is whether an answer was submitted; `correct` whether it was
+   *  right (false until answered). */
+  renderExtra?: (card: SessionCard, chosen: boolean, correct: boolean) => ReactNode;
   /** Fired when advancing to the next card, so callers can reset extra state. */
   onNext?: () => void;
 }
@@ -399,7 +401,11 @@ export function QuizSession({
         </div>
       )}
 
-      {renderExtra?.(card, chosen !== null)}
+      {renderExtra?.(
+        card,
+        chosen !== null,
+        card.type === "typed" ? (typedGrade?.correct ?? false) : chosen !== null && chosen === card.answer,
+      )}
 
       <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
         <div className="mx-auto flex max-w-md items-center justify-end">

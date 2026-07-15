@@ -192,6 +192,9 @@ export interface PracticeCard {
   itemId: number;
   lemma: string;
   isPhrase: boolean;
+  /** SRS ladder rung of the word; drives whether the free-writing exercise is
+   *  offered upfront (upper rungs) or behind a link. */
+  srsStage: number;
   translation: string | null;
   /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
    *  word (graded on the server, so `answer` is empty and `options` is `[]`). */
