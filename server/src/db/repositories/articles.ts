@@ -50,6 +50,12 @@ export async function getUnconsumedPrefetchedArticle(userId: number): Promise<Ar
   });
 }
 
+/** Persists lazily recovered lemmas (see ensureArticleLemmas) so the LLM
+ *  recovery runs at most once per article. */
+export async function updateArticleLemmas(articleId: number, lemmas: string[]): Promise<void> {
+  await db.update(articles).set({ lemmas: JSON.stringify(lemmas) }).where(eq(articles.id, articleId));
+}
+
 export async function markArticleConsumed(articleId: number): Promise<void> {
   await db.update(articles).set({ consumed: true }).where(eq(articles.id, articleId));
 }

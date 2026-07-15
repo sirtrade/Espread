@@ -3,15 +3,17 @@ import { findTermContext } from "../domain/context.js";
 import { appendContext, parseContexts, type BankContext } from "../domain/contexts.js";
 import { dedupeMarks, type Mark } from "../domain/marks.js";
 import { applyReviewToBank, type BankItemRecord, type ReviewedItem } from "../domain/bank.js";
-import { readingEncounterLemmas } from "../domain/knownWords.js";
+import { normalizeArticleLemmas, readingEncounterLemmas } from "../domain/knownWords.js";
 import { termAppearsIn } from "../domain/weaving.js";
 import { reviewMarkedItems } from "../llm/review.js";
+import { extractArticleLemmas } from "../llm/lemmatize.js";
 import { reviewSchema, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
 import type { ArticleRow } from "../db/repositories/articles.js";
 import { config } from "../lib/config.js";
 import { withUserLock } from "../lib/locks.js";
 import { Errors } from "../api/errors.js";
-import { getArticleById } from "../db/repositories/articles.js";
+import { getArticleById, updateArticleLemmas } from "../db/repositories/articles.js";
+import { logger } from "../lib/logger.js";
 import { getUserById } from "../db/repositories/users.js";
 import { getBankItemsMap, rebalanceActivePool } from "../db/repositories/bank.js";
 import { applyCompletion } from "../db/repositories/completion.js";
@@ -231,6 +233,32 @@ function contextForItem(item: ReviewItem, marks: readonly Mark[], articleBody: s
   );
 }
 
+/**
+ * The article's content lemmas for passive-encounter counting. Articles
+ * generated before the lemmas contract (or whose writer silently returned
+ * none) carry "[]": recover their lemmas with one LLM call, persist them on
+ * the article row (so a retried completion never re-calls), and degrade to
+ * an empty list on failure — completion must not break over
+ * passive-vocabulary bookkeeping.
+ */
+async function ensureArticleLemmas(userId: number, article: ArticleRow): Promise<string[]> {
+  const stored = JSON.parse(article.lemmas) as string[];
+  if (stored.length > 0) return stored;
+  try {
+    const raw = await extractArticleLemmas(userId, article.body);
+    const lemmas = normalizeArticleLemmas(raw, article.body);
+    if (lemmas.length === 0) {
+      logger.warn({ articleId: article.id }, "Article lemmatization produced no usable lemmas");
+      return [];
+    }
+    await updateArticleLemmas(article.id, lemmas);
+    return lemmas;
+  } catch (err) {
+    logger.warn({ err, articleId: article.id }, "Article lemmatization failed; passive encounters skipped");
+    return [];
+  }
+}
+
 /** The reader's per-card intake choices from the review screen (lemmas). */
 export interface CompletionChoices {
   accepted?: string[];
@@ -291,7 +319,7 @@ export async function completeSession(userId: number, choices: CompletionChoices
     // Only rows that actually changed get written — a completion typically
     // touches a handful of lemmas, not the user's whole bank.
     const changedItems = [...after.values()].filter((item) => bankItemDiffers(before.get(item.lemma), item));
-    const articleLemmas = JSON.parse(article.lemmas) as string[];
+    const articleLemmas = await ensureArticleLemmas(userId, article);
     const markedTerms = [...marks.map((mark) => mark.text), ...reviewedItems.map((item) => item.lemma)];
     const passiveLemmas = readingEncounterLemmas(articleLemmas, markedTerms, new Set(before.keys()));
 

@@ -221,10 +221,19 @@ export interface KnownWord {
 export interface VocabularyStats {
   total: number;
   bySource: Record<KnownWordSource, number>;
+  /** Reading lemmas still below the known-threshold: feedback that the
+   *  registry is filling up even while `total` is 0. */
+  accumulating: {
+    threshold: number;
+    total: number;
+    byEncounters: Array<{ encounters: number; count: number }>;
+  };
   weekly: Array<{ weekStart: number; added: number }>;
   coverage: {
     version: string;
     ranges: Array<{ from: number; to: number; known: number; total: number }>;
+    /** Extrapolated total vocabulary (words), 0/`total` when nothing is known yet. */
+    estimatedTotal: number;
   };
 }
 

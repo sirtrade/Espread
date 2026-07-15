@@ -3,7 +3,9 @@ import { termAppearsIn } from "./weaving.js";
 
 export const READING_KNOWN_THRESHOLD = 3;
 
-const SPANISH_FUNCTION_WORDS = new Set(
+// Exported so the frequency-list derivation and its tests stay in lockstep
+// with this filter: a list entry this set rejects could never be counted.
+export const SPANISH_FUNCTION_WORDS = new Set(
   (
     "a al algo alguna algunas alguno algunos ante antes aquel aquella aquellas aquellos aquí así aun aunque " +
     "bajo bien cada como con contra cual cuales cualquier cuando de del desde donde dos durante e el ella ellas " +

@@ -100,10 +100,14 @@ export interface Dict {
   "vocabulary.source.learned": string;
   "vocabulary.source.reading": string;
   "vocabulary.source.manual": string;
+  "vocabulary.accumulating": string;
+  "vocabulary.accumulatingHint": (p: { threshold: number }) => string;
+  "vocabulary.encounterCount": (p: { encounters: number; threshold: number; count: number }) => string;
   "vocabulary.weekly": string;
   "vocabulary.weekAdded": (p: { count: number }) => string;
   "vocabulary.coverage": string;
   "vocabulary.coverageHint": string;
+  "vocabulary.estimatedTotal": (p: { count: number }) => string;
   "vocabulary.range": (p: { from: number; to: number }) => string;
   "vocabulary.of": (p: { known: number; total: number }) => string;
   "vocabulary.empty": string;
@@ -328,10 +332,17 @@ const es: Dict = {
   "vocabulary.source.learned": "Aprendidas",
   "vocabulary.source.reading": "Por lectura",
   "vocabulary.source.manual": "Marcadas manualmente",
+  "vocabulary.accumulating": "En camino",
+  "vocabulary.accumulatingHint": ({ threshold }) =>
+    `Las palabras de lectura sin marcar se vuelven conocidas tras ${threshold} encuentros en artículos distintos.`,
+  "vocabulary.encounterCount": ({ encounters, threshold, count }) =>
+    `${encounters} de ${threshold} encuentros: ${count}`,
   "vocabulary.weekly": "Progreso semanal",
   "vocabulary.weekAdded": ({ count }) => `+${count}`,
   "vocabulary.coverage": "Cobertura por frecuencia",
-  "vocabulary.coverageHint": "Coincidencias con una lista versionada de 5.000 lemas frecuentes.",
+  "vocabulary.coverageHint": "Coincidencias con una lista versionada de 10.000 lemas frecuentes de contenido.",
+  "vocabulary.estimatedTotal": ({ count }) =>
+    `Estimación del vocabulario total: ~${count} ${plural("es", count, ["palabra", "palabras"])}`,
   "vocabulary.range": ({ from, to }) => `${from}–${to}`,
   "vocabulary.of": ({ known, total }) => `${known} de ${total}`,
   "vocabulary.empty": "Tu registro aún está vacío. Leer y practicar lo irá completando.",
@@ -565,10 +576,17 @@ const ru: Dict = {
   "vocabulary.source.learned": "Выучено",
   "vocabulary.source.reading": "Из чтения",
   "vocabulary.source.manual": "Отмечено вручную",
+  "vocabulary.accumulating": "На подходе",
+  "vocabulary.accumulatingHint": ({ threshold }) =>
+    `Непомеченные слова из чтения становятся известными после ${threshold} встреч в разных статьях.`,
+  "vocabulary.encounterCount": ({ encounters, threshold, count }) =>
+    `${encounters} из ${threshold} встреч: ${count}`,
   "vocabulary.weekly": "Динамика по неделям",
   "vocabulary.weekAdded": ({ count }) => `+${count}`,
   "vocabulary.coverage": "Покрытие частотного списка",
-  "vocabulary.coverageHint": "Совпадения с версионированным списком 5 000 частотных лемм.",
+  "vocabulary.coverageHint": "Совпадения с версионированным списком 10 000 частотных содержательных лемм.",
+  "vocabulary.estimatedTotal": ({ count }) =>
+    `Оценка общего запаса: ~${count} ${plural("ru", count, ["слово", "слова", "слов"])}`,
   "vocabulary.range": ({ from, to }) => `${from}–${to}`,
   "vocabulary.of": ({ known, total }) => `${known} из ${total}`,
   "vocabulary.empty": "Реестр пока пуст. Чтение и тренировки постепенно его наполнят.",
@@ -803,10 +821,17 @@ const en: Dict = {
   "vocabulary.source.learned": "Learned",
   "vocabulary.source.reading": "From reading",
   "vocabulary.source.manual": "Marked manually",
+  "vocabulary.accumulating": "On the way",
+  "vocabulary.accumulatingHint": ({ threshold }) =>
+    `Unmarked reading words become known after ${threshold} encounters across different articles.`,
+  "vocabulary.encounterCount": ({ encounters, threshold, count }) =>
+    `${encounters} of ${threshold} encounters: ${count}`,
   "vocabulary.weekly": "Weekly growth",
   "vocabulary.weekAdded": ({ count }) => `+${count}`,
   "vocabulary.coverage": "Frequency coverage",
-  "vocabulary.coverageHint": "Matches against a versioned list of 5,000 frequent lemmas.",
+  "vocabulary.coverageHint": "Matches against a versioned list of 10,000 frequent content lemmas.",
+  "vocabulary.estimatedTotal": ({ count }) =>
+    `Estimated total vocabulary: ~${count} ${plural("en", count, ["word", "words"])}`,
   "vocabulary.range": ({ from, to }) => `${from}–${to}`,
   "vocabulary.of": ({ known, total }) => `${known} of ${total}`,
   "vocabulary.empty": "Your registry is empty. Reading and practice will gradually fill it.",
