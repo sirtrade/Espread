@@ -27,6 +27,9 @@ export interface PracticeCard {
   itemId: number;
   lemma: string;
   isPhrase: boolean;
+  /** SRS ladder rung of the word, so the client can surface the free-writing
+   *  exercise more prominently on the upper rungs (see webapp Práctica). */
+  srsStage: number;
   translation: string | null;
   /** "cloze"/"recall" are multiple-choice; "typed" asks the user to type the
    *  word (graded on the server, so `answer` is empty and `options` is `[]`). */
@@ -82,6 +85,7 @@ practiceRoutes.get("/queue", async (c) => {
       itemId: item.id,
       lemma: item.lemma,
       isPhrase: item.isPhrase,
+      srsStage: item.srsStage,
       translation: card.translation,
       type: card.type,
       prompt: card.prompt,

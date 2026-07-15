@@ -411,9 +411,10 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
     чередованием предпочтения по чётности индекса (even→cloze, odd→recall).
     Защита от утечки: утекающий recall деградирует в cloze; невозможные карточки
     пропускаются.
-- Карточка: `{ itemId, lemma, isPhrase, translation, type, prompt, answer,
-  options[], context, contextTranslation, contextHint }`, где `type` —
-  `cloze | recall | typed`.
+- Карточка: `{ itemId, lemma, isPhrase, srsStage, translation, type, prompt,
+  answer, options[], context, contextTranslation, contextHint }`, где `type` —
+  `cloze | recall | typed`. `srsStage` отдаётся, чтобы клиент мог заметнее
+  предлагать свободное письмо на верхних ступенях (см. §10.4).
 
 ### 10.2 Применение ответа (`applyPracticeAnswer`, `server/src/db/repositories/bank.ts`)
 `POST /practice/answer` принимает либо `correct` (множественный выбор — клиент
@@ -460,8 +461,14 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
   по одному, так что выход безопасен.
 
 ### 10.4 Свободное письмо (`renderExtra` в Práctica)
-Только после ответа и при наличии `itemId`: ссылка «✍️ Написать предложение со
-словом» разворачивает `<textarea>`; «Проверить» → `POST /practice/sentence`.
+Только после ответа и при наличии `itemId`. **Показ упражнения зависит от
+ступени SRS** (`WRITING_AUTO_STAGE = 4`, `Practice.tsx`): на ступенях
+`srsStage >= 4` после **правильного** ответа блок письма (`<textarea>` +
+поощряющая строка `practice.writePrompt`) разворачивается сразу — это самое
+сильное упражнение (generation effect), и слово уже знакомо достаточно для
+продукции. На ступенях ниже, а также при неверном ответе, остаётся прежняя
+ненавязчивая ссылка «✍️ Написать предложение со словом», раскрывающая тот же
+`<textarea>`. «Проверить» → `POST /practice/sentence`.
 - LLM-проверка `server/src/llm/sentenceCheck.ts` (kind `practice`,
   `maxTokens: 512`): использовано ли слово в правильном значении и грамматично ли
   предложение; снисходительность к акцентам/пунктуации; фидбэк на языке

@@ -88,6 +88,13 @@ describe("practice queue + typed answer (route level)", () => {
     expect((card.options as string[]).length).toBeGreaterThanOrEqual(3);
   });
 
+  it("exposes the SRS rung on each card (webapp surfaces free-writing on upper rungs)", async () => {
+    await seedItem({ lemma: "reforzar", translation: "укреплять", srsStage: 5, surfaceForm: "refuerza", firstContext: "El plan refuerza la seguridad." });
+    const { cards } = await queue();
+    const card = cards.find((c) => c.lemma === "reforzar")!;
+    expect(card.srsStage).toBe(5);
+  });
+
   it("grades an exact typed answer on the server and climbs the ladder", async () => {
     const id = await seedItem({ lemma: "consolidar", translation: "укреплять", surfaceForm: "consolida", firstContext: "El equipo consolida su posición.", srsStage: 3 });
     // The client sends the raw text; a bogus `correct:true` must be ignored.

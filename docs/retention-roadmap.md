@@ -282,10 +282,12 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
    cardType, correct, usedHint, latencyMs, srsStageBefore/After). Писать из
    `applyPracticeAnswer`. Пока только копить данные; сам FSRS — отдельное
    решение, не начинать без явного запроса владельца.
-4. **Продвижение свободного письма:** на ступенях ≥4 после правильного
-   ответа разворачивать блок письма сразу (не за ссылкой), лимит
-   `DAILY_PRACTICE_LLM_LIMIT` уже защищает бюджет. SRS не трогает
-   (reinforcement-only — оставить как есть).
+4. **Продвижение свободного письма:** ✅ готово (ветка
+   `claude/backlog-task-impl-fe3sk2`, M-2). На ступенях `srsStage >= 4`
+   (`WRITING_AUTO_STAGE`, `Practice.tsx`) после правильного ответа блок письма
+   разворачивается сразу (не за ссылкой); ниже — прежняя ссылка. Очередь
+   отдаёт `srsStage` в карточке; лимит `DAILY_PRACTICE_LLM_LIMIT` защищает
+   бюджет; SRS не трогается (reinforcement-only).
 5. **Latency-сигнал:** замерять время до ответа на клиенте и слать в
    `practice_answers` (п.3) — пригодится для FSRS и для отличия «вспомнил»
    от «угадал».
@@ -305,7 +307,7 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
 | 7 | Interleaving + анти-утечка | P2 | не начат |
 | 8 | Ротация контекстов | P2 | не начат |
 | 9 | Дистракторы | P2 | не начат |
-| 10 | Мелочи и журнал ответов | P3 | 10.1 готово (ветка `claude/backlog-task-impl-z0hm94`); 10.2 готово (ветка `claude/backlog-task-impl-cy7z5c`); остальное не начато |
+| 10 | Мелочи и журнал ответов | P3 | 10.1 готово (ветка `claude/backlog-task-impl-z0hm94`); 10.2 готово (ветка `claude/backlog-task-impl-cy7z5c`); 10.4 готово (ветка `claude/backlog-task-impl-fe3sk2`, M-2); остальное не начато |
 
 Агенту, берущему этап: обновить колонку «Статус» в этом файле в том же PR
 (`в работе (ветка)` → `готово (PR #N)`), чтобы следующие агенты видели

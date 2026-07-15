@@ -11,6 +11,12 @@ import { hapticSuccess } from "../telegram/telegram.js";
 import { useT } from "../lib/i18n.js";
 import { useAuth } from "../state/AuthContext.js";
 
+/** From this SRS rung up, the free-writing exercise (the app's strongest,
+ *  generation-effect drill) is offered upfront after a correct answer instead
+ *  of hidden behind a link — the word is well enough known to produce, not just
+ *  recognize. Lower rungs keep the unobtrusive link. */
+const WRITING_AUTO_STAGE = 4;
+
 /** Spaced-repetition practice: cloze/recall cards over due bank items, with
  *  an optional free-writing exercise (LLM-checked) after each card. Answers
  *  count toward the learning streak like the post-reading quiz. */
@@ -103,17 +109,23 @@ export function Practice() {
       }}
       onFinish={() => navigate("/")}
       onNext={resetWriting}
-      renderExtra={(card, chosen) => {
+      renderExtra={(card, chosen, correct) => {
         if (!chosen || card.itemId == null) return null;
+        // On the upper SRS rungs, reward a correct answer by opening the
+        // strongest exercise (free writing) right away instead of hiding it
+        // behind a link. Lower rungs — or a wrong answer — keep the link.
+        const autoExpand = correct && (card.srsStage ?? 0) >= WRITING_AUTO_STAGE;
+        const expanded = showWriting || autoExpand;
         return (
           <>
-            {!showWriting && (
+            {!expanded && (
               <button onClick={() => setShowWriting(true)} className="mt-4 text-left text-sm text-subtext underline">
                 {t("practice.writeSentence", { lemma: card.lemma })}
               </button>
             )}
-            {showWriting && (
+            {expanded && (
               <div className="mt-4">
+                {autoExpand && <p className="mb-2 text-sm text-subtext">{t("practice.writePrompt")}</p>}
                 <textarea
                   value={sentence}
                   onChange={(e) => setSentence(e.target.value)}

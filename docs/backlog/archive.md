@@ -4,6 +4,36 @@
 > `- **Выполнено:** <дата>, <ветка или PR #N>` в начало карточки и удали её из
 > исходного списка (в том же PR, что и реализация). Порядок — новые сверху.
 
+## M-2. Свободное письмо — предлагать явно на верхних ступенях SRS
+- **Выполнено:** 2026-07-15, ветка `claude/backlog-task-impl-fe3sk2`
+- **Приоритет:** P2
+- **Проблема/мотивация:** Свободное письмо с LLM-проверкой — самое сильное
+  упражнение в приложении (generation effect), но было спрятано за мелкую
+  ссылку «✍️ Написать предложение со словом», и пользователь мог ни разу её не
+  заметить.
+- **Что сделано:** Очередь тренировки теперь отдаёт `srsStage` в каждой карточке
+  (`PracticeCard`: сервер `server/src/api/routes/practice.ts`, клиент
+  `webapp/src/api/types.ts`, `SessionCard`/`fromPracticeCard`
+  `webapp/src/lib/cards.ts`). `QuizSession` прокидывает в `renderExtra` третий
+  аргумент — верность ответа. На ступенях `srsStage >= 4`
+  (`WRITING_AUTO_STAGE`, `webapp/src/screens/Practice.tsx`) после **правильного**
+  ответа блок письма (`<textarea>` + поощряющая строка `practice.writePrompt`)
+  разворачивается сразу; на ступенях ниже и при неверном ответе — прежняя
+  ссылка. SRS не тронут (reinforcement-only). Новая строка `practice.writePrompt`
+  локализована (ru/en/es). Обновлены `docs/functionality-registry.md` §10.1,
+  §10.4 и `docs/retention-roadmap.md` (этап 10.4).
+- **Критерии приёмки:** На ступени ≥4 textarea видна сразу после правильного
+  ответа; на ступенях ниже — прежняя ссылка; `srsStage` присутствует в карточке
+  очереди (интеграционный тест `server/tests/integration.practiceQueue.test.ts`);
+  `docs/functionality-registry.md` §10.4 обновлён. `npm run typecheck` и
+  `npm test` в `server/` проходят (180 тестов), `npm run typecheck` в `webapp/`
+  проходит.
+- **Детали/ссылки:** `docs/retention-roadmap.md` этап 10.4,
+  `webapp/src/screens/Practice.tsx` (`renderExtra`),
+  `webapp/src/components/QuizSession.tsx`, `docs/retention-audit.md` «Мелочи».
+
+---
+
 ## M-1. Настраиваемый размер сессии Práctica
 - **Выполнено:** 2026-07-15, ветка `claude/backlog-task-impl-cy7z5c`
 - **Приоритет:** P2

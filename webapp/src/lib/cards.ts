@@ -26,6 +26,8 @@ export interface SessionCard {
   contextTranslation: string | null;
   /** typed cards: the blanked sentence shown as a hint while answering */
   contextHint?: string | null;
+  /** SRS ladder rung (Práctica only); absent for post-reading Quiz cards. */
+  srsStage?: number;
 }
 
 /** POS-aware padding, mirroring the server's last-resort distractor lists. */
@@ -183,5 +185,6 @@ export function fromPracticeCard(card: PracticeCard): SessionCard {
     context: card.context,
     contextTranslation: card.contextTranslation,
     contextHint: card.contextHint,
+    srsStage: card.srsStage,
   };
 }
