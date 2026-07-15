@@ -94,6 +94,13 @@ export function Home() {
         </div>
       )}
 
+      <button
+        onClick={() => navigate("/vocabulary")}
+        className="mb-6 rounded-xl bg-surface px-4 py-3 text-left text-sm font-medium"
+      >
+        📚 {t("home.vocabulary")} →
+      </button>
+
       {stats && stats.itemsQueued > 0 && (
         <button
           onClick={() => navigate("/bank")}

@@ -16,6 +16,8 @@ import type {
   ReviewResult,
   Session,
   Stats,
+  KnownWord,
+  VocabularyStats,
 } from "./types.js";
 
 const TOKEN_KEY = "lector_token";
@@ -127,6 +129,8 @@ export const api = {
   patchBankItem: (id: number, status: BankStatus) =>
     request<{ item: BankItem }>(`/bank/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   getStats: () => request<Stats>("/stats"),
+  getKnownWords: () => request<{ items: KnownWord[] }>("/known-words"),
+  getVocabularyStats: () => request<VocabularyStats>("/known-words/stats"),
   getHistory: (limit = 20, offset = 0) =>
     request<{ items: HistoryItem[]; total: number }>(`/articles?limit=${limit}&offset=${offset}`),
   getReadArticle: (id: number) => request<{ article: ReadArticle }>(`/articles/${id}`),

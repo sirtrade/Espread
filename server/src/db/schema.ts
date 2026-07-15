@@ -121,6 +121,9 @@ export const articles = sqliteTable(
     sourceName: text("source_name"),
     sourceUrl: text("source_url"),
     targetTerms: text("target_terms").notNull().default("[]"),
+    // Content-word lemmas emitted by the writer/editor and then normalized and
+    // verified against the final article body on the server.
+    lemmas: text("lemmas").notNull().default("[]"),
     prefetched: integer("prefetched", { mode: "boolean" }).notNull().default(false),
     consumed: integer("consumed", { mode: "boolean" }).notNull().default(false),
     // Reading history: when the session completes, its marks and LLM review
@@ -136,6 +139,30 @@ export const articles = sqliteTable(
   },
   (t) => ({
     userReadIdx: index("articles_user_read_idx").on(t.userId, t.readAt),
+  }),
+);
+
+export const knownWords = sqliteTable(
+  "known_words",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lemma: text("lemma").notNull(),
+    source: text("source", { enum: ["learned", "reading", "manual"] }).notNull(),
+    encounters: integer("encounters").notNull().default(0),
+    firstSeenAt: integer("first_seen_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    lastSeenAt: integer("last_seen_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    knownSince: integer("known_since"),
+  },
+  (t) => ({
+    userLemmaIdx: uniqueIndex("known_words_user_lemma_idx").on(t.userId, t.lemma),
+    userKnownSinceIdx: index("known_words_user_known_since_idx").on(t.userId, t.knownSince),
   }),
 );
 

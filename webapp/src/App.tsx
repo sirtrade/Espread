@@ -12,6 +12,7 @@ import { History } from "./screens/History.js";
 import { HistoryArticle } from "./screens/HistoryArticle.js";
 import { Quiz } from "./screens/Quiz.js";
 import { Practice } from "./screens/Practice.js";
+import { Vocabulary } from "./screens/Vocabulary.js";
 import { t } from "./lib/i18n.js";
 import { initialLang } from "./telegram/telegram.js";
 
@@ -35,6 +36,7 @@ function Gate() {
       <Route path="/history/:id" element={<HistoryArticle />} />
       <Route path="/quiz" element={<Quiz />} />
       <Route path="/practice" element={<Practice />} />
+      <Route path="/vocabulary" element={<Vocabulary />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

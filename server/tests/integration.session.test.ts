@@ -629,7 +629,7 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
           source_url: "https://example.com/noticia",
         }),
       )
-      .mockResolvedValueOnce(fakeMessage({ title: "Sala nueva", body: draftBody, usedTerms: [] }))
+      .mockResolvedValueOnce(fakeMessage({ title: "Sala nueva", body: draftBody, usedTerms: [], lemmas: ["museo"] }))
       .mockResolvedValueOnce(
         fakeMessage({
           estimatedLevel: "B2",
@@ -647,7 +647,9 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
           ],
         }),
       )
-      .mockResolvedValueOnce(fakeMessage({ title: "Sala nueva", body: rewrittenBody, usedTerms: ["escultura"] }))
+      .mockResolvedValueOnce(
+        fakeMessage({ title: "Sala nueva", body: rewrittenBody, usedTerms: ["escultura"], lemmas: ["museo", "escultura", "el"] }),
+      )
       .mockResolvedValueOnce(fakeMessage(passingVerdict()));
 
     const { article } = await startReading(user.id);
@@ -661,6 +663,9 @@ describe("generate -> review -> complete cycle (mocked LLM)", () => {
     // Woven-term verification ran against the FINAL body: the draft lacked the
     // word, the rewrite added it, so it counts as woven.
     expect(JSON.parse(article.targetTerms)).toEqual(["escultura"]);
+    // Lemmas come from the winning rewritten version, then server-side cleanup
+    // filters service words and verifies each candidate against that final body.
+    expect(JSON.parse(article.lemmas)).toEqual(["museo", "escultura"]);
 
     // The rewrite prompt carried the auditor's concrete complaint to the editor.
     const calls = createMock.mock.calls;

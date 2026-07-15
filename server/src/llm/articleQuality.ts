@@ -109,7 +109,9 @@ export async function runRewriteStep(params: {
     `PROHIBIDO inventar hechos, cifras exactas o citas que no estén en la fuente. ` +
     `Mantén una longitud de ${WORD_TARGET_MIN} a ${WORD_TARGET_MAX} palabras y conserva, donde sea natural, el vocabulario ya incorporado. ` +
     `${writerGuidance(params.level)} ` +
-    `Responde ÚNICAMENTE con JSON: {"title": string, "body": string, "usedTerms": string[]}.`;
+    `Devuelve también "lemmas": los lemas únicos de las palabras con contenido semántico presentes en ESTA versión corregida. ` +
+    `Excluye artículos, pronombres, preposiciones, conjunciones, auxiliares y nombres propios. ` +
+    `Responde ÚNICAMENTE con JSON: {"title": string, "body": string, "usedTerms": string[], "lemmas": string[]}.`;
 
   const userContent =
     `${factsLine(params.facts)}\n` +

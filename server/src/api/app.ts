@@ -15,6 +15,7 @@ import { bankRoutes } from "./routes/bank.js";
 import { practiceRoutes } from "./routes/practice.js";
 import { statsRoutes } from "./routes/stats.js";
 import { adminRoutes } from "./routes/admin.js";
+import { knownWordsRoutes } from "./routes/knownWords.js";
 import type { AppEnv } from "./context.js";
 
 export function createApp() {
@@ -39,6 +40,7 @@ export function createApp() {
   api.route("/bank", bankRoutes);
   api.route("/practice", practiceRoutes);
   api.route("/stats", statsRoutes);
+  api.route("/known-words", knownWordsRoutes);
   api.route("/admin", adminRoutes);
   app.route("/api", api);
 

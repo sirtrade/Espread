@@ -12,6 +12,7 @@ export async function createArticle(params: {
   sourceName: string | null;
   sourceUrl: string | null;
   targetTerms: string[];
+  lemmas: string[];
   prefetched?: boolean;
 }): Promise<ArticleRow> {
   const [row] = await db
@@ -24,6 +25,7 @@ export async function createArticle(params: {
       sourceName: params.sourceName,
       sourceUrl: params.sourceUrl,
       targetTerms: JSON.stringify(params.targetTerms),
+      lemmas: JSON.stringify(params.lemmas),
       prefetched: params.prefetched ?? false,
     })
     .returning();
