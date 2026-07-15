@@ -73,8 +73,11 @@ describe("motivation activity integration", () => {
   });
 
   it("reset removes activity history", async () => {
+    expect(await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.userId, userId))).not.toHaveLength(0);
     const { resetUserProgress } = await import("../src/db/repositories/reset.js");
     await resetUserProgress(userId);
     expect(await db.select().from(schema.dailyActivity).where(eq(schema.dailyActivity.userId, userId))).toHaveLength(0);
+    // reset deletes bank items; practice_answers follows through its item FK.
+    expect(await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.userId, userId))).toHaveLength(0);
   });
 });

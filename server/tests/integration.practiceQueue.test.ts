@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 /**
  * Route-level coverage for typed recall in the webapp practice queue (F-1):
@@ -100,7 +101,13 @@ describe("practice queue + typed answer (route level)", () => {
   it("grades an exact typed answer on the server and climbs the ladder", async () => {
     const id = await seedItem({ lemma: "consolidar", translation: "укреплять", surfaceForm: "consolida", firstContext: "El equipo consolida su posición.", srsStage: 3 });
     // The client sends the raw text; a bogus `correct:true` must be ignored.
-    const { status, body } = await answer({ itemId: id, typedAnswer: "consolida", correct: false });
+    const { status, body } = await answer({
+      itemId: id,
+      typedAnswer: "consolida",
+      correct: false,
+      cardType: "recall",
+      latencyMs: 2_345,
+    });
     expect(status).toBe(200);
     expect(body).toMatchObject({
       verdict: "exact",
@@ -110,6 +117,19 @@ describe("practice queue + typed answer (route level)", () => {
       context: "El equipo consolida su posición.",
     });
     expect((await getBankItemById(userId, id))?.srsStage).toBe(4);
+    const rows = await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.itemId, id));
+    expect(rows).toEqual([
+      expect.objectContaining({
+        userId,
+        itemId: id,
+        cardType: "typed",
+        correct: true,
+        usedHint: false,
+        latencyMs: 2_345,
+        srsStageBefore: 3,
+        srsStageAfter: 4,
+      }),
+    ]);
   });
 
   it("grades and returns feedback from the context selected by the queue", async () => {
@@ -166,5 +186,12 @@ describe("practice queue + typed answer (route level)", () => {
     const id = await seedItem({ lemma: "impulsar", srsStage: 2 });
     const { status } = await answer({ itemId: id });
     expect(status).toBe(400);
+  });
+
+  it("rejects latency outside the 0..600000 ms API range", async () => {
+    const id = await seedItem({ lemma: "demora" });
+    expect((await answer({ itemId: id, correct: true, cardType: "cloze", latencyMs: -1 })).status).toBe(400);
+    expect((await answer({ itemId: id, correct: true, cardType: "cloze", latencyMs: 600_001 })).status).toBe(400);
+    expect(await db.select().from(schema.practiceAnswers).where(eq(schema.practiceAnswers.itemId, id))).toHaveLength(0);
   });
 });

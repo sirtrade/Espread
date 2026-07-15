@@ -119,6 +119,30 @@ export const bankItems = sqliteTable(
   }),
 );
 
+export const practiceAnswers = sqliteTable(
+  "practice_answers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => bankItems.id, { onDelete: "cascade" }),
+    ts: integer("ts").notNull(),
+    cardType: text("card_type", { enum: ["cloze", "recall", "typed"] }).notNull(),
+    correct: integer("correct", { mode: "boolean" }).notNull(),
+    usedHint: integer("used_hint", { mode: "boolean" }).notNull(),
+    latencyMs: integer("latency_ms"),
+    srsStageBefore: integer("srs_stage_before").notNull(),
+    srsStageAfter: integer("srs_stage_after").notNull(),
+  },
+  (t) => ({
+    userTsIdx: index("practice_answers_user_ts_idx").on(t.userId, t.ts),
+    itemTsIdx: index("practice_answers_item_ts_idx").on(t.itemId, t.ts),
+  }),
+);
+
 export const articles = sqliteTable(
   "articles",
   {

@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { bankItems } from "../schema.js";
+import { bankItems, practiceAnswers } from "../schema.js";
 import {
   POOL_SLOT_MAX_STAGE,
   queuedPromotionCount,
@@ -12,6 +12,10 @@ import { advanceSrs, creditAllowedToday, graduatesOnSuccess, lapseSrs, PRACTICE_
 import { recognizeKnownWord } from "./knownWords.js";
 import { recordPracticeActivity } from "./activity.js";
 import { localDayKey } from "../../lib/timezone.js";
+import {
+  clampPracticeLatency,
+  type PracticeCardType,
+} from "../../domain/practiceAnswer.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -124,6 +128,13 @@ export interface PracticeAnswerResult {
   advanced: boolean;
 }
 
+export interface PracticeAnswerMetadata {
+  /** Existing internal callers default to recall; UI/bot callers pass the exact type. */
+  cardType?: PracticeCardType;
+  /** First-attempt time from card display to submit; null for bot answers. */
+  latencyMs?: number | null;
+}
+
 /**
  * Applies one practice answer to the shared SRS schedule:
  *  - a first-try-correct answer climbs a rung (once per calendar day per item,
@@ -146,54 +157,80 @@ export async function applyPracticeAnswer(
   now = Date.now(),
   usedHint = false,
   timeZone = "UTC",
+  metadata: PracticeAnswerMetadata = {},
 ): Promise<PracticeAnswerResult | undefined> {
-  const item = await db.query.bankItems.findFirst({
-    where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)),
-  });
-  if (!item) return undefined;
+  const applied = db.transaction((trx) => {
+    const item = trx
+      .select()
+      .from(bankItems)
+      .where(and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)))
+      .get();
+    if (!item) return undefined;
 
-  let srsStage = item.srsStage;
-  let nextDueAt = item.nextDueAt ?? now;
-  let lastCreditAt = item.lastCreditAt;
-  let status = item.status;
-  let advanced = false;
+    let srsStage = item.srsStage;
+    let nextDueAt = item.nextDueAt ?? now;
+    let lastCreditAt = item.lastCreditAt;
+    let status = item.status;
+    let advanced = false;
 
-  if (!correct) {
-    const s = lapseSrs(item.srsStage, now, PRACTICE_RETRY_MS);
-    srsStage = s.srsStage;
-    nextDueAt = s.nextDueAt;
-  } else if (usedHint) {
-    // Correct, but the translation was revealed first: no advance, and the
-    // schedule (stage/nextDueAt/lastCreditAt) is left as-is so the word stays
-    // due for an unaided retrieval later. `advanced` stays false.
-  } else if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
-    if (graduatesOnSuccess(item.srsStage)) {
-      status = "learned";
-      lastCreditAt = now;
-      advanced = true;
-    } else {
-      const s = advanceSrs(item.srsStage, now);
+    if (!correct) {
+      const s = lapseSrs(item.srsStage, now, PRACTICE_RETRY_MS);
       srsStage = s.srsStage;
       nextDueAt = s.nextDueAt;
-      lastCreditAt = now;
-      advanced = true;
+    } else if (usedHint) {
+      // Correct, but the translation was revealed first: no advance, and the
+      // schedule (stage/nextDueAt/lastCreditAt) is left as-is so the word stays
+      // due for an unaided retrieval later. `advanced` stays false.
+    } else if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
+      if (graduatesOnSuccess(item.srsStage)) {
+        status = "learned";
+        lastCreditAt = now;
+        advanced = true;
+      } else {
+        const s = advanceSrs(item.srsStage, now);
+        srsStage = s.srsStage;
+        nextDueAt = s.nextDueAt;
+        lastCreditAt = now;
+        advanced = true;
+      }
     }
-  }
 
-  await db
-    .update(bankItems)
-    .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
-    .where(eq(bankItems.id, itemId));
+    trx
+      .update(bankItems)
+      .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
+      .where(eq(bankItems.id, itemId))
+      .run();
+    trx
+      .insert(practiceAnswers)
+      .values({
+        userId,
+        itemId,
+        ts: now,
+        cardType: metadata.cardType ?? "recall",
+        correct,
+        usedHint,
+        latencyMs: clampPracticeLatency(metadata.latencyMs),
+        srsStageBefore: item.srsStage,
+        srsStageAfter: srsStage,
+      })
+      .run();
 
-  if (status === "learned" && item.status !== "learned") {
-    await recognizeKnownWord(userId, item.lemma, "learned", now);
+    return {
+      result: { itemId, lemma: item.lemma, srsStage, nextDueAt, status, advanced },
+      learnedNow: status === "learned" && item.status !== "learned",
+    };
+  });
+  if (!applied) return undefined;
+
+  if (applied.learnedNow) {
+    await recognizeKnownWord(userId, applied.result.lemma, "learned", now);
   }
   // One server-accepted first answer completes a one-card practice. Webapp
   // retries stay client-side, bot answers use this same path, and the daily
   // upsert makes repeated delivery safe.
   await recordPracticeActivity(userId, localDayKey(now, timeZone), now);
 
-  return { itemId, lemma: item.lemma, srsStage, nextDueAt, status, advanced };
+  return applied.result;
 }
 
 export async function getBankItemById(userId: number, itemId: number): Promise<BankItemRow | undefined> {

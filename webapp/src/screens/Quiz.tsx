@@ -44,7 +44,9 @@ export function Quiz() {
     <QuizSession
       title={t("quiz.title")}
       cards={cards}
-      onAnswer={(card, correct, usedHint) => api.postPracticeAnswer({ lemma: card.lemma }, { correct, usedHint })}
+      onAnswer={(card, correct, usedHint, latencyMs) =>
+        api.postPracticeAnswer({ lemma: card.lemma }, { correct, usedHint, cardType: card.type, latencyMs })
+      }
       onFinish={() => goHome()}
       finishLabel={t("common.finish")}
       headerExtra={

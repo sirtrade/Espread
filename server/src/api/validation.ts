@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidTimezone } from "../lib/timezone.js";
 import { PRACTICE_SIZE_MIN, PRACTICE_SIZE_MAX } from "../domain/practiceSize.js";
+import { PRACTICE_LATENCY_MAX_MS } from "../domain/practiceAnswer.js";
 
 export const authTelegramSchema = z.object({
   initData: z.string().min(1),
@@ -48,6 +49,13 @@ export const practiceAnswerSchema = z
     // other is required. When `typedAnswer` is present `correct` is ignored.
     correct: z.boolean().optional(),
     typedAnswer: z.string().trim().min(1).max(120).optional(),
+    // Optional for backward compatibility with older callers; current webapp
+    // and bot callers always send/derive it. Typed answers are forced to typed
+    // by the route regardless of a conflicting client value.
+    cardType: z.enum(["cloze", "recall", "typed"]).optional(),
+    // Milliseconds from displaying this card until submitting its first
+    // attempt. Bot answers use null/omission.
+    latencyMs: z.number().int().min(0).max(PRACTICE_LATENCY_MAX_MS).nullable().optional(),
     // Opaque context selector from the queue. It carries no answer text and is
     // used only to grade/show feedback against the randomly selected example.
     contextAddedAt: z.number().int().nonnegative().optional(),

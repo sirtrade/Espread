@@ -312,20 +312,21 @@ legacy enrichment запрашивают 5–8 правдоподобных same
    Настройка `practiceSize` в Settings (пресеты 5/10/20, дефолт 10) хранится в
    профиле и передаётся как `GET /practice/queue?limit=` (клемп
    `clampPracticeSize`, 1–30).
-3. **Журнал ответов** — фундамент для будущего адаптивного планировщика
-   (FSRS/HLR, аудит §10): таблица `practice_answers` (userId, itemId, ts,
-   cardType, correct, usedHint, latencyMs, srsStageBefore/After). Писать из
-   `applyPracticeAnswer`. Пока только копить данные; сам FSRS — отдельное
-   решение, не начинать без явного запроса владельца.
+3. **Журнал ответов:** ✅ готово (ветка `tech/t-2-practice-log`, T-2).
+   Таблица `practice_answers` хранит user/item, ts, card type, server-side
+   correct, hint, latency и SRS stage до/после. `applyPracticeAnswer` атомарно
+   меняет bank item и вставляет журнал; ретраи остаются клиентскими. Пока только
+   копятся данные — сам FSRS не начат.
 4. **Продвижение свободного письма:** ✅ готово (ветка
    `claude/backlog-task-impl-fe3sk2`, M-2). На ступенях `srsStage >= 4`
    (`WRITING_AUTO_STAGE`, `Practice.tsx`) после правильного ответа блок письма
    разворачивается сразу (не за ссылкой); ниже — прежняя ссылка. Очередь
    отдаёт `srsStage` в карточке; лимит `DAILY_PRACTICE_LLM_LIMIT` защищает
    бюджет; SRS не трогается (reinforcement-only).
-5. **Latency-сигнал:** замерять время до ответа на клиенте и слать в
-   `practice_answers` (п.3) — пригодится для FSRS и для отличия «вспомнил»
-   от «угадал».
+5. **Latency-сигнал:** ✅ готово (ветка `tech/t-2-practice-log`, T-2).
+   `QuizSession` измеряет время от показа карточки до submit первой попытки,
+   клемпит `0..600000` мс и отправляет вместе с типом карточки; бот пишет null,
+   клиентские ретраи не отправляются.
 
 ---
 
@@ -342,7 +343,7 @@ legacy enrichment запрашивают 5–8 правдоподобных same
 | 7 | Interleaving + анти-утечка | P2 | готово (ветка `feat/f-5-interleaving`, F-5) |
 | 8 | Ротация контекстов | P2 | готово (ветка `feat/f-6-context-rotation`, F-6) |
 | 9 | Дистракторы | P2 | не начат |
-| 10 | Мелочи и журнал ответов | P3 | 10.1 готово (ветка `claude/backlog-task-impl-z0hm94`); 10.2 готово (ветка `claude/backlog-task-impl-cy7z5c`); 10.4 готово (ветка `claude/backlog-task-impl-fe3sk2`, M-2); остальное не начато |
+| 10 | Мелочи и журнал ответов | P3 | 10.1 готово (ветка `claude/backlog-task-impl-z0hm94`); 10.2 готово (ветка `claude/backlog-task-impl-cy7z5c`); 10.3 и 10.5 готовы (ветка `tech/t-2-practice-log`, T-2); 10.4 готово (ветка `claude/backlog-task-impl-fe3sk2`, M-2) |
 
 Агенту, берущему этап: обновить колонку «Статус» в этом файле в том же PR
 (`в работе (ветка)` → `готово (PR #N)`), чтобы следующие агенты видели
