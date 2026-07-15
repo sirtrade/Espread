@@ -1,7 +1,8 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { articles, bankItems, readingSessions, userStats } from "../schema.js";
+import { articles, bankItems, knownWords, readingSessions, userStats } from "../schema.js";
 import type { BankItemRecord } from "../../domain/bank.js";
+import { READING_KNOWN_THRESHOLD } from "../../domain/knownWords.js";
 
 /**
  * Applies a finished reading session in a single transaction: bank upserts,
@@ -16,6 +17,7 @@ export async function applyCompletion(params: {
   marks: string;
   reviewResult: string;
   changedItems: readonly BankItemRecord[];
+  readingLemmas: readonly string[];
 }): Promise<void> {
   const now = Date.now();
   db.transaction((trx) => {
@@ -62,6 +64,40 @@ export async function applyCompletion(params: {
             distractors: item.distractors,
             freqBand: item.freqBand,
             updatedAt: now,
+          },
+        })
+        .run();
+    }
+
+    for (const lemma of params.readingLemmas) {
+      trx
+        .insert(knownWords)
+        .values({
+          userId: params.userId,
+          lemma,
+          source: "reading",
+          encounters: 1,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          knownSince: null,
+        })
+        .onConflictDoUpdate({
+          target: [knownWords.userId, knownWords.lemma],
+          set: {
+            encounters: sql`${knownWords.encounters} + 1`,
+            lastSeenAt: now,
+            knownSince: sql`CASE
+              WHEN ${knownWords.knownSince} IS NULL
+                AND ${knownWords.encounters} + 1 >= ${READING_KNOWN_THRESHOLD}
+              THEN ${now}
+              ELSE ${knownWords.knownSince}
+            END`,
+            source: sql`CASE
+              WHEN ${knownWords.knownSince} IS NULL
+                AND ${knownWords.encounters} + 1 >= ${READING_KNOWN_THRESHOLD}
+              THEN 'reading'
+              ELSE ${knownWords.source}
+            END`,
           },
         })
         .run();

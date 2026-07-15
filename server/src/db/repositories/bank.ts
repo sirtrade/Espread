@@ -9,6 +9,7 @@ import {
   type PartOfSpeech,
 } from "../../domain/bank.js";
 import { advanceSrs, creditAllowedToday, graduatesOnSuccess, lapseSrs, PRACTICE_RETRY_MS, resetSrs } from "../../domain/srs.js";
+import { recognizeKnownWord } from "./knownWords.js";
 
 export type BankItemRow = typeof bankItems.$inferSelect;
 
@@ -67,6 +68,7 @@ export async function setBankItemStatus(userId: number, itemId: number, status: 
     .set({ status, srsStage: s.srsStage, nextDueAt: s.nextDueAt, lastCreditAt: null, updatedAt: now })
     .where(and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)))
     .returning();
+  if (row && status === "learned") await recognizeKnownWord(userId, row.lemma, "manual", now);
   return row;
 }
 
@@ -174,6 +176,10 @@ export async function applyPracticeAnswer(
     .update(bankItems)
     .set({ srsStage, nextDueAt, lastCreditAt, status, updatedAt: now })
     .where(eq(bankItems.id, itemId));
+
+  if (status === "learned" && item.status !== "learned") {
+    await recognizeKnownWord(userId, item.lemma, "learned", now);
+  }
 
   return { itemId, lemma: item.lemma, srsStage, nextDueAt, status, advanced };
 }

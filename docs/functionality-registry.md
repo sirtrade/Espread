@@ -244,7 +244,9 @@
   реально использованные леммы.
 - Источник фактов передаётся в user-сообщении (или fallback-инструкция «без
   источника, без точных цифр и выдуманных цитат»).
-- `maxTokens: 2048`. Ответ JSON `{title, body, usedTerms}`.
+- `maxTokens: 2048`. Ответ JSON `{title, body, usedTerms, lemmas}`. `lemmas` —
+  уникальные словарные формы содержательных слов именно этой версии текста
+  (без служебных слов и имён собственных); отдельного LLM-вызова нет.
 
 ### 6.4 Контроль качества (`server/src/llm/articleQuality.ts`)
 Черновик проходит `auditAndRefineArticle` до сохранения. Логика: черновик →
@@ -266,11 +268,17 @@
   источника) ниже **4**.
 - **Переработка** (`runRewriteStep`, kind `rewrite`, `maxTokens: 2048`): editor
   правит минимально по конкретным замечаниям, сохраняя факты и вплетённые слова;
-  результат — тот же `articleStepSchema`.
+  результат — тот же `articleStepSchema`, включая заново собранные `lemmas`
+  исправленной версии.
 - **Ограничение цикла и деградация**: не более `MAX_REWRITE_ATTEMPTS = 2`
   переработок; при исчерпании — сохраняется версия с лучшими оценками. Сбой
   аудита/переработки логируется и деградирует к лучшему имеющемуся черновику,
   а не роняет генерацию в 500.
+- После выбора лучшей версии сервер применяет `normalizeArticleLemmas`:
+  нормализует и дедуплицирует леммы, удаляет служебные/многословные элементы и
+  оставляет только леммы, подтверждённые в **финальном** `body` через
+  `termAppearsIn`. Поэтому при выборе черновика или rewrite сохраняется набор
+  именно возвращаемого текста.
 - **Учёт вызовов**: `audit`/`rewrite` — отдельные `kind` в `llm_calls`
   (`recordLlmCall`), попадают в статистику стоимости, но **не** уменьшают дневной
   лимит статей (`countRecentCalls` считает только `generate`).
@@ -391,7 +399,9 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 - **Graduation** (`graduatesOnSuccess`): успех на/выше ступени 7 (пережил всю
   лестницу + финальный 120-дневный повтор) → статус `learned`. Graduation
   наступает **только через активное воспроизведение** в практике/боте
-  (`applyPracticeAnswer`); пассивное чтение никогда не graduate'ит.
+  (`applyPracticeAnswer`); пассивное чтение никогда не graduate'ит. Graduation
+  сразу апсертит лемму в `known_words` с `source=learned`; ручное «Знаю» —
+  с `source=manual`.
 - **Потолок кредита от чтения** (`READING_CREDIT_MAX_STAGE = 2`): чистая
   экспозиция при чтении двигает ступень только пока `srsStage <= 2`; выше слово
   продвигается лишь ответами в практике/боте. Обоснование: «не отметил» ≠
@@ -418,6 +428,11 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 (`bankItemDiffers`), затем `applyCompletion` **в одной транзакции**: апсертит
 изменённые карточки, инкрементит `user_stats.articles_read`, архивирует
 `marks`/`review_result` на строку статьи и ставит `read_at`, удаляет сессию.
+В той же транзакции леммы статьи, которых нет ни среди пометок, ни в банке
+(любой статус), увеличивают `known_words.encounters`. При
+`encounters >= READING_KNOWN_THRESHOLD = 3` строка получает
+`source=reading` и `known_since`; до порога `known_since=null` и в пользовательский
+список она не попадает.
 После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead }`.
 
 ### 8.4 Экран банка (`webapp/src/screens/Bank.tsx`)
@@ -647,7 +662,8 @@ IANA-таймзоной.
   `clampPracticeSize`). Несколько коротких сессий закрепляют лучше одной длинной
   (distributed practice).
 - **Сброс прогресса** (деструктивно) — нативный `confirmDialog` → `DELETE
-  /me/progress` (стирает банк, статьи, статистику; аккаунт и настройки остаются).
+  /me/progress` (стирает банк, реестр известных слов, статьи и статистику;
+  аккаунт и настройки остаются).
 
 Тема/шрифт хранятся и в профиле (следуют за пользователем между устройствами), и
 локально (мгновенное применение). `applyDisplayPrefs` при логине пушит серверные
@@ -678,6 +694,16 @@ IANA-таймзоной.
 есть due) и «Новое чтение». `GET /stats` возвращает `{ articlesRead,
 itemsInProgress, itemsLearned, itemsQueued, activePoolLimit }`.
 
+### 16.1 Словарный запас (`webapp/src/screens/Vocabulary.tsx`)
+Вход с Home ведёт на `/vocabulary`. Экран показывает число признанных известных
+лемм (`known_since != null`), разбивку `learned/reading/manual`, прирост по каждой
+из последних 12 UTC-недель, список лемм и покрытие пяти диапазонов по 1000.
+Покрытие считается чисто на сервере по встроенному списку 5000 содержательных
+испанских лемм `SPANISH_FREQUENCY_V1` без NLP-зависимости. Снимок
+`v1-doozan-c66c8a7` происходит из `doozan/spanish_data` / Wiktionary /
+hermitdave FrequencyWords и распространяется с атрибуцией по CC BY-SA 3.0
+(полная ссылка и SHA — в файле данных). Все строки экрана локализованы ru/en/es.
+
 ---
 
 ## 17. HTTP API (сводка)
@@ -707,6 +733,8 @@ itemsInProgress, itemsLearned, itemsQueued, activePoolLimit }`.
 | `POST /api/practice/answer` | Ответ (по `itemId` или `lemma`) | Драйвит SRS; `usedHint`; `typedAnswer` грейдится сервером |
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
 | `GET /api/stats` | Статистика | |
+| `GET /api/known-words` | Список известных лемм | Только `known_since != null` |
+| `GET /api/known-words/stats` | Размер, источники, 12 недель, покрытие top-5000 | 5 диапазонов по 1000 |
 | `GET /api/admin/usage` | Расход LLM по юзерам | Только `ADMIN_TG_IDS` (`403` иначе) |
 | `POST /api/admin/enrich-bank` | Разовый бэкфилл легаси-карточек | Только админ; чанки по 10 |
 
@@ -769,7 +797,8 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 | `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, `first_context`, `surface_form`, `pos`, `gender`, `note`, `context_translation`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
-| `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
+| `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
+| `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
 | `reading_sessions` | Единственная активная сессия (unique `user_id`) | `article_id`, `marks` (JSON), `review_result`, `state` (`reading`/`reviewed`) |
 | `llm_calls` | Аудит/метрика LLM | `user_id` (**ON DELETE set null**), `kind`, `model`, `input_tokens`, `output_tokens`, `cost_usd_micros`, `ok`; индекс `(user_id, kind, created_at)` |
 | `user_stats` | Счётчики (PK = user_id) | `articles_read`, `items_learned`, `last_learned_digest_at` |
@@ -796,6 +825,8 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `0009` — `pending_quiz_item_id`, `pending_quiz_sent_at` (typed бот-квиз).
 - `0010` — `theme`, `font_size` (display-настройки в профиле).
 - `0011` — `practice_size` (размер сессии Práctica, default 10).
+- `0012` — `known_words` и `articles.lemmas` (default `[]`, совместимо с
+  существующими статьями).
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -845,6 +876,8 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | Длина статьи (идеал / жёсткие границы) | 250–320 / 200–400 слов | `domain/articleQuality.ts` |
 | Частотный потолок A2/B1/B2/C1 | 1500 / 2500 / 3500 / 5000 (C2 — без потолка) | `llm/articleRubric.ts` |
 | `MAX_REWRITE_ATTEMPTS` (переработки качества) | 2 | `llm/articleQuality.ts` |
+| `READING_KNOWN_THRESHOLD` | 3 непомеченные встречи вне банка | `domain/knownWords.ts` |
+| Частотное покрытие | 5000 лемм, 5 диапазонов по 1000, версия `v1-doozan-c66c8a7` | `data/spanishFrequencyV1.ts` |
 | Порог оценок аудита (pass) | ≥ 4 из 5 | `llm/articleQuality.ts` (`needsRewrite`) |
 | Ротация тем | избегать 2 последних | `domain/topicRotation.ts` |
 | `active_pool_limit` | 0–200 (0 = без лимита), default 20 | `users` |
@@ -913,7 +946,10 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `db/` — клиент, миграции, `schema.ts`, репозитории (`repositories/*`).
 - `domain/` — **чистая логика без I/O**: `srs.ts`, `bank.ts`, `practice.ts`,
   `typedQuiz.ts`, `weaving.ts`, `marks.ts`, `context.ts`, `normalize.ts`,
-  `topicRotation.ts` (покрыты юнит-тестами в `server/tests/`).
+  `knownWords.ts`, `vocabularyStats.ts`, `topicRotation.ts` (покрыты
+  юнит-тестами в `server/tests/`).
+- `data/spanishFrequencyV1.ts` — версионированный CC BY-SA 3.0 частотный
+  список для оценки покрытия.
 - `llm/` — интеграция с Anthropic: генерация статей, разбор, обогащение,
   проверка предложений, схемы, тарифы, клиент, `callJson`.
 - `scheduler/` — cron и хелперы времени.
@@ -928,7 +964,7 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 - `telegram/telegram.ts` — SDK: тема, viewport, haptics, BackButton, initData,
   диалоги.
 - `screens/` — экраны (Onboarding, Home, Reading, Review, Quiz, Practice, Bank,
-  History, HistoryArticle, Settings).
+  Vocabulary, History, HistoryArticle, Settings).
 - `components/` — `QuizSession`, `BankChip`, пикеры темы/шрифта, Button, Spinner,
   ErrorState.
 - `lib/` — зеркала домена и утилиты: `srs.ts`, `cards.ts`, `typedRecall.ts`,

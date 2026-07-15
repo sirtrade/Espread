@@ -14,7 +14,7 @@ function bodyOf(words: number): string {
 }
 
 function article(title: string): ArticleStepResult {
-  return { title, body: bodyOf(260), usedTerms: [] };
+  return { title, body: bodyOf(260), usedTerms: [], lemmas: ["palabra"] };
 }
 
 function passing(over: Partial<ArticleQualityVerdict> = {}): ArticleQualityVerdict {

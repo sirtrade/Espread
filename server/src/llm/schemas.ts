@@ -21,6 +21,14 @@ export const articleStepSchema = z.object({
     .array(z.string().min(1).max(80))
     .nullish()
     .transform((v) => v ?? []),
+  // Content-word dictionary forms from this exact version of the article.
+  // The server still normalizes, deduplicates and verifies every value against
+  // the final body before persistence.
+  lemmas: z
+    .array(z.string().min(1).max(80))
+    .max(500)
+    .nullish()
+    .transform((v) => v ?? []),
 });
 export type ArticleStepResult = z.infer<typeof articleStepSchema>;
 

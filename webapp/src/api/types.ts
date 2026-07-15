@@ -185,6 +185,27 @@ export interface Stats {
   activePoolLimit: number;
 }
 
+export type KnownWordSource = "learned" | "reading" | "manual";
+
+export interface KnownWord {
+  lemma: string;
+  source: KnownWordSource;
+  encounters: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  knownSince: number;
+}
+
+export interface VocabularyStats {
+  total: number;
+  bySource: Record<KnownWordSource, number>;
+  weekly: Array<{ weekStart: number; added: number }>;
+  coverage: {
+    version: string;
+    ranges: Array<{ from: number; to: number; known: number; total: number }>;
+  };
+}
+
 /** How a typed-recall answer was graded (mirrors the server's `TypedVerdict`). */
 export type TypedVerdict = "exact" | "spelling" | "wrong";
 

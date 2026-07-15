@@ -2,6 +2,7 @@ import { normalizeTerm } from "../domain/normalize.js";
 import { findTermContext } from "../domain/context.js";
 import { dedupeMarks, type Mark } from "../domain/marks.js";
 import { applyReviewToBank, type BankItemRecord, type ReviewedItem } from "../domain/bank.js";
+import { readingEncounterLemmas } from "../domain/knownWords.js";
 import { reviewMarkedItems } from "../llm/review.js";
 import { reviewSchema, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
 import type { ArticleRow } from "../db/repositories/articles.js";
@@ -202,6 +203,9 @@ export async function completeSession(userId: number, choices: CompletionChoices
     // Only rows that actually changed get written — a completion typically
     // touches a handful of lemmas, not the user's whole bank.
     const changedItems = [...after.values()].filter((item) => bankItemDiffers(before.get(item.lemma), item));
+    const articleLemmas = JSON.parse(article.lemmas) as string[];
+    const markedTerms = [...marks.map((mark) => mark.text), ...reviewedItems.map((item) => item.lemma)];
+    const passiveLemmas = readingEncounterLemmas(articleLemmas, markedTerms, new Set(before.keys()));
 
     const newlyQueued = changedItems
       .filter((item) => item.status === "queued" && before.get(item.lemma)?.status !== "queued")
@@ -214,6 +218,7 @@ export async function completeSession(userId: number, choices: CompletionChoices
       marks: session.marks,
       reviewResult: session.reviewResult,
       changedItems,
+      readingLemmas: passiveLemmas,
     });
 
     // Clean exposures that matured words past the pool threshold freed slots;

@@ -6,6 +6,8 @@ build/
 *.tsbuildinfo
 *.log
 data/
+!server/src/data/
+!server/src/data/spanishFrequencyV1.ts
 *.db
 *.db-shm
 *.db-wal

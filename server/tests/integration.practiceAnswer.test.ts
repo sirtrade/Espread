@@ -8,6 +8,7 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
   let schema: typeof import("../src/db/schema.js");
   let applyPracticeAnswer: typeof import("../src/db/repositories/bank.js").applyPracticeAnswer;
   let getBankItemById: typeof import("../src/db/repositories/bank.js").getBankItemById;
+  let listKnownWords: typeof import("../src/db/repositories/knownWords.js").listKnownWords;
   let findOrCreateUser: typeof import("../src/db/repositories/users.js").findOrCreateUser;
   let userId: number;
 
@@ -35,6 +36,7 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     migrate(db, { migrationsFolder: "./drizzle" });
     schema = await import("../src/db/schema.js");
     ({ applyPracticeAnswer, getBankItemById } = await import("../src/db/repositories/bank.js"));
+    ({ listKnownWords } = await import("../src/db/repositories/knownWords.js"));
     ({ findOrCreateUser } = await import("../src/db/repositories/users.js"));
 
     const user = await findOrCreateUser(555001, "practicetest");
@@ -119,6 +121,9 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     expect(res).toMatchObject({ advanced: true, status: "learned" });
     const item = await getBankItemById(userId, id);
     expect(item?.status).toBe("learned");
+    expect(await listKnownWords(userId)).toEqual([
+      expect.objectContaining({ lemma: "graduada", source: "learned", knownSince: now }),
+    ]);
   });
 
   it("soft-lapses a top-rung word instead of graduating it on a wrong answer", async () => {
