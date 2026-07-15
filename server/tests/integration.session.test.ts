@@ -67,7 +67,10 @@ function mockSearchAndWrite(title: string, body: string) {
         source_url: "https://example.com/noticia",
       }),
     )
-    .mockResolvedValueOnce(fakeMessage({ title, body: padBody(body) }))
+    // "situación" comes from the filler, so it survives the body verification
+    // and completions never fall back to the lazy-lemmatization LLM call
+    // (which would shift the mock-call indices asserted below).
+    .mockResolvedValueOnce(fakeMessage({ title, body: padBody(body), lemmas: ["situación"] }))
     .mockResolvedValueOnce(fakeMessage(passingVerdict()));
 }
 

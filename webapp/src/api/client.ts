@@ -6,6 +6,8 @@ import type {
   BankItem,
   BankStatus,
   CompleteResult,
+  GrammarItem,
+  GrammarStatus,
   HistoryItem,
   Mark,
   PracticeAnswerResult,
@@ -127,11 +129,15 @@ export const api = {
     request<{ ok: true }>("/session", { method: "PUT", body: JSON.stringify({ marks }) }),
   deleteSession: () => request<{ ok: true }>("/session", { method: "DELETE" }),
   reviewSession: () => request<ReviewResult>("/session/review", { method: "POST" }),
-  completeSession: (choices: { accepted?: string[]; rejected?: string[] } = {}) =>
+  completeSession: (choices: { accepted?: string[]; rejected?: string[]; grammarAccepted?: string[] } = {}) =>
     request<CompleteResult>("/session/complete", { method: "POST", body: JSON.stringify(choices) }),
   getBank: (status?: BankStatus) => request<{ items: BankItem[] }>(`/bank${status ? `?status=${status}` : ""}`),
   patchBankItem: (id: number, status: BankStatus) =>
     request<{ item: BankItem }>(`/bank/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  getGrammar: (status?: GrammarStatus) =>
+    request<{ items: GrammarItem[] }>(`/grammar${status ? `?status=${status}` : ""}`),
+  patchGrammarItem: (id: number, status: GrammarStatus) =>
+    request<{ item: GrammarItem }>(`/grammar/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   getStats: () => request<Stats>("/stats"),
   getKnownWords: () => request<{ items: KnownWord[] }>("/known-words"),
   getVocabularyStats: () => request<VocabularyStats>("/known-words/stats"),
@@ -144,7 +150,7 @@ export const api = {
   // correctness; typed-recall answers send the raw text and the server grades
   // it. Both drive the same learning + SRS update.
   postPracticeAnswer: (
-    target: { itemId: number } | { lemma: string },
+    target: { itemId: number } | { lemma: string } | { grammarItemId: number },
     answer:
       | {
           correct: boolean;
@@ -155,6 +161,7 @@ export const api = {
       | {
           typedAnswer: string;
           contextAddedAt?: number | null;
+          usedHint?: boolean;
           cardType: "typed";
           latencyMs: number;
         },

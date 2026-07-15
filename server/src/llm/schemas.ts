@@ -129,7 +129,58 @@ export const reviewItemSchema = z.object({
 });
 export type ReviewItem = z.infer<typeof reviewItemSchema>;
 
+/** Closed top-level grammar categories (grammar-track design §3). */
+export const grammarCategorySchema = z.enum([
+  "tense_aspect",
+  "mood",
+  "periphrasis",
+  "pronouns",
+  "agreement",
+  "syntax",
+  "prepositions",
+  "connectors",
+  "other",
+]);
+export type GrammarCategory = z.infer<typeof grammarCategorySchema>;
+
+/** A stored cloze: gap sentence, correct form(s) and wrong same-paradigm forms. */
+export const grammarExerciseSchema = z.object({
+  cloze: z.string().min(10).max(300),
+  acceptedAnswers: z.array(z.string().min(1).max(80)).min(1).max(4),
+  options: z.array(z.string().min(1).max(80)).min(3).max(6),
+});
+export type GrammarExercise = z.infer<typeof grammarExerciseSchema>;
+
+export const grammarCandidateSchema = z.object({
+  /** stable normalized identity, e.g. "cuando+subjuntivo-presente" */
+  canonicalKey: z.string().min(3).max(80),
+  /** short Spanish display pattern, e.g. "ir a + infinitivo" */
+  pattern: z.string().min(3).max(120),
+  category: grammarCategorySchema,
+  /** short explanation in the user's explainLang */
+  explanation: z.string().min(1).max(500),
+  /** the concrete manifestation in the article */
+  sourceForm: z.string().min(1).max(200),
+  sourceSentence: z.string().min(1).max(500),
+  sourceSentenceTranslation: z
+    .string()
+    .max(500)
+    .nullish()
+    .transform((v) => v || null),
+  exercise: grammarExerciseSchema,
+});
+export type GrammarCandidate = z.infer<typeof grammarCandidateSchema>;
+
 export const reviewSchema = z.object({
   items: z.array(reviewItemSchema),
+  // Deliberately raw at this level: one malformed candidate must not
+  // invalidate the lexical items or an archived review (design §12).
+  // Per-element validation lives in domain/grammar.ts
+  // (parseGrammarCandidates); absent in legacy JSON -> [].
+  grammarCandidates: z
+    .array(z.unknown())
+    .max(20)
+    .nullish()
+    .transform((v) => v ?? []),
 });
 export type ReviewResult = z.infer<typeof reviewSchema>;

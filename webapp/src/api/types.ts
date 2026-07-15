@@ -27,6 +27,8 @@ export interface Profile {
   botQuizzesPerDay: number;
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
+  /** independent cap for grammar units in study (0 = no limit, max 50) */
+  grammarActivePoolLimit: number;
   /** cards requested per Práctica session (server clamps 1-30) */
   practiceSize: number;
   onboarded: boolean;
@@ -88,9 +90,41 @@ export interface WovenTerm {
   markedAgain: boolean;
 }
 
+export type GrammarCategory =
+  | "tense_aspect"
+  | "mood"
+  | "periphrasis"
+  | "pronouns"
+  | "agreement"
+  | "syntax"
+  | "prepositions"
+  | "connectors"
+  | "other";
+
+export interface GrammarExercise {
+  /** the source sentence with the key form replaced by "___" */
+  cloze: string;
+  acceptedAnswers: string[];
+  options: string[];
+}
+
+/** A server-validated grammar pattern proposed by the review (F-11/F-13).
+ *  Saved as a grammar item only after the reader's explicit accept. */
+export interface GrammarCandidate {
+  canonicalKey: string;
+  pattern: string;
+  category: GrammarCategory;
+  explanation: string;
+  sourceForm: string;
+  sourceSentence: string;
+  sourceSentenceTranslation: string | null;
+  exercise: GrammarExercise;
+}
+
 export interface ReviewResult {
   items: ReviewItem[];
   wovenTerms: WovenTerm[];
+  grammarCandidates: GrammarCandidate[];
 }
 
 /** Legacy `{ words, phrases }` review shape still archived on read articles
@@ -175,6 +209,29 @@ export interface BankItem {
   srsStage?: number;
 }
 
+export type GrammarStatus = "active" | "queued" | "learned" | "ignored";
+
+/** A saved grammar-track unit (server `serializeGrammarItem`). */
+export interface GrammarItem {
+  id: number;
+  canonicalKey: string;
+  pattern: string;
+  category: GrammarCategory;
+  explanation: string;
+  status: GrammarStatus;
+  contexts: Array<{
+    sentence: string;
+    translation: string | null;
+    surfaceForm: string;
+    articleId: number | null;
+    addedAt: number;
+  }>;
+  exercise: GrammarExercise;
+  srsStage: number;
+  nextDueAt: number | null;
+  updatedAt: number;
+}
+
 export interface HistoryItem {
   id: number;
   title: string;
@@ -221,10 +278,19 @@ export interface KnownWord {
 export interface VocabularyStats {
   total: number;
   bySource: Record<KnownWordSource, number>;
+  /** Reading lemmas still below the known-threshold: feedback that the
+   *  registry is filling up even while `total` is 0. */
+  accumulating: {
+    threshold: number;
+    total: number;
+    byEncounters: Array<{ encounters: number; count: number }>;
+  };
   weekly: Array<{ weekStart: number; added: number }>;
   coverage: {
     version: string;
     ranges: Array<{ from: number; to: number; known: number; total: number }>;
+    /** Extrapolated total vocabulary (words), 0/`total` when nothing is known yet. */
+    estimatedTotal: number;
   };
 }
 
@@ -232,7 +298,16 @@ export interface VocabularyStats {
 export type TypedVerdict = "exact" | "spelling" | "wrong";
 
 export interface PracticeCard {
-  itemId: number;
+  /** lexical bank item; null for grammar cards */
+  itemId: number | null;
+  /** grammar unit; null/absent for word cards */
+  grammarItemId?: number | null;
+  /** what the card drills; treat absence as "word" */
+  kind?: "word" | "grammar";
+  /** grammar cards: closed category + leak-safe hint material */
+  category?: GrammarCategory | null;
+  pattern?: string | null;
+  explanation?: string | null;
   /** Null for typed cards until the answer endpoint reveals the proper form. */
   lemma: string | null;
   isPhrase: boolean;
@@ -275,6 +350,9 @@ export interface PracticeAnswerResult {
   /** typed answers only: revealed after grading for corrective feedback */
   context?: string | null;
   contextTranslation?: string | null;
+  /** grammar answers only: display pattern + explanation for feedback */
+  pattern?: string | null;
+  explanation?: string | null;
 }
 
 export interface SentenceCheckResult {

@@ -4,6 +4,7 @@ import { verifyWovenTerms } from "../domain/weaving.js";
 import { normalizeArticleLemmas } from "../domain/knownWords.js";
 import { generateArticle } from "../llm/articleGeneration.js";
 import { config } from "../lib/config.js";
+import { logger } from "../lib/logger.js";
 import { withUserLock } from "../lib/locks.js";
 import { Errors } from "../api/errors.js";
 import { getUserById } from "../db/repositories/users.js";
@@ -39,6 +40,15 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
 
   const wovenTerms = verifyWovenTerms(candidateTerms, generated.body, generated.usedTerms);
   const lemmas = normalizeArticleLemmas(generated.lemmas, generated.body);
+  if (lemmas.length === 0) {
+    // Not fatal (completion lazily re-lemmatizes such articles), but this
+    // degradation must never be silent — an always-empty writer output would
+    // otherwise starve the known-words registry unnoticed.
+    logger.warn(
+      { userId, topic, rawLemmaCount: generated.lemmas.length },
+      "Generated article saved with empty lemmas",
+    );
+  }
 
   return createArticle({
     userId,

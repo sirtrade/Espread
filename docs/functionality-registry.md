@@ -279,7 +279,12 @@
   оставляет только леммы, подтверждённые в **финальном** `body` через
   `termAppearsIn`. Поэтому при выборе черновика или rewrite сохраняется набор
   именно возвращаемого текста.
-- **Учёт вызовов**: `audit`/`rewrite` — отдельные `kind` в `llm_calls`
+- Если после `normalizeArticleLemmas` набор лемм пуст (writer молча не вернул
+  поле или всё отфильтровалось), статья всё равно сохраняется, но пишется
+  `logger.warn` «Generated article saved with empty lemmas» — деградация не
+  молчаливая; при завершении чтения такая статья долемматизируется лениво
+  (см. §8.3).
+- **Учёт вызовов**: `audit`/`rewrite`/`lemmatize` — отдельные `kind` в `llm_calls`
   (`recordLlmCall`), попадают в статистику стоимости, но **не** уменьшают дневной
   лимит статей (`countRecentCalls` считает только `generate`).
 
@@ -325,6 +330,54 @@ marks })`:
   карточкой берётся 2–4-словная конструкция, вероятнее всего вызвавшая
   затруднение; дубли лемм схлопываются.
 - `maxTokens: 4096`, схема `reviewSchema`.
+
+#### 7.1.1 Грамматические кандидаты (`grammarCandidates`, F-11)
+Тот же review-вызов (нового LLM-вызова **нет**) опционально возвращает
+`grammarCandidates` — до `MAX_GRAMMAR_CANDIDATES_PER_REVIEW = 5` продуктивных
+грамматических шаблонов (дизайн: `docs/grammar-track-design.md` §3–4, §12).
+- **Промпт-гейт**: грамматический блок добавляется в system-промпт только если
+  среди пометок есть `span`/`sentence`; разбор из одних одиночных слов о
+  грамматике даже не спрашивает, а вернувшихся «добровольцев» сервер отбрасывает.
+- **Поля кандидата**: `canonicalKey` (стабильная идентичность,
+  напр. `cuando+subjuntivo-presente`), `pattern` (короткий испанский шаблон),
+  `category` (закрытый enum: `tense_aspect | mood | periphrasis | pronouns |
+  agreement | syntax | prepositions | connectors | other`), `explanation`
+  (на `explainLang`), `sourceForm`/`sourceSentence`/`sourceSentenceTranslation`,
+  `exercise` (`cloze` с одним пропуском `___`, `acceptedAnswers`, `options`).
+- **Серверная валидация** (`domain/grammar.ts`, `parseGrammarCandidates`) —
+  чистая и поэлементная, невалидный кандидат отбрасывается, не трогая
+  лексические `items` и соседей: shape по `grammarCandidateSchema`; ключ
+  нормализуется `normalizeCanonicalKey` (lowercase, пробелы→`-`, только
+  `a-z 0-9 áéíóúüñ + _ -`); `sourceForm` — минимум 2 слова (одиночное слово —
+  лексика, не грамматика); `sourceForm` встречается в `sourceSentence`, а оно —
+  в теле статьи (нормализованное вхождение по границам слов); упражнение — ровно
+  один пропуск (любая серия `_` канонизируется в `___`), ответ не читается в
+  cloze, первый `acceptedAnswer` присутствует в `sourceSentence`, опции
+  дедуплицируются и не совпадают с ответами (минимум 3 выживших); дубли
+  `canonicalKey` схлопываются в первого; итог ≤ 5.
+- **Совместимость**: на уровне `reviewSchema` поле — `z.array(z.unknown())`
+  `.nullish()→[]`, поэтому легаси-`review_result` без поля валиден, а один
+  битый кандидат не роняет весь разбор. Валидированные кандидаты сохраняются в
+  архиве `review_result`; completion их пока игнорирует (потребление — F-12+).
+
+#### 7.1.2 Review/Bank UX грамматики (F-13)
+- **Review**: `ReviewView` включает `grammarCandidates` (валидированные,
+  идемпотентная перевалидация при чтении кэша). Под лексической секцией —
+  «Грамматика в пометках»: шаблон + чип категории, исходное предложение с
+  подсветкой `sourceForm`, перевод, объяснение и независимый переключатель
+  «Сохранить/Пропустить». **Дефолт — «Пропустить»**: кандидат никогда не
+  сохраняется без явного выбора. Принятые ключи уходят в `grammarAccepted`
+  при `POST /session/complete`.
+- **Bank**: переключатель режимов «Слова / Грамматика»; вкладка грамматики
+  фильтрует те же четыре статуса. Карточка: шаблон, категория, объяснение,
+  последний контекст с подсветкой и переводом, таймер SRS. Действия зеркалят
+  словарные: active → «Знаю»/«Отбросить», queued → «Изучать сейчас»,
+  learned/ignored → «Вернуть в практику».
+- **API**: `GET /api/grammar?status=` (сериализация: contexts распарсены,
+  `exercise` JSON) и `PATCH /api/grammar/:id {status}` — ручная смена статуса
+  с полным сбросом SRS (`resetSrs`, как у слов) и FIFO-ребалансом
+  грамматического пула после. Чужой item → 404.
+- Все новые строки локализованы ru/en/es (категории — `grammar.category.*`).
 
 ### 7.2 Идемпотентность разбора (`server/src/services/sessionService.ts`)
 `reviewSession(userId)` (под `withUserLock`):
@@ -441,7 +494,33 @@ POOL_SLOT_MAX_STAGE = 3`; слова, «переросшие» ступень 3,
 (любой статус), увеличивают `known_words.encounters`. При
 `encounters >= READING_KNOWN_THRESHOLD = 3` строка получает
 `source=reading` и `known_since`; до порога `known_since=null` и в пользовательский
-список она не попадает.
+список она не попадает (но видна на экране словарного запаса как «на подходе»,
+см. §16.3).
+**Ленивая долемматизация** (`ensureArticleLemmas`): если у статьи `lemmas =
+"[]"` (сгенерирована до появления контракта лемм или writer молча не вернул
+поле), перед подсчётом пассивных встреч делается один LLM-вызов
+`extractArticleLemmas` (`llm/lemmatize.ts`, kind `lemmatize`, `maxTokens: 1536`,
+поле `lemmas` в схеме обязательное — пропуск ведёт к ретраю, а не к тихому `[]`);
+результат прогоняется через `normalizeArticleLemmas` и сохраняется на строку
+статьи **до** `applyCompletion`, поэтому повторное завершение не вызывает LLM
+снова. Сбой вызова или пустой результат логируется `logger.warn` и деградирует
+к нулю пассивных встреч — завершение чтения никогда не ломается из-за учёта
+пассивной лексики.
+**Грамматические единицы (F-12)**: клиент может прислать в `POST
+/session/complete` опциональный `grammarAccepted` (canonical keys, ≤10) —
+явно принятые кандидаты из архива review этой сессии. Ключи нормализуются
+`normalizeCanonicalKey` и сверяются с заново провалидированными
+(`parseGrammarCandidates`) кандидатами; `planGrammarSaves`
+(`domain/grammarLifecycle.ts`, чистая) решает: новый ключ → строка
+`grammar_items` со статусом `active`, пока в независимом грамматическом пуле
+есть место (`users.grammar_active_pool_limit`, default 10, `0` = без лимита),
+иначе `queued`; SRS с нуля (`srs_stage=0`, due сразу). Повторный ключ →
+только новый контекст (дедуп по предложению, максимум 5): статус и SRS
+не трогаются — learned остаётся learned, чтение никогда не даёт grammar
+SRS-кредит. Запись — в той же транзакции `applyCompletion`; клиент без
+grammar-решений ничего не сохраняет. После транзакции —
+`rebalanceGrammarPool` (FIFO, зеркало лексического), он же дергается при
+повышении лимита через `PATCH /me`.
 После — `rebalanceActivePool` (FIFO-долив). Возвращает `{ queued, articlesRead,
 levelSuggestion }`: предложение вычисляется уже по окну, включающему только что
 завершённую статью, поэтому post-reading UI может показать его сразу.
@@ -565,6 +644,39 @@ Settings (`practiceSize`, пресеты 5/10/20; см. §14); экран Práct
 игнорируется и в журнал попадает результат `gradeTypedAnswer`. Даже
 `correct + usedHint` и повторный успех в те же локальные сутки журналируются,
 хотя расписание не меняется. Несуществующий item не создаёт запись.
+
+### 10.2.1 Грамматические карточки в Práctica (F-14)
+Due-единицы `grammar_items` (active, таймер истёк) подмешиваются в ту же
+очередь `/practice/queue` (общий `practiceSize`, общий шафл и cross-card
+anti-leak; `due` в ответе включает грамматику).
+- **Сборка карточки** (`domain/grammarPractice.ts`, `buildGrammarQueueCard`):
+  на ступенях `< GRAMMAR_TYPED_MIN_STAGE = 2` — MC cloze (пропуск `___`,
+  4 варианта: правильная форма + сохранённые options); от 2 — **typed cloze**
+  (в payload `answer: ""`, `options: []`, accepted-формы не покидают сервер).
+  Битый/небезопасный exercise (нет пропуска, ответ читается в prompt, < 4
+  вариантов) пропускается, карточка не выдаётся. `leakAnswers` — все
+  accepted-формы (участвуют в cross-card защите).
+- **Подсказка** — `pattern` + `explanation` (дизайн §7): показываются по
+  запросу; значения, содержащие accepted-форму, обнуляются в payload; для
+  typed подсказка тоже кнопкой, `usedHint` уезжает с ответом.
+- **Ответ** — `POST /practice/answer {grammarItemId, ...}` (взаимоисключим с
+  `itemId`/`lemma`): typed грейдится на сервере `gradeTypedAnswer` по
+  `acceptedAnswers` (те же правила акцентов/опечатки), фидбек — форма +
+  восстановленное предложение + pattern/explanation.
+  `applyGrammarPracticeAnswer` зеркалит лексические правила: кредит не чаще
+  раза в локальные сутки, `usedHint` — без кредита, ошибка — мягкий lapse
+  (−2 ступени, повтор через 10 мин), успех на верхней ступени — graduation в
+  `learned`. Чтение/weaving grammar SRS не двигают; клиентские ретраи на
+  сервер не уходят (first-attempt-only, как у слов).
+- **Журнал (F-15)**: каждый принятый первый ответ грамматики пишется в
+  полиморфный `practice_answers` **атомарно** с изменением SRS (одна
+  транзакция): `item_kind='grammar'`, `grammar_item_id` (FK cascade),
+  `item_id=NULL`, фактический `cardType` (cloze/typed), `correct`,
+  `used_hint`, `latency_ms`, `srs_stage_before/after`. Ровно один target на
+  строку (word-строки — наоборот: `item_id` set, `grammar_item_id=NULL`).
+  Ответ грамматики также ставит `daily_activity.practice=true` (стрик).
+- UI: бейдж «Грамматика · <категория>», после ответа показываются pattern и
+  объяснение; свободное письмо к грамматическим карточкам не предлагается.
 
 ### 10.3 Runner викторины (`webapp/src/components/QuizSession.tsx`)
 Общий для Quiz и Práctica.
@@ -817,13 +929,32 @@ itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
 
 ### 16.3 Словарный запас (`webapp/src/screens/Vocabulary.tsx`)
 Вход с Home ведёт на `/vocabulary`. Экран показывает число признанных известных
-лемм (`known_since != null`), разбивку `learned/reading/manual`, прирост по каждой
-из последних 12 UTC-недель, список лемм и покрытие пяти диапазонов по 1000.
-Покрытие считается чисто на сервере по встроенному списку 5000 содержательных
-испанских лемм `SPANISH_FREQUENCY_V1` без NLP-зависимости. Снимок
-`v1-doozan-c66c8a7` происходит из `doozan/spanish_data` / Wiktionary /
-hermitdave FrequencyWords и распространяется с атрибуцией по CC BY-SA 3.0
-(полная ссылка и SHA — в файле данных). Все строки экрана локализованы ru/en/es.
+лемм (`known_since != null`), разбивку `learned/reading/manual`, блок «На
+подходе», прирост по каждой из последних 12 UTC-недель, покрытие частотного
+списка с оценкой общего запаса и список лемм.
+- **«На подходе»** (`accumulating` в `/known-words/stats`): леммы из чтения с
+  `known_since = null`, разложенные по числу встреч (`1 из 3`, `2 из 3`), плюс
+  порог. Даёт обратную связь уже после первой прочитанной статьи, когда
+  признанных слов ещё нет.
+- **Покрытие**: десять диапазонов по 1000 по встроенному списку 10 000
+  содержательных испанских лемм `SPANISH_FREQUENCY_V2` (без NLP-зависимости).
+  Снимок `v2-doozan-c66c8a7` происходит из `doozan/spanish_data` / Wiktionary /
+  hermitdave FrequencyWords (CC BY-SA 3.0; полная ссылка и SHA — в файле
+  данных). Деривация: только одиночные содержательные леммы (POS
+  n/adj/v/adv/interj), без `SPANISH_FUNCTION_WORDS` и лемм короче 3 символов —
+  ровно те же фильтры, что в `normalizeArticleLemmas`, поэтому 1000/1000 в
+  каждой полосе математически достижимо (тест `spanishFrequencyV2.test.ts`
+  охраняет от дрейфа).
+- **Оценка общего запаса** (`estimateTotalVocabulary`): доля известных на
+  полосу затухает с рангом примерно геометрически (ципфовский хвост); ratio —
+  среднее соседних отношений полос (каждое клемпится ≤ 1), хвост за списком —
+  геометрическая сумма от последней полосы, ratio дополнительно клемпится
+  `EXTRAPOLATION_MAX_DECAY = 0.9`, чтобы насыщенный профиль не давал
+  бесконечность. Итог не бывает меньше буквального размера реестра; при
+  нулевом пересечении со списком возвращается размер реестра без экстраполяции,
+  строка на экране скрывается при нуле.
+
+Все строки экрана локализованы ru/en/es.
 
 ---
 
@@ -848,7 +979,9 @@ hermitdave FrequencyWords и распространяется с атрибуц�
 | `PUT /api/session` | Сохранить пометки | ≤300 пометок |
 | `DELETE /api/session` | Бросить сессию | |
 | `POST /api/session/review` | LLM-разбор | Идемпотентно; rate-limit `DAILY_REVIEW_LIMIT` |
-| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100; возвращает nullable level suggestion |
+| `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100, `grammarAccepted` ≤10 (опционально); возвращает nullable level suggestion |
+| `GET /api/grammar` | Список грамматических единиц | Опциональный `?status=active/queued/learned/ignored` |
+| `PATCH /api/grammar/:id` | Ручная смена статуса единицы | Полный сброс SRS + FIFO-ребаланс пула; чужой item → 404 |
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
 | `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); pool `limit*3`, shuffle, cross-card anti-leak; typed для stage≥2 без lemma/accepted до ответа |
@@ -856,7 +989,7 @@ hermitdave FrequencyWords и распространяется с атрибуц�
 | `POST /api/practice/sentence` | LLM-проверка предложения | Rate-limit `DAILY_PRACTICE_LLM_LIMIT`; SRS не трогает |
 | `GET /api/stats` | Статистика | Счётчики + стрик + 12 недель + read-only nullable level suggestion |
 | `GET /api/known-words` | Список известных лемм | Только `known_since != null` |
-| `GET /api/known-words/stats` | Размер, источники, 12 недель, покрытие top-5000 | 5 диапазонов по 1000 |
+| `GET /api/known-words/stats` | Размер, источники, «на подходе», 12 недель, покрытие top-10000 + оценка общего запаса | 10 диапазонов по 1000; `accumulating` считается по всем строкам реестра |
 | `GET /api/admin/usage` | Расход LLM по юзерам | Только `ADMIN_TG_IDS` (`403` иначе) |
 | `POST /api/admin/enrich-bank` | Разовый бэкфилл легаси-карточек | Только админ; чанки по 10 |
 
@@ -916,12 +1049,13 @@ ru/en/es. Не хардкодить русский/испанский в ком�
 
 | Таблица | Назначение | Ключевые поля |
 |---|---|---|
-| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
+| `users` | Профиль и настройки (1 строка на TG-юзера) | `tg_user_id` (unique), `level` (enum A2/B1/B2/C1/C2, default A2; text-колонка без CHECK, enum действует на уровне TS и Zod-валидации `PATCH /api/me`), `explain_lang`, `timezone`, `theme`, `font_size`, `daily_enabled`, `daily_time`, `bot_quizzes_per_day`, `active_pool_limit`, `grammar_active_pool_limit` (default 10, Zod 0–50, `0` = без лимита), `practice_size`, `last_bot_quiz_at`, `pending_quiz_item_id`/`pending_quiz_sent_at`/`pending_quiz_context_added_at`, nullable `level_suggestion_direction`/`level_suggestion_shown_at`/`level_suggestion_dismissed_at`, `onboarded_at`, `last_daily_delivered_date`, `last_prefetch_date` |
 | `user_topics` | Темы интересов (упорядочены) | `user_id`, `topic`, `position` |
 | `bank_items` | Словарные карточки (SRS) | unique `(user_id, lemma)`; `is_phrase`, `status`, `exposures`, `translation`, legacy `first_context`/`surface_form`/`context_translation`, `contexts` (nullable JSON, default `[]`, до 5 объектов), `pos`, `gender`, `note`, `distractors` (JSON), `freq_band`, `srs_stage`, `next_due_at`, `last_credit_at` |
-| `practice_answers` | Append-only журнал первых ответов практики/Quiz/бота | FK `user_id` и `item_id` cascade; `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)` |
+| `practice_answers` | Append-only полиморфный журнал первых ответов (слова и грамматика) | FK `user_id`/`item_id`/`grammar_item_id` cascade; `item_kind=word/grammar` (ровно один target на строку), nullable `item_id`/`grammar_item_id`, `ts`, `card_type=cloze/recall/typed`, `correct`, `used_hint`, nullable `latency_ms`, `srs_stage_before/after`; индексы `(user_id, ts)`, `(item_id, ts)`, `(grammar_item_id, ts)` |
 | `articles` | Статьи + архив прочитанного | `target_terms` (JSON), `lemmas` (JSON финальной версии), `prefetched`, `consumed`, `marks` (JSON), `review_result` (JSON), `read_at`; индекс `(user_id, read_at)` |
 | `known_words` | Реестр известных лемм и накопление чтений до признания | unique `(user_id, lemma)`; `source=learned/reading/manual`, `encounters`, `first_seen_at`, `last_seen_at`, nullable `known_since`; индекс `(user_id, known_since)` |
+| `grammar_items` | Грамматические единицы (трек F-12) | unique `(user_id, canonical_key)`; `pattern`, `category` (9 значений), `explanation`, `status=active/queued/learned/ignored`, `contexts` (JSON ≤5), `exercise` (JSON), `srs_stage`, `next_due_at`, `last_credit_at`; индекс `(user_id, status, next_due_at)` |
 | `daily_activity` | История полезных локальных дней для устойчивого стрика | unique `(user_id, local_day)`; `reading`, `practice`, `created_at`, `updated_at` |
 | `reading_sessions` | Единственная активная сессия (unique `user_id`) | `article_id`, `marks` (JSON), `review_result`, `state` (`reading`/`reviewed`) |
 | `llm_calls` | Аудит/метрика LLM | `user_id` (**ON DELETE set null**), `kind`, `model`, `input_tokens`, `output_tokens`, `cost_usd_micros`, `ok`; индекс `(user_id, kind, created_at)` |
@@ -963,6 +1097,14 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
   `level_suggestion_dismissed_at`; существующие пользователи получают null.
 - `0016` — append-only `practice_answers` с FK cascade, полной metadata ответа и
   индексами `(user_id, ts)` / `(item_id, ts)`; существующие строки не меняются.
+- `0017` — `grammar_items` (unique `(user_id, canonical_key)`, индекс
+  `(user_id, status, next_due_at)`, FK cascade) и
+  `users.grammar_active_pool_limit` (default 10); существующие строки не
+  меняются.
+- `0018` — полиморфный `practice_answers`: пересоздание таблицы (SQLite) с
+  nullable `item_id`, `item_kind` (default `'word'`) и nullable
+  `grammar_item_id` (FK cascade) + индекс `(grammar_item_id, ts)`;
+  существующие строки переносятся как `item_kind='word'`.
 
 > **Правило для агентов**: изменения схемы — только миграцией (drizzle), без
 > ломки существующих строк (новые колонки nullable / с дефолтом).
@@ -1014,7 +1156,9 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | Частотный потолок A2/B1/B2/C1 | 1500 / 2500 / 3500 / 5000 (C2 — без потолка) | `llm/articleRubric.ts` |
 | `MAX_REWRITE_ATTEMPTS` (переработки качества) | 2 | `llm/articleQuality.ts` |
 | `READING_KNOWN_THRESHOLD` | 3 непомеченные встречи вне банка | `domain/knownWords.ts` |
-| Частотное покрытие | 5000 лемм, 5 диапазонов по 1000, версия `v1-doozan-c66c8a7` | `data/spanishFrequencyV1.ts` |
+| Частотное покрытие | 10 000 лемм, 10 диапазонов по 1000, версия `v2-doozan-c66c8a7` | `data/spanishFrequencyV2.ts` |
+| `EXTRAPOLATION_MAX_DECAY` (клемп затухания полос) | 0.9 | `domain/vocabularyStats.ts` |
+| Долемматизация статьи (`lemmatize`) | `maxTokens: 1536`, без дневного лимита | `llm/lemmatize.ts` |
 | Порог оценок аудита (pass) | ≥ 4 из 5 | `llm/articleQuality.ts` (`needsRewrite`) |
 | Ротация тем | избегать 2 последних | `domain/topicRotation.ts` |
 | `active_pool_limit` | 0–200 (0 = без лимита), default 20 | `users` |
@@ -1023,6 +1167,9 @@ FK `user_id` — `ON DELETE cascade` (кроме `llm_calls` — `set null`).
 | `PRACTICE_CANDIDATE_MULTIPLIER` | 3 | `db/repositories/bank.ts` |
 | `MAX_CONTEXTS` | 5 | `domain/contexts.ts` |
 | Окно / low / high level suggestion | 5 / `<2%` / `>8%` (все 5) | `domain/levelSuggestion.ts` |
+| `MAX_GRAMMAR_CANDIDATES_PER_REVIEW` | 5 | `domain/grammar.ts` |
+| `GRAMMAR_TYPED_MIN_STAGE` (typed cloze грамматики) | 2 | `domain/grammarPractice.ts` |
+| `grammar_active_pool_limit` | 0–50 (0 = без лимита), default 10 | `users`, `domain/grammarLifecycle.ts` |
 | Cooldown level suggestion | 14 локальных календарных дней | `domain/levelSuggestion.ts` |
 | Окно бот-викторин | 09:00–21:00 локального времени | `scheduler.ts` |
 | Час дайджеста | 20:00 локального | `scheduler.ts` |

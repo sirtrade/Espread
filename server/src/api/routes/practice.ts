@@ -10,6 +10,14 @@ import {
   getDistractorPool,
   getDueForPractice,
 } from "../../db/repositories/bank.js";
+import {
+  applyGrammarPracticeAnswer,
+  countDueGrammarForPractice,
+  getDueGrammarForPractice,
+  getGrammarItemById,
+} from "../../db/repositories/grammar.js";
+import { buildGrammarQueueCard, parseGrammarExercise } from "../../domain/grammarPractice.js";
+import { GRAMMAR_GAP } from "../../domain/grammar.js";
 import { getUserById } from "../../db/repositories/users.js";
 import { countRecentCalls } from "../../db/repositories/llmCalls.js";
 import {
@@ -33,7 +41,16 @@ export const practiceRoutes = new Hono<AppEnv>();
 practiceRoutes.use("*", requireAuth);
 
 export interface PracticeCard {
-  itemId: number;
+  /** lexical bank item; null for grammar cards */
+  itemId: number | null;
+  /** grammar unit; null for word cards */
+  grammarItemId?: number | null;
+  /** what the card drills; "word" when absent (older payload consumers) */
+  kind: "word" | "grammar";
+  /** grammar cards: closed category + hint material (leak-safe, may be null) */
+  category?: string | null;
+  pattern?: string | null;
+  explanation?: string | null;
   /** Hidden for typed cards until the server grades the answer. */
   lemma: string | null;
   isPhrase: boolean;
@@ -67,7 +84,12 @@ practiceRoutes.get("/queue", async (c) => {
   const limit = clampPracticeSize(Number(c.req.query("limit")));
   const now = Date.now();
 
-  const [dueItems, due] = await Promise.all([getDueForPractice(userId, now, limit), countDueForPractice(userId, now)]);
+  const [dueItems, due, dueGrammar, grammarDueCount] = await Promise.all([
+    getDueForPractice(userId, now, limit),
+    countDueForPractice(userId, now),
+    getDueGrammarForPractice(userId, now, limit),
+    countDueGrammarForPractice(userId, now),
+  ]);
 
   const candidates: Array<PracticeCard & { leakAnswers: string[] }> = [];
   for (const item of shufflePracticeCandidates(dueItems)) {
@@ -100,6 +122,8 @@ practiceRoutes.get("/queue", async (c) => {
 
     candidates.push({
       itemId: item.id,
+      grammarItemId: null,
+      kind: "word",
       // A typed card is keyed by itemId and graded server-side. Sending its
       // lemma would disclose an accepted answer before the user types it.
       lemma: card.type === "typed" ? null : item.lemma,
@@ -122,14 +146,101 @@ practiceRoutes.get("/queue", async (c) => {
     });
   }
 
-  const cards = protectCrossCardLeaks(candidates, limit).map(({ leakAnswers: _leakAnswers, ...card }) => card);
-  return c.json({ cards, due });
+  // Grammar cards mix into the same session (design §8): MC cloze on the low
+  // rungs, server-graded typed cloze from GRAMMAR_TYPED_MIN_STAGE up. The
+  // builder skips anything that can't produce a leak-free card.
+  for (const item of shufflePracticeCandidates(dueGrammar)) {
+    const card = buildGrammarQueueCard({
+      id: item.id,
+      pattern: item.pattern,
+      category: item.category,
+      explanation: item.explanation,
+      exercise: item.exercise,
+      srsStage: item.srsStage,
+    });
+    if (!card) continue;
+    candidates.push({
+      itemId: null,
+      grammarItemId: card.grammarItemId,
+      kind: "grammar",
+      category: card.category,
+      pattern: card.pattern,
+      explanation: card.explanation,
+      lemma: null,
+      isPhrase: false,
+      srsStage: item.srsStage,
+      translation: null,
+      type: card.type,
+      prompt: card.prompt,
+      answer: card.answer,
+      options: card.options,
+      context: card.context,
+      contextTranslation: null,
+      contextHint: null,
+      contextAddedAt: null,
+      leakAnswers: card.leakAnswers,
+    });
+  }
+
+  const mixed = shufflePracticeCandidates(candidates);
+  const cards = protectCrossCardLeaks(mixed, limit).map(({ leakAnswers: _leakAnswers, ...card }) => card);
+  return c.json({ cards, due: due + grammarDueCount });
 });
 
 practiceRoutes.post("/answer", async (c) => {
   const { userId } = c.get("session");
   const body = practiceAnswerSchema.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest(body.error.issues[0]?.message ?? "Datos inválidos");
+
+  // Grammar cards route by grammarItemId onto their own SRS ladder. Typed
+  // grammar answers are graded server-side against the stored acceptedAnswers;
+  // client retries never reach this endpoint (first attempt only).
+  if (body.data.grammarItemId != null) {
+    const item = await getGrammarItemById(userId, body.data.grammarItemId);
+    if (!item) throw Errors.notFound("Construcción");
+
+    let correct: boolean;
+    let verdict: TypedVerdict | undefined;
+    let answer: string | undefined;
+    let feedbackContext: string | null = null;
+    if (body.data.typedAnswer != null) {
+      const exercise = parseGrammarExercise(item.exercise);
+      if (!exercise) throw Errors.notFound("Construcción");
+      const grade = gradeTypedAnswer(body.data.typedAnswer, exercise.acceptedAnswers);
+      correct = grade.correct;
+      verdict = grade.verdict;
+      answer = grade.matched ?? exercise.acceptedAnswers[0];
+      feedbackContext = exercise.cloze.replace(GRAMMAR_GAP, answer!);
+    } else {
+      correct = body.data.correct ?? false;
+    }
+
+    const user = await getUserById(userId);
+    const result = await applyGrammarPracticeAnswer(
+      userId,
+      item.id,
+      correct,
+      Date.now(),
+      body.data.usedHint ?? false,
+      user?.timezone ?? "UTC",
+      {
+        cardType: body.data.typedAnswer != null ? "typed" : "cloze",
+        latencyMs: body.data.latencyMs,
+      },
+    );
+    if (!result) throw Errors.notFound("Construcción");
+    return c.json({
+      ok: true,
+      srsStage: result.srsStage,
+      nextDueAt: result.nextDueAt,
+      status: result.status,
+      advanced: result.advanced,
+      // After-answer feedback: the display pattern is safe to reveal now.
+      pattern: item.pattern,
+      explanation: item.explanation,
+      ...(verdict ? { verdict, correct, answer, context: feedbackContext, contextTranslation: null } : {}),
+    });
+  }
 
   // Práctica sends an itemId; the post-reading Quiz sends a lemma (it never
   // sees item ids). Both drive the same learning + SRS update.

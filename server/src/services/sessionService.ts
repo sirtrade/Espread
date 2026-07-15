@@ -3,17 +3,22 @@ import { findTermContext } from "../domain/context.js";
 import { appendContext, parseContexts, type BankContext } from "../domain/contexts.js";
 import { dedupeMarks, type Mark } from "../domain/marks.js";
 import { applyReviewToBank, type BankItemRecord, type ReviewedItem } from "../domain/bank.js";
-import { readingEncounterLemmas } from "../domain/knownWords.js";
+import { normalizeArticleLemmas, readingEncounterLemmas } from "../domain/knownWords.js";
+import { normalizeCanonicalKey, parseGrammarCandidates } from "../domain/grammar.js";
+import { planGrammarSaves } from "../domain/grammarLifecycle.js";
 import { termAppearsIn } from "../domain/weaving.js";
 import { reviewMarkedItems } from "../llm/review.js";
-import { reviewSchema, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
+import { extractArticleLemmas } from "../llm/lemmatize.js";
+import { reviewSchema, type GrammarCandidate, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
 import type { ArticleRow } from "../db/repositories/articles.js";
 import { config } from "../lib/config.js";
 import { withUserLock } from "../lib/locks.js";
 import { Errors } from "../api/errors.js";
-import { getArticleById } from "../db/repositories/articles.js";
+import { getArticleById, updateArticleLemmas } from "../db/repositories/articles.js";
+import { logger } from "../lib/logger.js";
 import { getUserById } from "../db/repositories/users.js";
 import { getBankItemsMap, rebalanceActivePool } from "../db/repositories/bank.js";
+import { countGrammarByStatus, getGrammarItemsByKeys, rebalanceGrammarPool } from "../db/repositories/grammar.js";
 import { applyCompletion } from "../db/repositories/completion.js";
 import { countRecentCalls } from "../db/repositories/llmCalls.js";
 import { getUserStats } from "../db/repositories/stats.js";
@@ -41,6 +46,8 @@ export interface WovenTermProgress {
 export interface ReviewView {
   items: ReviewItemView[];
   wovenTerms: WovenTermProgress[];
+  /** server-validated grammar candidates for the review screen (F-13) */
+  grammarCandidates: GrammarCandidate[];
 }
 
 /** Builds the client-facing review: attaches each item's article sentence and
@@ -63,7 +70,11 @@ function buildReviewView(article: ArticleRow, marks: readonly Mark[], result: Re
     };
   });
 
-  return { items, wovenTerms };
+  // Idempotent re-validation: fresh results are already clean, and a legacy
+  // cached review (raw or absent candidates) yields a safe list either way.
+  const grammarCandidates = parseGrammarCandidates(result.grammarCandidates, article.body);
+
+  return { items, wovenTerms, grammarCandidates };
 }
 
 export async function reviewSession(userId: number): Promise<ReviewView> {
@@ -231,10 +242,39 @@ function contextForItem(item: ReviewItem, marks: readonly Mark[], articleBody: s
   );
 }
 
-/** The reader's per-card intake choices from the review screen (lemmas). */
+/**
+ * The article's content lemmas for passive-encounter counting. Articles
+ * generated before the lemmas contract (or whose writer silently returned
+ * none) carry "[]": recover their lemmas with one LLM call, persist them on
+ * the article row (so a retried completion never re-calls), and degrade to
+ * an empty list on failure — completion must not break over
+ * passive-vocabulary bookkeeping.
+ */
+async function ensureArticleLemmas(userId: number, article: ArticleRow): Promise<string[]> {
+  const stored = JSON.parse(article.lemmas) as string[];
+  if (stored.length > 0) return stored;
+  try {
+    const raw = await extractArticleLemmas(userId, article.body);
+    const lemmas = normalizeArticleLemmas(raw, article.body);
+    if (lemmas.length === 0) {
+      logger.warn({ articleId: article.id }, "Article lemmatization produced no usable lemmas");
+      return [];
+    }
+    await updateArticleLemmas(article.id, lemmas);
+    return lemmas;
+  } catch (err) {
+    logger.warn({ err, articleId: article.id }, "Article lemmatization failed; passive encounters skipped");
+    return [];
+  }
+}
+
+/** The reader's per-card intake choices from the review screen (lemmas), plus
+ *  explicitly accepted grammar candidates (canonical keys). An old client that
+ *  sends no grammar decisions simply saves none (design §12). */
 export interface CompletionChoices {
   accepted?: string[];
   rejected?: string[];
+  grammarAccepted?: string[];
 }
 
 export async function completeSession(userId: number, choices: CompletionChoices = {}): Promise<CompleteResult> {
@@ -291,13 +331,39 @@ export async function completeSession(userId: number, choices: CompletionChoices
     // Only rows that actually changed get written — a completion typically
     // touches a handful of lemmas, not the user's whole bank.
     const changedItems = [...after.values()].filter((item) => bankItemDiffers(before.get(item.lemma), item));
-    const articleLemmas = JSON.parse(article.lemmas) as string[];
+    const articleLemmas = await ensureArticleLemmas(userId, article);
     const markedTerms = [...marks.map((mark) => mark.text), ...reviewedItems.map((item) => item.lemma)];
     const passiveLemmas = readingEncounterLemmas(articleLemmas, markedTerms, new Set(before.keys()));
 
     const newlyQueued = changedItems
       .filter((item) => item.status === "queued" && before.get(item.lemma)?.status !== "queued")
       .map((item) => item.lemma);
+
+    // Grammar units are created ONLY from the reader's explicit accepts,
+    // matched against the server-validated candidates of this review. A
+    // repeat canonical key gains a context; status and SRS stay untouched
+    // (reading never earns grammar credit — design §6).
+    let grammarPlan: ReturnType<typeof planGrammarSaves> = { inserts: [], contextUpdates: [] };
+    const grammarAcceptedKeys = new Set((choices.grammarAccepted ?? []).map(normalizeCanonicalKey));
+    if (grammarAcceptedKeys.size > 0) {
+      const acceptedCandidates = parseGrammarCandidates(review.grammarCandidates, article.body).filter(
+        (candidate) => grammarAcceptedKeys.has(candidate.canonicalKey),
+      );
+      if (acceptedCandidates.length > 0) {
+        const [existing, grammarActiveCount] = await Promise.all([
+          getGrammarItemsByKeys(userId, acceptedCandidates.map((candidate) => candidate.canonicalKey)),
+          countGrammarByStatus(userId, "active"),
+        ]);
+        grammarPlan = planGrammarSaves({
+          accepted: acceptedCandidates,
+          existing,
+          activeCount: grammarActiveCount,
+          poolLimit: user.grammarActivePoolLimit,
+          articleId: article.id,
+          now: completedAt,
+        });
+      }
+    }
 
     await applyCompletion({
       userId,
@@ -307,6 +373,8 @@ export async function completeSession(userId: number, choices: CompletionChoices
       reviewResult: session.reviewResult,
       changedItems,
       readingLemmas: passiveLemmas,
+      grammarInserts: grammarPlan.inserts,
+      grammarContextUpdates: grammarPlan.contextUpdates,
       localDay: localDayKey(completedAt, user.timezone),
       completedAt,
     });
@@ -317,6 +385,7 @@ export async function completeSession(userId: number, choices: CompletionChoices
     // actually stayed in the queue.
     const promoted = new Set(await rebalanceActivePool(userId, user.activePoolLimit));
     const queued = newlyQueued.filter((lemma) => !promoted.has(lemma));
+    await rebalanceGrammarPool(userId, user.grammarActivePoolLimit);
 
     const [stats, levelSuggestion] = await Promise.all([
       getUserStats(userId),

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth.js";
-import { listKnownWords } from "../../db/repositories/knownWords.js";
+import { listAllKnownWordRows, listKnownWords } from "../../db/repositories/knownWords.js";
 import { buildVocabularyStats } from "../../domain/vocabularyStats.js";
 import type { AppEnv } from "../context.js";
 
@@ -25,5 +25,5 @@ knownWordsRoutes.get("/", async (c) => {
 
 knownWordsRoutes.get("/stats", async (c) => {
   const { userId } = c.get("session");
-  return c.json(buildVocabularyStats(await listKnownWords(userId)));
+  return c.json(buildVocabularyStats(await listAllKnownWordRows(userId)));
 });

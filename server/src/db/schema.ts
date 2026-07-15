@@ -28,6 +28,9 @@ export const users = sqliteTable("users", {
   // words beyond the cap are parked as "queued" and promoted FIFO as slots
   // free up. 0 = no limit (every accepted word goes straight to active).
   activePoolLimit: integer("active_pool_limit").notNull().default(20),
+  // Independent cap for the grammar track's active pool (0 = unlimited,
+  // clamped to 0-50 in the API). Lexical and grammar pools never share slots.
+  grammarActivePoolLimit: integer("grammar_active_pool_limit").notNull().default(10),
   lastBotQuizAt: integer("last_bot_quiz_at"),
   // In-chat typed quiz awaiting a free-text answer: the bank item being asked
   // and when it was sent (stale pendings expire so old texts aren't graded).
@@ -126,9 +129,14 @@ export const practiceAnswers = sqliteTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    itemId: integer("item_id")
+    // Polymorphic target (F-15): exactly one of item_id/grammar_item_id is
+    // set, discriminated by item_kind — a grammar attempt never carries a
+    // fake bank_items FK. Enforced by the two writer paths + tests.
+    itemId: integer("item_id").references(() => bankItems.id, { onDelete: "cascade" }),
+    itemKind: text("item_kind", { enum: ["word", "grammar"] })
       .notNull()
-      .references(() => bankItems.id, { onDelete: "cascade" }),
+      .default("word"),
+    grammarItemId: integer("grammar_item_id").references(() => grammarItems.id, { onDelete: "cascade" }),
     ts: integer("ts").notNull(),
     cardType: text("card_type", { enum: ["cloze", "recall", "typed"] }).notNull(),
     correct: integer("correct", { mode: "boolean" }).notNull(),
@@ -140,6 +148,7 @@ export const practiceAnswers = sqliteTable(
   (t) => ({
     userTsIdx: index("practice_answers_user_ts_idx").on(t.userId, t.ts),
     itemTsIdx: index("practice_answers_item_ts_idx").on(t.itemId, t.ts),
+    grammarItemTsIdx: index("practice_answers_grammar_item_ts_idx").on(t.grammarItemId, t.ts),
   }),
 );
 
@@ -174,6 +183,63 @@ export const articles = sqliteTable(
   },
   (t) => ({
     userReadIdx: index("articles_user_read_idx").on(t.userId, t.readAt),
+  }),
+);
+
+/**
+ * Grammar-track units (grammar-track design §5): a concrete productive
+ * pattern the reader explicitly accepted from a review. Deliberately NOT a
+ * bank_items extension — the key, content and exercises are different. The
+ * SRS columns mirror the lexical ladder, but only active practice will ever
+ * move them (reading/weaving give no grammar credit).
+ */
+export const grammarItems = sqliteTable(
+  "grammar_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Server-normalized stable identity, e.g. "cuando+subjuntivo-presente".
+    canonicalKey: text("canonical_key").notNull(),
+    // Short Spanish display pattern, e.g. "cuando + presente de subjuntivo".
+    pattern: text("pattern").notNull(),
+    category: text("category", {
+      enum: [
+        "tense_aspect",
+        "mood",
+        "periphrasis",
+        "pronouns",
+        "agreement",
+        "syntax",
+        "prepositions",
+        "connectors",
+        "other",
+      ],
+    }).notNull(),
+    // Short explanation in the user's explainLang at acceptance time.
+    explanation: text("explanation").notNull(),
+    status: text("status", { enum: ["active", "queued", "learned", "ignored"] })
+      .notNull()
+      .default("active"),
+    // JSON array of up to 5 contexts (same shape as bank contexts): a repeat
+    // detection of the same canonical key adds a context, never a second row.
+    contexts: text("contexts").notNull().default("[]"),
+    // Validated GrammarExercise JSON (cloze, acceptedAnswers, options).
+    exercise: text("exercise").notNull(),
+    srsStage: integer("srs_stage").notNull().default(0),
+    nextDueAt: integer("next_due_at"),
+    lastCreditAt: integer("last_credit_at"),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch('now') * 1000)`),
+  },
+  (t) => ({
+    userKeyIdx: uniqueIndex("grammar_items_user_key_idx").on(t.userId, t.canonicalKey),
+    userStatusDueIdx: index("grammar_items_user_status_due_idx").on(t.userId, t.status, t.nextDueAt),
   }),
 );
 
@@ -254,7 +320,7 @@ export const llmCalls = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
     kind: text("kind", {
-      enum: ["search", "generate", "review", "practice", "enrich", "audit", "rewrite"],
+      enum: ["search", "generate", "review", "practice", "enrich", "audit", "rewrite", "lemmatize"],
     }).notNull(),
     model: text("model").notNull(),
     inputTokens: integer("input_tokens").notNull().default(0),

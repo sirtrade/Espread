@@ -1,8 +1,9 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../client.js";
-import { articles, bankItems, dailyActivity, knownWords, readingSessions, userStats } from "../schema.js";
+import { articles, bankItems, dailyActivity, grammarItems, knownWords, readingSessions, userStats } from "../schema.js";
 import type { BankItemRecord } from "../../domain/bank.js";
 import { READING_KNOWN_THRESHOLD } from "../../domain/knownWords.js";
+import type { GrammarContextUpdatePlan, GrammarInsertPlan } from "../../domain/grammarLifecycle.js";
 
 /**
  * Applies a finished reading session in a single transaction: bank upserts,
@@ -18,6 +19,10 @@ export async function applyCompletion(params: {
   reviewResult: string;
   changedItems: readonly BankItemRecord[];
   readingLemmas: readonly string[];
+  /** explicitly accepted grammar candidates to create (design §6) */
+  grammarInserts?: readonly GrammarInsertPlan[];
+  /** repeat canonical keys: context-only updates, status/SRS untouched */
+  grammarContextUpdates?: readonly GrammarContextUpdatePlan[];
   localDay: string;
   completedAt: number;
 }): Promise<void> {
@@ -104,6 +109,25 @@ export async function applyCompletion(params: {
             END`,
           },
         })
+        .run();
+    }
+
+    for (const plan of params.grammarInserts ?? []) {
+      // The plan is computed against a snapshot under the user lock; if a row
+      // with the key appeared anyway, adding a context is handled by the
+      // updates path next time — never clobber an existing unit's state.
+      trx
+        .insert(grammarItems)
+        .values({ userId: params.userId, ...plan, updatedAt: now })
+        .onConflictDoNothing()
+        .run();
+    }
+
+    for (const update of params.grammarContextUpdates ?? []) {
+      trx
+        .update(grammarItems)
+        .set({ contexts: update.contexts, updatedAt: now })
+        .where(eq(grammarItems.id, update.id))
         .run();
     }
 

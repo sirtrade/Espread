@@ -63,8 +63,14 @@ interface QuizSessionProps {
   onAnswer: (card: SessionCard, correct: boolean, usedHint: boolean, latencyMs: number) => Promise<AnswerOutcome | void>;
   /** Sends a typed-recall answer to the server, which grades it and returns the
    *  verdict + correct form. Required when the batch may contain `typed` cards
-   *  (Práctica); only called for a card's FIRST attempt. */
-  onTypedAnswer?: (card: SessionCard, typedAnswer: string, latencyMs: number) => Promise<TypedAnswerResult | void>;
+   *  (Práctica); only called for a card's FIRST attempt. `usedHint` reports a
+   *  revealed hint so the server can withhold SRS credit. */
+  onTypedAnswer?: (
+    card: SessionCard,
+    typedAnswer: string,
+    latencyMs: number,
+    usedHint: boolean,
+  ) => Promise<TypedAnswerResult | void>;
   /** Called from the final summary's button. */
   onFinish: (summary: { correct: number; total: number }) => void;
   finishLabel?: string;
@@ -119,6 +125,12 @@ export function QuizSession({
   const entry = queue[pos]!;
   const card = entry.card;
   const isLast = pos >= queue.length - 1;
+  const isGrammar = card.kind === "grammar";
+  // Grammar hint (design §7): the display pattern + explanation — never the
+  // answer. Word clozes keep using the context translation as before.
+  const hintText = isGrammar
+    ? [card.pattern, card.explanation].filter(Boolean).join(" — ") || null
+    : card.contextTranslation;
 
   const correctCount = firstAttempts.filter((a) => a.correct).length;
 
@@ -196,7 +208,7 @@ export function QuizSession({
 
     setSubmitting(true);
     try {
-      const res = await onTypedAnswer?.(card, value, elapsedCardLatency(shownAt.current));
+      const res = await onTypedAnswer?.(card, value, elapsedCardLatency(shownAt.current), showHint);
       const correct = res?.correct ?? false;
       setChosen(value);
       setTypedGrade(res ? { correct: res.correct, verdict: res.verdict, answer: res.answer } : null);
@@ -312,11 +324,32 @@ export function QuizSession({
       </div>
       {headerExtra}
 
+      {isGrammar && (
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-subtext">
+          {t("practice.grammarBadge")}
+          {card.category ? ` · ${t(`grammar.category.${card.category}`)}` : ""}
+        </p>
+      )}
+
       {card.type === "typed" ? (
         <>
-          <p className="mb-2 text-sm text-subtext">{t("quizSession.typeWord")}</p>
-          <p className="mb-2 text-xl font-medium">«{card.prompt}»</p>
+          <p className="mb-2 text-sm text-subtext">{isGrammar ? t("quizSession.typeForm") : t("quizSession.typeWord")}</p>
+          {isGrammar ? (
+            <p className="article-text mb-2">{card.prompt}</p>
+          ) : (
+            <p className="mb-2 text-xl font-medium">«{card.prompt}»</p>
+          )}
           {card.contextHint && <p className="article-text mb-4 text-subtext">{card.contextHint}</p>}
+          {isGrammar &&
+            hintText &&
+            !chosen &&
+            (showHint ? (
+              <p className="mb-4 text-sm italic text-subtext">{hintText}</p>
+            ) : (
+              <button onClick={() => setShowHint(true)} className="mb-4 text-left text-sm text-subtext underline">
+                {t("quizSession.showHint")}
+              </button>
+            ))}
           {!chosen && (
             <div className="flex flex-col gap-2">
               <input
@@ -343,9 +376,9 @@ export function QuizSession({
         <>
           <p className="mb-2 text-sm text-subtext">{t("quizSession.completa")}</p>
           <p className="article-text mb-2">{card.prompt}</p>
-          {card.contextTranslation &&
+          {hintText &&
             (showHint || chosen ? (
-              <p className="mb-6 text-sm italic text-subtext">{card.contextTranslation}</p>
+              <p className="mb-6 text-sm italic text-subtext">{hintText}</p>
             ) : (
               <button
                 onClick={() => setShowHint(true)}
@@ -410,6 +443,13 @@ export function QuizSession({
             {card.translation ? ` — ${card.translation}` : ""}
           </p>
           {card.context && <p className="mt-1 italic text-subtext">{card.context}</p>}
+        </div>
+      )}
+
+      {chosen && isGrammar && (card.pattern || card.explanation) && (
+        <div className="mt-3 text-sm">
+          {card.pattern && <p className="font-medium">{card.pattern}</p>}
+          {card.explanation && <p className="mt-1 text-subtext">{card.explanation}</p>}
         </div>
       )}
 

@@ -45,3 +45,9 @@ export async function listKnownWords(userId: number): Promise<KnownWordRow[]> {
     orderBy: [asc(knownWords.knownSince), asc(knownWords.lemma)],
   });
 }
+
+/** Every registry row, including sub-threshold reading lemmas
+ *  (`known_since IS NULL`) — the stats screen reports those as "on the way". */
+export async function listAllKnownWordRows(userId: number): Promise<KnownWordRow[]> {
+  return db.query.knownWords.findMany({ where: eq(knownWords.userId, userId) });
+}

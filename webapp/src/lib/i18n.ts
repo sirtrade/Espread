@@ -100,10 +100,14 @@ export interface Dict {
   "vocabulary.source.learned": string;
   "vocabulary.source.reading": string;
   "vocabulary.source.manual": string;
+  "vocabulary.accumulating": string;
+  "vocabulary.accumulatingHint": (p: { threshold: number }) => string;
+  "vocabulary.encounterCount": (p: { encounters: number; threshold: number; count: number }) => string;
   "vocabulary.weekly": string;
   "vocabulary.weekAdded": (p: { count: number }) => string;
   "vocabulary.coverage": string;
   "vocabulary.coverageHint": string;
+  "vocabulary.estimatedTotal": (p: { count: number }) => string;
   "vocabulary.range": (p: { from: number; to: number }) => string;
   "vocabulary.of": (p: { known: number; total: number }) => string;
   "vocabulary.empty": string;
@@ -128,6 +132,23 @@ export interface Dict {
   "review.save": string;
   "review.skip": string;
   "review.yourWords": string;
+  "review.grammarSection": string;
+  "review.grammarHint": string;
+  "grammar.category.tense_aspect": string;
+  "grammar.category.mood": string;
+  "grammar.category.periphrasis": string;
+  "grammar.category.pronouns": string;
+  "grammar.category.agreement": string;
+  "grammar.category.syntax": string;
+  "grammar.category.prepositions": string;
+  "grammar.category.connectors": string;
+  "grammar.category.other": string;
+  "bank.mode.words": string;
+  "bank.mode.grammar": string;
+  "bank.grammarEmpty.active": string;
+  "bank.grammarEmpty.queued": string;
+  "bank.grammarEmpty.learned": string;
+  "bank.grammarEmpty.ignored": string;
   "review.wovenHint": (p: { streak: number }) => string;
   "review.wovenHintSrs": string;
   "review.markedAgain": string;
@@ -234,6 +255,8 @@ export interface Dict {
   "quizSession.retry": string;
   "quizSession.exit": string;
   "quizSession.typeWord": string;
+  "quizSession.typeForm": string;
+  "practice.grammarBadge": string;
   "quizSession.typePlaceholder": string;
   "quizSession.submit": string;
   "quizSession.verdictExact": string;
@@ -328,10 +351,17 @@ const es: Dict = {
   "vocabulary.source.learned": "Aprendidas",
   "vocabulary.source.reading": "Por lectura",
   "vocabulary.source.manual": "Marcadas manualmente",
+  "vocabulary.accumulating": "En camino",
+  "vocabulary.accumulatingHint": ({ threshold }) =>
+    `Las palabras de lectura sin marcar se vuelven conocidas tras ${threshold} encuentros en artículos distintos.`,
+  "vocabulary.encounterCount": ({ encounters, threshold, count }) =>
+    `${encounters} de ${threshold} encuentros: ${count}`,
   "vocabulary.weekly": "Progreso semanal",
   "vocabulary.weekAdded": ({ count }) => `+${count}`,
   "vocabulary.coverage": "Cobertura por frecuencia",
-  "vocabulary.coverageHint": "Coincidencias con una lista versionada de 5.000 lemas frecuentes.",
+  "vocabulary.coverageHint": "Coincidencias con una lista versionada de 10.000 lemas frecuentes de contenido.",
+  "vocabulary.estimatedTotal": ({ count }) =>
+    `Estimación del vocabulario total: ~${count} ${plural("es", count, ["palabra", "palabras"])}`,
   "vocabulary.range": ({ from, to }) => `${from}–${to}`,
   "vocabulary.of": ({ known, total }) => `${known} de ${total}`,
   "vocabulary.empty": "Tu registro aún está vacío. Leer y practicar lo irá completando.",
@@ -357,6 +387,23 @@ const es: Dict = {
   "review.save": "Guardar",
   "review.skip": "Omitir",
   "review.yourWords": "Tus palabras en este artículo",
+  "review.grammarSection": "Gramática en tus marcas",
+  "review.grammarHint": "Guarda los patrones que quieras entrenar; los demás se descartan.",
+  "grammar.category.tense_aspect": "Tiempo y aspecto",
+  "grammar.category.mood": "Modo",
+  "grammar.category.periphrasis": "Perífrasis",
+  "grammar.category.pronouns": "Pronombres",
+  "grammar.category.agreement": "Concordancia",
+  "grammar.category.syntax": "Sintaxis",
+  "grammar.category.prepositions": "Preposiciones",
+  "grammar.category.connectors": "Conectores",
+  "grammar.category.other": "Otro",
+  "bank.mode.words": "Palabras",
+  "bank.mode.grammar": "Gramática",
+  "bank.grammarEmpty.active": "No hay construcciones en progreso. Guarda patrones desde el análisis de lectura.",
+  "bank.grammarEmpty.queued": "No hay construcciones en cola. Se llena al superar tu límite de gramática en estudio.",
+  "bank.grammarEmpty.learned": "Aún no hay construcciones aprendidas. Llegarán con la práctica.",
+  "bank.grammarEmpty.ignored": "No hay construcciones descartadas.",
   "review.wovenHint": ({ streak }) =>
     `Cada lectura sin volver a marcarlas te acerca a dominarlas (${streak} de ${streak}).`,
   "review.wovenHintSrs":
@@ -471,6 +518,8 @@ const es: Dict = {
   "quizSession.retry": "repaso",
   "quizSession.exit": "Terminar",
   "quizSession.typeWord": "Escribe la palabra en español:",
+  "quizSession.typeForm": "Escribe la forma que falta:",
+  "practice.grammarBadge": "Gramática",
   "quizSession.typePlaceholder": "Tu respuesta...",
   "quizSession.submit": "Responder",
   "quizSession.verdictExact": "✅ ¡Correcto!",
@@ -565,10 +614,17 @@ const ru: Dict = {
   "vocabulary.source.learned": "Выучено",
   "vocabulary.source.reading": "Из чтения",
   "vocabulary.source.manual": "Отмечено вручную",
+  "vocabulary.accumulating": "На подходе",
+  "vocabulary.accumulatingHint": ({ threshold }) =>
+    `Непомеченные слова из чтения становятся известными после ${threshold} встреч в разных статьях.`,
+  "vocabulary.encounterCount": ({ encounters, threshold, count }) =>
+    `${encounters} из ${threshold} встреч: ${count}`,
   "vocabulary.weekly": "Динамика по неделям",
   "vocabulary.weekAdded": ({ count }) => `+${count}`,
   "vocabulary.coverage": "Покрытие частотного списка",
-  "vocabulary.coverageHint": "Совпадения с версионированным списком 5 000 частотных лемм.",
+  "vocabulary.coverageHint": "Совпадения с версионированным списком 10 000 частотных содержательных лемм.",
+  "vocabulary.estimatedTotal": ({ count }) =>
+    `Оценка общего запаса: ~${count} ${plural("ru", count, ["слово", "слова", "слов"])}`,
   "vocabulary.range": ({ from, to }) => `${from}–${to}`,
   "vocabulary.of": ({ known, total }) => `${known} из ${total}`,
   "vocabulary.empty": "Реестр пока пуст. Чтение и тренировки постепенно его наполнят.",
@@ -594,6 +650,23 @@ const ru: Dict = {
   "review.save": "Сохранить",
   "review.skip": "Пропустить",
   "review.yourWords": "Ваши слова в этой статье",
+  "review.grammarSection": "Грамматика в пометках",
+  "review.grammarHint": "Сохраняйте конструкции, которые хотите тренировать; остальные будут отброшены.",
+  "grammar.category.tense_aspect": "Время и вид",
+  "grammar.category.mood": "Наклонение",
+  "grammar.category.periphrasis": "Перифразы",
+  "grammar.category.pronouns": "Местоимения",
+  "grammar.category.agreement": "Согласование",
+  "grammar.category.syntax": "Синтаксис",
+  "grammar.category.prepositions": "Предлоги",
+  "grammar.category.connectors": "Коннекторы",
+  "grammar.category.other": "Другое",
+  "bank.mode.words": "Слова",
+  "bank.mode.grammar": "Грамматика",
+  "bank.grammarEmpty.active": "Конструкций в работе нет. Сохраняйте шаблоны из разбора после чтения.",
+  "bank.grammarEmpty.queued": "Очередь пуста. Она наполняется, когда превышен лимит грамматики в изучении.",
+  "bank.grammarEmpty.learned": "Выученных конструкций пока нет. Они появятся с практикой.",
+  "bank.grammarEmpty.ignored": "Отброшенных конструкций нет.",
   "review.wovenHint": ({ streak }) =>
     `Каждое чтение без повторной отметки приближает вас к их освоению (${streak} из ${streak}).`,
   "review.wovenHintSrs":
@@ -709,6 +782,8 @@ const ru: Dict = {
   "quizSession.retry": "повтор",
   "quizSession.exit": "Завершить",
   "quizSession.typeWord": "Напишите слово по-испански:",
+  "quizSession.typeForm": "Впишите пропущенную форму:",
+  "practice.grammarBadge": "Грамматика",
   "quizSession.typePlaceholder": "Ваш ответ...",
   "quizSession.submit": "Ответить",
   "quizSession.verdictExact": "✅ Верно!",
@@ -803,10 +878,17 @@ const en: Dict = {
   "vocabulary.source.learned": "Learned",
   "vocabulary.source.reading": "From reading",
   "vocabulary.source.manual": "Marked manually",
+  "vocabulary.accumulating": "On the way",
+  "vocabulary.accumulatingHint": ({ threshold }) =>
+    `Unmarked reading words become known after ${threshold} encounters across different articles.`,
+  "vocabulary.encounterCount": ({ encounters, threshold, count }) =>
+    `${encounters} of ${threshold} encounters: ${count}`,
   "vocabulary.weekly": "Weekly growth",
   "vocabulary.weekAdded": ({ count }) => `+${count}`,
   "vocabulary.coverage": "Frequency coverage",
-  "vocabulary.coverageHint": "Matches against a versioned list of 5,000 frequent lemmas.",
+  "vocabulary.coverageHint": "Matches against a versioned list of 10,000 frequent content lemmas.",
+  "vocabulary.estimatedTotal": ({ count }) =>
+    `Estimated total vocabulary: ~${count} ${plural("en", count, ["word", "words"])}`,
   "vocabulary.range": ({ from, to }) => `${from}–${to}`,
   "vocabulary.of": ({ known, total }) => `${known} of ${total}`,
   "vocabulary.empty": "Your registry is empty. Reading and practice will gradually fill it.",
@@ -832,6 +914,23 @@ const en: Dict = {
   "review.save": "Save",
   "review.skip": "Skip",
   "review.yourWords": "Your words in this article",
+  "review.grammarSection": "Grammar in your marks",
+  "review.grammarHint": "Save the patterns you want to train; the rest are discarded.",
+  "grammar.category.tense_aspect": "Tense & aspect",
+  "grammar.category.mood": "Mood",
+  "grammar.category.periphrasis": "Periphrasis",
+  "grammar.category.pronouns": "Pronouns",
+  "grammar.category.agreement": "Agreement",
+  "grammar.category.syntax": "Syntax",
+  "grammar.category.prepositions": "Prepositions",
+  "grammar.category.connectors": "Connectors",
+  "grammar.category.other": "Other",
+  "bank.mode.words": "Words",
+  "bank.mode.grammar": "Grammar",
+  "bank.grammarEmpty.active": "No constructions in progress. Save patterns from the reading review.",
+  "bank.grammarEmpty.queued": "The queue is empty. It fills up once your grammar study limit is exceeded.",
+  "bank.grammarEmpty.learned": "No learned constructions yet. They'll come with practice.",
+  "bank.grammarEmpty.ignored": "No discarded constructions.",
   "review.wovenHint": ({ streak }) =>
     `Each reading without marking them again brings you closer to mastering them (${streak} of ${streak}).`,
   "review.wovenHintSrs":
@@ -947,6 +1046,8 @@ const en: Dict = {
   "quizSession.retry": "retry",
   "quizSession.exit": "Finish",
   "quizSession.typeWord": "Type the word in Spanish:",
+  "quizSession.typeForm": "Type the missing form:",
+  "practice.grammarBadge": "Grammar",
   "quizSession.typePlaceholder": "Your answer...",
   "quizSession.submit": "Answer",
   "quizSession.verdictExact": "✅ Correct!",

@@ -12,6 +12,7 @@ import { meRoutes } from "./routes/me.js";
 import { articlesRoutes } from "./routes/articles.js";
 import { sessionRoutes } from "./routes/session.js";
 import { bankRoutes } from "./routes/bank.js";
+import { grammarRoutes } from "./routes/grammar.js";
 import { practiceRoutes } from "./routes/practice.js";
 import { statsRoutes } from "./routes/stats.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -38,6 +39,7 @@ export function createApp() {
   api.route("/articles", articlesRoutes);
   api.route("/session", sessionRoutes);
   api.route("/bank", bankRoutes);
+  api.route("/grammar", grammarRoutes);
   api.route("/practice", practiceRoutes);
   api.route("/stats", statsRoutes);
   api.route("/known-words", knownWordsRoutes);

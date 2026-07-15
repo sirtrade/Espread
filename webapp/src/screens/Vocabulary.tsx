@@ -66,6 +66,28 @@ export function Vocabulary() {
       </section>
 
       <section className="mb-4 rounded-xl bg-surface p-4">
+        <h2 className="text-sm font-medium">{t("vocabulary.accumulating")}</h2>
+        <p className="mb-3 mt-1 text-xs text-subtext">
+          {t("vocabulary.accumulatingHint", { threshold: stats.accumulating.threshold })}
+        </p>
+        {stats.accumulating.total === 0 ? (
+          <p className="text-2xl font-semibold">0</p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {stats.accumulating.byEncounters.map((bucket) => (
+              <p key={bucket.encounters} className="text-sm">
+                {t("vocabulary.encounterCount", {
+                  encounters: bucket.encounters,
+                  threshold: stats.accumulating.threshold,
+                  count: bucket.count,
+                })}
+              </p>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mb-4 rounded-xl bg-surface p-4">
         <h2 className="mb-3 text-sm font-medium">{t("vocabulary.weekly")}</h2>
         <div className="flex h-24 items-end gap-1" aria-label={t("vocabulary.weekly")}>
           {stats.weekly.map((week) => (
@@ -83,8 +105,13 @@ export function Vocabulary() {
 
       <section className="mb-4 rounded-xl bg-surface p-4">
         <h2 className="text-sm font-medium">{t("vocabulary.coverage")}</h2>
-        <p className="mb-3 mt-1 text-xs text-subtext">{t("vocabulary.coverageHint")}</p>
-        <div className="flex flex-col gap-3">
+        <p className="mt-1 text-xs text-subtext">{t("vocabulary.coverageHint")}</p>
+        {stats.coverage.estimatedTotal > 0 && (
+          <p className="mt-2 text-sm font-medium">
+            {t("vocabulary.estimatedTotal", { count: stats.coverage.estimatedTotal })}
+          </p>
+        )}
+        <div className="mt-3 flex flex-col gap-3">
           {stats.coverage.ranges.map((range) => {
             const percent = range.total === 0 ? 0 : (range.known / range.total) * 100;
             return (
