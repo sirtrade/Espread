@@ -268,10 +268,11 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
 
 ## Этап 10. Мелкие исправления и метрики (низкий приоритет)
 
-1. **Локальные сутки для анти-фарма:** `creditAllowedToday`/`isSameUtcDay`
-   (`domain/srs.ts`) перевести на таймзону пользователя (`user.timezone`,
-   хелперы в `lib/timezone.ts`); прокинуть tz в `applyPracticeAnswer` и
-   `applyReviewToBank`.
+1. **Локальные сутки для анти-фарма:** ✅ готово (ветка
+   `claude/backlog-task-impl-z0hm94`). `creditAllowedToday`/`isSameLocalDay`
+   (`domain/srs.ts`) считают сутки по таймзоне пользователя (`user.timezone`,
+   хелпер `localDayKey` в `lib/timezone.ts`); tz прокинут в `applyPracticeAnswer`
+   и `applyReviewToBank`.
 2. **Размер сессии:** настройка в Settings (5/10/20, дефолт 10) →
    `GET /practice/queue?limit=`; после этапа 1 менее критично.
 3. **Журнал ответов** — фундамент для будущего адаптивного планировщика
@@ -302,7 +303,7 @@ typed-recall уже написан (`server/src/domain/typedQuiz.ts`: `buildType
 | 7 | Interleaving + анти-утечка | P2 | не начат |
 | 8 | Ротация контекстов | P2 | не начат |
 | 9 | Дистракторы | P2 | не начат |
-| 10 | Мелочи и журнал ответов | P3 | не начат |
+| 10 | Мелочи и журнал ответов | P3 | 10.1 готово (ветка `claude/backlog-task-impl-z0hm94`); остальное не начато |
 
 Агенту, берущему этап: обновить колонку «Статус» в этом файле в том же PR
 (`в работе (ветка)` → `готово (PR #N)`), чтобы следующие агенты видели

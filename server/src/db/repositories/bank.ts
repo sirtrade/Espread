@@ -116,7 +116,8 @@ export interface PracticeAnswerResult {
 
 /**
  * Applies one practice answer to the shared SRS schedule:
- *  - a first-try-correct answer climbs a rung (once per calendar day per item);
+ *  - a first-try-correct answer climbs a rung (once per calendar day per item,
+ *    counted in the reader's `timeZone`);
  *  - a correct answer for a word already at the top rung graduates it to
  *    "learned" instead;
  *  - a repeat correct answer the same day leaves the schedule untouched;
@@ -134,6 +135,7 @@ export async function applyPracticeAnswer(
   correct: boolean,
   now = Date.now(),
   usedHint = false,
+  timeZone = "UTC",
 ): Promise<PracticeAnswerResult | undefined> {
   const item = await db.query.bankItems.findFirst({
     where: and(eq(bankItems.userId, userId), eq(bankItems.id, itemId)),
@@ -154,7 +156,7 @@ export async function applyPracticeAnswer(
     // Correct, but the translation was revealed first: no advance, and the
     // schedule (stage/nextDueAt/lastCreditAt) is left as-is so the word stays
     // due for an unaided retrieval later. `advanced` stays false.
-  } else if (creditAllowedToday(item.lastCreditAt, now)) {
+  } else if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
     if (graduatesOnSuccess(item.srsStage)) {
       status = "learned";
       lastCreditAt = now;

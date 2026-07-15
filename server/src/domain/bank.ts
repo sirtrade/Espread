@@ -123,6 +123,8 @@ function occupiesSlot(item: Pick<BankItemRecord, "status" | "srsStage">): boolea
  *   considered in `reviewed` order, so earlier cards claim free slots first.
  * - A clean exposure for a word already at the top SRS rung graduates it to
  *   "learned" instead of rescheduling it.
+ * - The "once per day" anti-farm cap counts days in the reader's `timeZone`
+ *   (their local midnight), not UTC.
  *
  * Pure function: no DB/IO. Returns a new map (does not mutate `existing`).
  */
@@ -133,6 +135,7 @@ export function applyReviewToBank(
   overrides?: StatusOverrides,
   poolLimit = 0,
   now = Date.now(),
+  timeZone = "UTC",
 ): Map<string, BankItemRecord> {
   const result = new Map<string, BankItemRecord>();
   for (const [lemma, item] of existing) {
@@ -159,7 +162,7 @@ export function applyReviewToBank(
     } else {
       // Clean exposure: climb the ladder, but at most once per calendar day.
       item.exposures += 1;
-      if (creditAllowedToday(item.lastCreditAt, now)) {
+      if (creditAllowedToday(item.lastCreditAt, now, timeZone)) {
         if (graduatesOnSuccess(item.srsStage)) {
           // Survived the whole ladder plus the final 120-day review — learned.
           item.status = "learned";

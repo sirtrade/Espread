@@ -4,6 +4,33 @@
 > `- **Выполнено:** <дата>, <ветка или PR #N>` в начало карточки и удали её из
 > исходного списка (в том же PR, что и реализация). Порядок — новые сверху.
 
+## B-2. Анти-фарм SRS считается по UTC-суткам, а не по локальным
+- **Выполнено:** 2026-07-15, ветка `claude/backlog-task-impl-z0hm94`
+- **Приоритет:** P2
+- **Проблема/мотивация:** `creditAllowedToday`/`isSameUtcDay`
+  (`server/src/domain/srs.ts`) сравнивали календарные сутки в UTC. Для
+  пользователя в UTC+3 два «кредита» (подъёма по лестнице) были возможны в одни
+  локальные сутки: например, в 02:00 и в 23:00 по местному времени.
+- **Что сделано:** Добавлен хелпер `localDayKey(ms, timeZone)` в
+  `server/src/lib/timezone.ts` (ключ дня «YYYY-MM-DD» по таймзоне, безопасный
+  откат на UTC при неизвестной зоне). `isSameUtcDay` заменён на
+  `isSameLocalDay(a, b, timeZone)`, `creditAllowedToday` теперь принимает
+  `timeZone`. Таймзона пользователя (`user.timezone`) прокинута в
+  `applyPracticeAnswer` (Práctica через `POST /practice/answer`, бот-викторина)
+  и `applyReviewToBank` (завершение чтения). Известное ограничение снято из
+  `docs/functionality-registry.md` §8.2 и §24; статус этапа 10.1 в роадмапе
+  обновлён.
+- **Критерии приёмки:** Два успеха в одни локальные сутки дают один подъём;
+  тесты с таймзонами UTC+3 (`Europe/Moscow`) и UTC−8 (`America/Los_Angeles`) —
+  доменные (`server/tests/srs.test.ts`) и интеграционный через
+  `applyPracticeAnswer` (`server/tests/integration.practiceAnswer.test.ts`);
+  известное ограничение убрано из реестра функционала §8.2 и §24.
+  `npm run typecheck` и `npm test` в `server/` проходят (165 тестов).
+- **Детали/ссылки:** `docs/retention-roadmap.md` этап 10.1,
+  `docs/functionality-registry.md` §8.2.
+
+---
+
 ## F-1. Typed recall (ввод с клавиатуры) в webapp
 - **Выполнено:** 2026-07-13, ветка `claude/feature-f-1-74gzml`
 - **Приоритет:** P1

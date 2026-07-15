@@ -95,6 +95,22 @@ describe("applyPracticeAnswer: practice drives the shared SRS schedule", () => {
     expect(item?.nextDueAt).toBe(nextDay + 3 * DAY);
   });
 
+  it("counts the daily cap in the reader's timezone, not UTC", async () => {
+    const id = await seedItem({ lemma: "tzcap" });
+    // In UTC+3 both moments are 2026-02-01 local (02:00 and 23:00), even though
+    // they fall on different UTC days. The second must not earn a second climb.
+    const localMorning = Date.UTC(2026, 1, 1, 23, 0, 0); // prev UTC day, 02:00 MSK
+    const localEvening = Date.UTC(2026, 1, 2, 20, 0, 0); // 23:00 MSK, same MSK day
+
+    const first = await applyPracticeAnswer(userId, id, true, localMorning, false, "Europe/Moscow");
+    expect(first).toMatchObject({ advanced: true, srsStage: 1 });
+
+    const second = await applyPracticeAnswer(userId, id, true, localEvening, false, "Europe/Moscow");
+    expect(second).toMatchObject({ advanced: false, srsStage: 1 });
+    const item = await getBankItemById(userId, id);
+    expect(item?.lastCreditAt).toBe(localMorning);
+  });
+
   it("graduates a top-rung word to learned on a correct answer", async () => {
     const { SRS_MAX_STAGE } = await import("../src/domain/srs.js");
     const id = await seedItem({ lemma: "graduada", srsStage: SRS_MAX_STAGE });
