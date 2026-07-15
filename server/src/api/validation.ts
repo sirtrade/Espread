@@ -113,6 +113,14 @@ export const bankQuerySchema = z.object({
   status: z.enum(["active", "learned", "ignored", "queued"]).optional(),
 });
 
+export const grammarQuerySchema = z.object({
+  status: z.enum(["active", "queued", "learned", "ignored"]).optional(),
+});
+
+export const patchGrammarItemSchema = z.object({
+  status: z.enum(["active", "queued", "learned", "ignored"]),
+});
+
 export const patchBankItemSchema = z.object({
   status: z.enum(["active", "learned", "ignored", "queued"]),
 });

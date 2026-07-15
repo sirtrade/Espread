@@ -2,6 +2,8 @@ import type { UserRow } from "../db/repositories/users.js";
 import type { ArticleRow, ReadArticleSummary } from "../db/repositories/articles.js";
 import type { SessionRow } from "../db/repositories/sessions.js";
 import type { BankItemRow } from "../db/repositories/bank.js";
+import type { GrammarItemRow } from "../db/repositories/grammar.js";
+import type { GrammarExercise } from "../llm/schemas.js";
 import type { Mark } from "../domain/marks.js";
 import { parseContexts } from "../domain/contexts.js";
 
@@ -86,6 +88,24 @@ export function serializeBankItem(item: BankItemRow) {
     freqBand: item.freqBand,
     nextDueAt: item.nextDueAt,
     srsStage: item.srsStage,
+    updatedAt: item.updatedAt,
+  };
+}
+
+const NO_LEGACY_CONTEXT = { firstContext: null, contextTranslation: null, surfaceForm: null };
+
+export function serializeGrammarItem(item: GrammarItemRow) {
+  return {
+    id: item.id,
+    canonicalKey: item.canonicalKey,
+    pattern: item.pattern,
+    category: item.category,
+    explanation: item.explanation,
+    status: item.status,
+    contexts: parseContexts(item.contexts, NO_LEGACY_CONTEXT),
+    exercise: JSON.parse(item.exercise) as GrammarExercise,
+    srsStage: item.srsStage,
+    nextDueAt: item.nextDueAt,
     updatedAt: item.updatedAt,
   };
 }

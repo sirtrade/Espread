@@ -121,6 +121,10 @@ describe("review contract: grammar candidates (F-11)", () => {
 
     const view = await reviewSession(userId);
     expect(view.items).toHaveLength(1);
+    // The client-facing view carries the validated candidates for the
+    // review screen's "Grammar in your marks" section.
+    expect(view.grammarCandidates).toHaveLength(1);
+    expect(view.grammarCandidates[0]!.canonicalKey).toBe("cuando+subjuntivo-presente");
 
     // The grammar prompt contract was requested (sentence mark present).
     const systemPrompt = (createMock.mock.calls[0]?.[0] as { system: string }).system;

@@ -132,6 +132,23 @@ export interface Dict {
   "review.save": string;
   "review.skip": string;
   "review.yourWords": string;
+  "review.grammarSection": string;
+  "review.grammarHint": string;
+  "grammar.category.tense_aspect": string;
+  "grammar.category.mood": string;
+  "grammar.category.periphrasis": string;
+  "grammar.category.pronouns": string;
+  "grammar.category.agreement": string;
+  "grammar.category.syntax": string;
+  "grammar.category.prepositions": string;
+  "grammar.category.connectors": string;
+  "grammar.category.other": string;
+  "bank.mode.words": string;
+  "bank.mode.grammar": string;
+  "bank.grammarEmpty.active": string;
+  "bank.grammarEmpty.queued": string;
+  "bank.grammarEmpty.learned": string;
+  "bank.grammarEmpty.ignored": string;
   "review.wovenHint": (p: { streak: number }) => string;
   "review.wovenHintSrs": string;
   "review.markedAgain": string;
@@ -368,6 +385,23 @@ const es: Dict = {
   "review.save": "Guardar",
   "review.skip": "Omitir",
   "review.yourWords": "Tus palabras en este artículo",
+  "review.grammarSection": "Gramática en tus marcas",
+  "review.grammarHint": "Guarda los patrones que quieras entrenar; los demás se descartan.",
+  "grammar.category.tense_aspect": "Tiempo y aspecto",
+  "grammar.category.mood": "Modo",
+  "grammar.category.periphrasis": "Perífrasis",
+  "grammar.category.pronouns": "Pronombres",
+  "grammar.category.agreement": "Concordancia",
+  "grammar.category.syntax": "Sintaxis",
+  "grammar.category.prepositions": "Preposiciones",
+  "grammar.category.connectors": "Conectores",
+  "grammar.category.other": "Otro",
+  "bank.mode.words": "Palabras",
+  "bank.mode.grammar": "Gramática",
+  "bank.grammarEmpty.active": "No hay construcciones en progreso. Guarda patrones desde el análisis de lectura.",
+  "bank.grammarEmpty.queued": "No hay construcciones en cola. Se llena al superar tu límite de gramática en estudio.",
+  "bank.grammarEmpty.learned": "Aún no hay construcciones aprendidas. Llegarán con la práctica.",
+  "bank.grammarEmpty.ignored": "No hay construcciones descartadas.",
   "review.wovenHint": ({ streak }) =>
     `Cada lectura sin volver a marcarlas te acerca a dominarlas (${streak} de ${streak}).`,
   "review.wovenHintSrs":
@@ -612,6 +646,23 @@ const ru: Dict = {
   "review.save": "Сохранить",
   "review.skip": "Пропустить",
   "review.yourWords": "Ваши слова в этой статье",
+  "review.grammarSection": "Грамматика в пометках",
+  "review.grammarHint": "Сохраняйте конструкции, которые хотите тренировать; остальные будут отброшены.",
+  "grammar.category.tense_aspect": "Время и вид",
+  "grammar.category.mood": "Наклонение",
+  "grammar.category.periphrasis": "Перифразы",
+  "grammar.category.pronouns": "Местоимения",
+  "grammar.category.agreement": "Согласование",
+  "grammar.category.syntax": "Синтаксис",
+  "grammar.category.prepositions": "Предлоги",
+  "grammar.category.connectors": "Коннекторы",
+  "grammar.category.other": "Другое",
+  "bank.mode.words": "Слова",
+  "bank.mode.grammar": "Грамматика",
+  "bank.grammarEmpty.active": "Конструкций в работе нет. Сохраняйте шаблоны из разбора после чтения.",
+  "bank.grammarEmpty.queued": "Очередь пуста. Она наполняется, когда превышен лимит грамматики в изучении.",
+  "bank.grammarEmpty.learned": "Выученных конструкций пока нет. Они появятся с практикой.",
+  "bank.grammarEmpty.ignored": "Отброшенных конструкций нет.",
   "review.wovenHint": ({ streak }) =>
     `Каждое чтение без повторной отметки приближает вас к их освоению (${streak} из ${streak}).`,
   "review.wovenHintSrs":
@@ -857,6 +908,23 @@ const en: Dict = {
   "review.save": "Save",
   "review.skip": "Skip",
   "review.yourWords": "Your words in this article",
+  "review.grammarSection": "Grammar in your marks",
+  "review.grammarHint": "Save the patterns you want to train; the rest are discarded.",
+  "grammar.category.tense_aspect": "Tense & aspect",
+  "grammar.category.mood": "Mood",
+  "grammar.category.periphrasis": "Periphrasis",
+  "grammar.category.pronouns": "Pronouns",
+  "grammar.category.agreement": "Agreement",
+  "grammar.category.syntax": "Syntax",
+  "grammar.category.prepositions": "Prepositions",
+  "grammar.category.connectors": "Connectors",
+  "grammar.category.other": "Other",
+  "bank.mode.words": "Words",
+  "bank.mode.grammar": "Grammar",
+  "bank.grammarEmpty.active": "No constructions in progress. Save patterns from the reading review.",
+  "bank.grammarEmpty.queued": "The queue is empty. It fills up once your grammar study limit is exceeded.",
+  "bank.grammarEmpty.learned": "No learned constructions yet. They'll come with practice.",
+  "bank.grammarEmpty.ignored": "No discarded constructions.",
   "review.wovenHint": ({ streak }) =>
     `Each reading without marking them again brings you closer to mastering them (${streak} of ${streak}).`,
   "review.wovenHintSrs":

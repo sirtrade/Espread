@@ -11,6 +11,7 @@ import { intervalDaysForStage, READING_CREDIT_MAX_STAGE } from "../lib/srs.js";
 import { useT } from "../lib/i18n.js";
 
 type Decision = "bank" | "skip";
+type GrammarDecision = "save" | "skip";
 
 /** Rare words are dropped by default; frequent ones are kept. The reader can
  *  override either on the card. */
@@ -23,6 +24,9 @@ export function Review() {
   const navigate = useNavigate();
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  // A grammar candidate is NEVER saved without the reader's explicit accept
+  // (grammar-track design §6), so unlike words its default is "skip".
+  const [grammarDecisions, setGrammarDecisions] = useState<Record<string, GrammarDecision>>({});
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +58,11 @@ export function Review() {
     setDecisions((d) => ({ ...d, [lemma]: decision }));
   }
 
+  function setGrammarDecision(key: string, decision: GrammarDecision) {
+    hapticSelect();
+    setGrammarDecisions((d) => ({ ...d, [key]: decision }));
+  }
+
   function toggleExpanded(i: number) {
     setExpanded((e) => ({ ...e, [i]: !e[i] }));
   }
@@ -64,9 +73,13 @@ export function Review() {
     try {
       const accepted = result.items.filter((it) => decisions[it.lemma] === "bank");
       const rejected = result.items.filter((it) => decisions[it.lemma] === "skip");
+      const grammarAccepted = result.grammarCandidates
+        .filter((candidate) => grammarDecisions[candidate.canonicalKey] === "save")
+        .map((candidate) => candidate.canonicalKey);
       const { queued, levelSuggestion } = await api.completeSession({
         accepted: accepted.map((it) => it.lemma),
         rejected: rejected.map((it) => it.lemma),
+        grammarAccepted,
       });
       // Reinforce right away with a quick recall quiz over the accepted words.
       // Queued words aren't in study yet, so they're not quizzed — but the
@@ -146,6 +159,54 @@ export function Review() {
                     </button>
                     <button
                       onClick={() => setDecision(item.lemma, "skip")}
+                      className={`flex-1 px-3 py-2 ${decision === "skip" ? "bg-subtle text-text" : "text-subtext"}`}
+                    >
+                      {t("review.skip")}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {result.grammarCandidates.length > 0 && (
+        <section className="mb-8">
+          <p className="mb-1 text-sm font-medium text-subtext">{t("review.grammarSection")}</p>
+          <p className="mb-3 text-xs text-subtext">{t("review.grammarHint")}</p>
+          <ul className="flex flex-col gap-3">
+            {result.grammarCandidates.map((candidate) => {
+              const decision = grammarDecisions[candidate.canonicalKey] ?? "skip";
+              return (
+                <li key={candidate.canonicalKey} className="rounded-2xl bg-surface px-4 py-4">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="text-lg font-semibold">{candidate.pattern}</span>
+                    <span className="badge-amber rounded-full px-2 py-0.5 text-xs font-medium text-text">
+                      {t(`grammar.category.${candidate.category}`)}
+                    </span>
+                  </div>
+
+                  <div className="border-subtle-light mt-2 border-l-2 pl-3">
+                    <p className="text-sm italic">
+                      {highlightSurface(candidate.sourceSentence, candidate.sourceForm)}
+                    </p>
+                    {candidate.sourceSentenceTranslation && (
+                      <p className="mt-1 text-sm text-subtext">{candidate.sourceSentenceTranslation}</p>
+                    )}
+                  </div>
+
+                  <p className="mt-2 text-sm">{candidate.explanation}</p>
+
+                  <div className="border-subtle-light mt-3 flex overflow-hidden rounded-full border text-xs font-medium">
+                    <button
+                      onClick={() => setGrammarDecision(candidate.canonicalKey, "save")}
+                      className={`flex-1 px-3 py-2 ${decision === "save" ? "bg-accent text-white" : "text-subtext"}`}
+                    >
+                      {t("review.save")}
+                    </button>
+                    <button
+                      onClick={() => setGrammarDecision(candidate.canonicalKey, "skip")}
                       className={`flex-1 px-3 py-2 ${decision === "skip" ? "bg-subtle text-text" : "text-subtext"}`}
                     >
                       {t("review.skip")}

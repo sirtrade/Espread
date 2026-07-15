@@ -360,6 +360,25 @@ marks })`:
   битый кандидат не роняет весь разбор. Валидированные кандидаты сохраняются в
   архиве `review_result`; completion их пока игнорирует (потребление — F-12+).
 
+#### 7.1.2 Review/Bank UX грамматики (F-13)
+- **Review**: `ReviewView` включает `grammarCandidates` (валидированные,
+  идемпотентная перевалидация при чтении кэша). Под лексической секцией —
+  «Грамматика в пометках»: шаблон + чип категории, исходное предложение с
+  подсветкой `sourceForm`, перевод, объяснение и независимый переключатель
+  «Сохранить/Пропустить». **Дефолт — «Пропустить»**: кандидат никогда не
+  сохраняется без явного выбора. Принятые ключи уходят в `grammarAccepted`
+  при `POST /session/complete`.
+- **Bank**: переключатель режимов «Слова / Грамматика»; вкладка грамматики
+  фильтрует те же четыре статуса. Карточка: шаблон, категория, объяснение,
+  последний контекст с подсветкой и переводом, таймер SRS. Действия зеркалят
+  словарные: active → «Знаю»/«Отбросить», queued → «Изучать сейчас»,
+  learned/ignored → «Вернуть в практику».
+- **API**: `GET /api/grammar?status=` (сериализация: contexts распарсены,
+  `exercise` JSON) и `PATCH /api/grammar/:id {status}` — ручная смена статуса
+  с полным сбросом SRS (`resetSrs`, как у слов) и FIFO-ребалансом
+  грамматического пула после. Чужой item → 404.
+- Все новые строки локализованы ru/en/es (категории — `grammar.category.*`).
+
 ### 7.2 Идемпотентность разбора (`server/src/services/sessionService.ts`)
 `reviewSession(userId)` (под `withUserLock`):
 - Если сессия уже в состоянии `reviewed` и есть закешированный результат — он
@@ -928,6 +947,8 @@ itemsQueued, activePoolLimit, currentStreak, weeklyProgress[] }`; элемент
 | `DELETE /api/session` | Бросить сессию | |
 | `POST /api/session/review` | LLM-разбор | Идемпотентно; rate-limit `DAILY_REVIEW_LIMIT` |
 | `POST /api/session/complete` | Завершить, коммит в банк | Требует `reviewed`; `accepted`/`rejected` ≤100, `grammarAccepted` ≤10 (опционально); возвращает nullable level suggestion |
+| `GET /api/grammar` | Список грамматических единиц | Опциональный `?status=active/queued/learned/ignored` |
+| `PATCH /api/grammar/:id` | Ручная смена статуса единицы | Полный сброс SRS + FIFO-ребаланс пула; чужой item → 404 |
 | `GET /api/bank` | Банк | Фильтр `?status=` |
 | `PATCH /api/bank/:id` | Сменить статус слова | + `rebalanceActivePool` |
 | `GET /api/practice/queue` | Очередь тренировки | `limit` 1–30 (10); pool `limit*3`, shuffle, cross-card anti-leak; typed для stage≥2 без lemma/accepted до ответа |

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
-import type { BankItem, BankStatus } from "../api/types.js";
+import type { BankItem, BankStatus, GrammarItem, GrammarStatus } from "../api/types.js";
 import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { hapticSelect } from "../telegram/telegram.js";
@@ -27,9 +27,12 @@ function nextDueLabel(lang: Lang, at: number | null | undefined): string {
   return t(lang, "bank.nextPractice.inDays", { count: days });
 }
 
+type BankMode = "words" | "grammar";
+
 export function Bank() {
   const { t } = useT();
   const navigate = useNavigate();
+  const [mode, setMode] = useState<BankMode>("words");
   const [tab, setTab] = useState<BankStatus>("active");
   const [items, setItems] = useState<BankItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,10 +55,11 @@ export function Bank() {
   }
 
   useEffect(() => {
+    if (mode !== "words") return;
     load(tab);
     setOpenId(null);
     setQuery("");
-  }, [tab]);
+  }, [tab, mode]);
 
   async function changeStatus(item: BankItem, status: BankStatus) {
     hapticSelect();
@@ -86,13 +90,32 @@ export function Bank() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-6">
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-4 flex items-center gap-3">
         <button onClick={() => navigate(-1)} className="text-subtext">
           ←
         </button>
         <h1 className="text-xl font-semibold">{t("bank.title")}</h1>
       </div>
 
+      <div className="border-subtle-light mb-4 flex overflow-hidden rounded-full border text-xs font-medium">
+        {(["words", "grammar"] as const).map((value) => (
+          <button
+            key={value}
+            onClick={() => {
+              hapticSelect();
+              setMode(value);
+            }}
+            className={`flex-1 px-3 py-2 ${mode === value ? "bg-accent text-white" : "text-subtext"}`}
+          >
+            {t(`bank.mode.${value}`)}
+          </button>
+        ))}
+      </div>
+
+      {mode === "grammar" ? (
+        <GrammarBank />
+      ) : (
+        <>
       <div className="mb-4 flex flex-wrap gap-2">
         {TAB_VALUES.map((value) => (
           <button
@@ -156,7 +179,153 @@ export function Bank() {
           ))}
         </ul>
       )}
+        </>
+      )}
     </div>
+  );
+}
+
+/** The grammar-track tab: same four statuses over `grammar_items` (F-13).
+ *  Self-contained so switching modes never mixes word and grammar state. */
+function GrammarBank() {
+  const { t, lang } = useT();
+  const [tab, setTab] = useState<GrammarStatus>("active");
+  const [items, setItems] = useState<GrammarItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<number | null>(null);
+
+  async function load(status: GrammarStatus) {
+    setLoading(true);
+    setError(null);
+    try {
+      const { items: rows } = await api.getGrammar(status);
+      setItems(rows);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("bank.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load(tab);
+    setOpenId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  async function changeStatus(item: GrammarItem, status: GrammarStatus) {
+    hapticSelect();
+    setBusyId(item.id);
+    try {
+      await api.patchGrammarItem(item.id, status);
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
+      setOpenId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("bank.updateError"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {TAB_VALUES.map((value) => (
+          <button
+            key={value}
+            onClick={() => setTab(value)}
+            className={`rounded-full px-4 py-1.5 text-xs font-medium ${
+              tab === value ? "bg-accent text-white" : "bg-surface text-subtext"
+            }`}
+          >
+            {t(`bank.tab.${value}`)}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <Spinner label={t("bank.loading")} />
+      ) : error && items.length === 0 ? (
+        <ErrorState message={error} onRetry={() => load(tab)} />
+      ) : items.length === 0 ? (
+        <p className="text-sm text-subtext">{t(`bank.grammarEmpty.${tab}`)}</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5 pb-8">
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          {items.map((item) => (
+            <li key={item.id} className="overflow-hidden rounded-xl bg-surface">
+              <button
+                onClick={() => {
+                  hapticSelect();
+                  setOpenId((cur) => (cur === item.id ? null : item.id));
+                }}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                aria-expanded={openId === item.id}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{item.pattern}</span>
+                  <span className="mt-0.5 block truncate text-sm text-subtext">
+                    {t(`grammar.category.${item.category}`)}
+                  </span>
+                </span>
+              </button>
+
+              {openId === item.id && (
+                <div className="border-subtle-light border-t px-4 py-4">
+                  <p className="text-sm">{item.explanation}</p>
+
+                  {item.contexts.length > 0 && (
+                    <div className="border-subtle-light mt-3 border-l-2 pl-3">
+                      <p className="text-sm italic">
+                        {highlightSurface(
+                          item.contexts.at(-1)!.sentence,
+                          item.contexts.at(-1)!.surfaceForm,
+                        )}
+                      </p>
+                      {item.contexts.at(-1)!.translation && (
+                        <p className="mt-1 text-sm text-subtext">{item.contexts.at(-1)!.translation}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {item.status === "active" && (
+                    <div className="mt-4 text-xs text-subtext">
+                      <span>{nextDueLabel(lang, item.nextDueAt)}</span>
+                    </div>
+                  )}
+                  {item.status === "queued" && <p className="mt-3 text-xs text-subtext">{t("bank.queuedNote")}</p>}
+
+                  <div className="mt-4 flex gap-2">
+                    {item.status === "active" && (
+                      <>
+                        <DetailButton disabled={busyId === item.id} onClick={() => changeStatus(item, "learned")}>
+                          {t("bank.knowIt")}
+                        </DetailButton>
+                        <DetailButton disabled={busyId === item.id} onClick={() => changeStatus(item, "ignored")}>
+                          {t("bank.discard")}
+                        </DetailButton>
+                      </>
+                    )}
+                    {item.status === "queued" && (
+                      <DetailButton disabled={busyId === item.id} onClick={() => changeStatus(item, "active")}>
+                        {t("bank.studyNow")}
+                      </DetailButton>
+                    )}
+                    {(item.status === "learned" || item.status === "ignored") && (
+                      <DetailButton disabled={busyId === item.id} onClick={() => changeStatus(item, "active")}>
+                        {t("bank.practiceAgain")}
+                      </DetailButton>
+                    )}
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

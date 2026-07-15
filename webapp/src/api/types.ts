@@ -90,9 +90,41 @@ export interface WovenTerm {
   markedAgain: boolean;
 }
 
+export type GrammarCategory =
+  | "tense_aspect"
+  | "mood"
+  | "periphrasis"
+  | "pronouns"
+  | "agreement"
+  | "syntax"
+  | "prepositions"
+  | "connectors"
+  | "other";
+
+export interface GrammarExercise {
+  /** the source sentence with the key form replaced by "___" */
+  cloze: string;
+  acceptedAnswers: string[];
+  options: string[];
+}
+
+/** A server-validated grammar pattern proposed by the review (F-11/F-13).
+ *  Saved as a grammar item only after the reader's explicit accept. */
+export interface GrammarCandidate {
+  canonicalKey: string;
+  pattern: string;
+  category: GrammarCategory;
+  explanation: string;
+  sourceForm: string;
+  sourceSentence: string;
+  sourceSentenceTranslation: string | null;
+  exercise: GrammarExercise;
+}
+
 export interface ReviewResult {
   items: ReviewItem[];
   wovenTerms: WovenTerm[];
+  grammarCandidates: GrammarCandidate[];
 }
 
 /** Legacy `{ words, phrases }` review shape still archived on read articles
@@ -175,6 +207,29 @@ export interface BankItem {
    *  a word may not have been scheduled yet (`nextDueAt` null). */
   nextDueAt?: number | null;
   srsStage?: number;
+}
+
+export type GrammarStatus = "active" | "queued" | "learned" | "ignored";
+
+/** A saved grammar-track unit (server `serializeGrammarItem`). */
+export interface GrammarItem {
+  id: number;
+  canonicalKey: string;
+  pattern: string;
+  category: GrammarCategory;
+  explanation: string;
+  status: GrammarStatus;
+  contexts: Array<{
+    sentence: string;
+    translation: string | null;
+    surfaceForm: string;
+    articleId: number | null;
+    addedAt: number;
+  }>;
+  exercise: GrammarExercise;
+  srsStage: number;
+  nextDueAt: number | null;
+  updatedAt: number;
 }
 
 export interface HistoryItem {

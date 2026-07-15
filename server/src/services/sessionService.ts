@@ -9,7 +9,7 @@ import { planGrammarSaves } from "../domain/grammarLifecycle.js";
 import { termAppearsIn } from "../domain/weaving.js";
 import { reviewMarkedItems } from "../llm/review.js";
 import { extractArticleLemmas } from "../llm/lemmatize.js";
-import { reviewSchema, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
+import { reviewSchema, type GrammarCandidate, type ReviewItem, type ReviewResult } from "../llm/schemas.js";
 import type { ArticleRow } from "../db/repositories/articles.js";
 import { config } from "../lib/config.js";
 import { withUserLock } from "../lib/locks.js";
@@ -46,6 +46,8 @@ export interface WovenTermProgress {
 export interface ReviewView {
   items: ReviewItemView[];
   wovenTerms: WovenTermProgress[];
+  /** server-validated grammar candidates for the review screen (F-13) */
+  grammarCandidates: GrammarCandidate[];
 }
 
 /** Builds the client-facing review: attaches each item's article sentence and
@@ -68,7 +70,11 @@ function buildReviewView(article: ArticleRow, marks: readonly Mark[], result: Re
     };
   });
 
-  return { items, wovenTerms };
+  // Idempotent re-validation: fresh results are already clean, and a legacy
+  // cached review (raw or absent candidates) yields a safe list either way.
+  const grammarCandidates = parseGrammarCandidates(result.grammarCandidates, article.body);
+
+  return { items, wovenTerms, grammarCandidates };
 }
 
 export async function reviewSession(userId: number): Promise<ReviewView> {

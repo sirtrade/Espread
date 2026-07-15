@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { grammarItems } from "../schema.js";
 import { queuedPromotionCount } from "../../domain/bank.js";
+import { resetSrs } from "../../domain/srs.js";
 import type { GrammarStatus } from "../../domain/grammarLifecycle.js";
 
 export type GrammarItemRow = typeof grammarItems.$inferSelect;
@@ -20,6 +21,24 @@ export async function getGrammarItemsByKeys(userId: number, keys: readonly strin
   return db.query.grammarItems.findMany({
     where: and(eq(grammarItems.userId, userId), inArray(grammarItems.canonicalKey, [...keys])),
   });
+}
+
+/** Manual status change from the Bank tab. Mirrors `setBankItemStatus`: the
+ *  unit restarts at the bottom rung, due right away (relevant when moving it
+ *  back into study); ordinary practice failures will soft-lapse instead. */
+export async function setGrammarItemStatus(
+  userId: number,
+  itemId: number,
+  status: GrammarStatus,
+): Promise<GrammarItemRow | undefined> {
+  const now = Date.now();
+  const s = resetSrs(now);
+  const [row] = await db
+    .update(grammarItems)
+    .set({ status, srsStage: s.srsStage, nextDueAt: s.nextDueAt, lastCreditAt: null, updatedAt: now })
+    .where(and(eq(grammarItems.userId, userId), eq(grammarItems.id, itemId)))
+    .returning();
+  return row;
 }
 
 export async function countGrammarByStatus(userId: number, status: GrammarStatus): Promise<number> {
