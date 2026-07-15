@@ -109,6 +109,31 @@ describe("applyReviewToBank", () => {
     expect(result.get("casa")).toMatchObject({ srsStage: 2, exposures: 2, lastCreditAt: NOW - 60_000 });
   });
 
+  it("caps the reading credit by the user's local day, not UTC (UTC+3)", () => {
+    // Prior credit at 2026-02-10 02:00 MSK; this exposure at 2026-02-10 23:00
+    // MSK — same local day but a different UTC day. No second climb.
+    const lastCredit = Date.UTC(2026, 1, 9, 23, 0, 0); // 2026-02-10 02:00 MSK
+    const now = Date.UTC(2026, 1, 10, 20, 0, 0); // 2026-02-10 23:00 MSK
+    const existing = new Map([["casa", item({ srsStage: 2, lastCreditAt: lastCredit })]]);
+    const result = applyReviewToBank(existing, ["casa"], [], undefined, 0, now, "Europe/Moscow");
+    expect(result.get("casa")).toMatchObject({ srsStage: 2, exposures: 2, lastCreditAt: lastCredit });
+  });
+
+  it("credits a reading exposure across a local-day rollover within one UTC day (UTC−8)", () => {
+    // Prior credit at 2026-02-10 23:00 PST; this exposure at 2026-02-11 01:00
+    // PST — same UTC day but a new local day, so the word climbs again.
+    const lastCredit = Date.UTC(2026, 1, 11, 7, 0, 0); // 2026-02-10 23:00 PST
+    const now = Date.UTC(2026, 1, 11, 9, 0, 0); // 2026-02-11 01:00 PST
+    const existing = new Map([["casa", item({ srsStage: 2, lastCreditAt: lastCredit })]]);
+    const result = applyReviewToBank(existing, ["casa"], [], undefined, 0, now, "America/Los_Angeles");
+    expect(result.get("casa")).toMatchObject({
+      srsStage: 3,
+      exposures: 2,
+      lastCreditAt: now,
+      nextDueAt: now + SRS_INTERVALS_DAYS[2]! * DAY,
+    });
+  });
+
   it("graduates a top-rung word to learned on a clean exposure", () => {
     const existing = new Map([["casa", item({ srsStage: SRS_INTERVALS_DAYS.length })]]);
     const result = applyReviewToBank(existing, ["casa"], [], undefined, 0, NOW);
