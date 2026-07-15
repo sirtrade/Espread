@@ -19,6 +19,8 @@ import { countRecentCalls } from "../db/repositories/llmCalls.js";
 import { getUserStats } from "../db/repositories/stats.js";
 import { getActiveSession, setSessionReviewed } from "../db/repositories/sessions.js";
 import { localDayKey } from "../lib/timezone.js";
+import { evaluateLevelSuggestion } from "./levelSuggestionService.js";
+import type { LevelSuggestion } from "../domain/levelSuggestion.js";
 
 /** A review card enriched for the client: the raw LLM verdict plus the exact
  *  sentence from the article the item was marked in. */
@@ -102,6 +104,7 @@ export interface CompleteResult {
   /** lemmas this completion parked in the queue (active pool was full) */
   queued: string[];
   articlesRead: number;
+  levelSuggestion: LevelSuggestion | null;
 }
 
 function bankItemDiffers(before: BankItemRecord | undefined, after: BankItemRecord): boolean {
@@ -315,7 +318,10 @@ export async function completeSession(userId: number, choices: CompletionChoices
     const promoted = new Set(await rebalanceActivePool(userId, user.activePoolLimit));
     const queued = newlyQueued.filter((lemma) => !promoted.has(lemma));
 
-    const stats = await getUserStats(userId);
-    return { queued, articlesRead: stats?.articlesRead ?? 0 };
+    const [stats, levelSuggestion] = await Promise.all([
+      getUserStats(userId),
+      evaluateLevelSuggestion(userId, completedAt),
+    ]);
+    return { queued, articlesRead: stats?.articlesRead ?? 0, levelSuggestion };
   });
 }

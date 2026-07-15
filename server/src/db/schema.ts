@@ -36,6 +36,11 @@ export const users = sqliteTable("users", {
   // Identifies the randomly selected context for typed bot feedback without
   // exposing its surface form before the answer is graded.
   pendingQuizContextAddedAt: integer("pending_quiz_context_added_at"),
+  // F-8 suggestion interaction metadata. Null means no suggestion has been
+  // displayed since onboarding/reset/the last actual level change.
+  levelSuggestionDirection: text("level_suggestion_direction", { enum: ["up", "down"] }),
+  levelSuggestionShownAt: integer("level_suggestion_shown_at"),
+  levelSuggestionDismissedAt: integer("level_suggestion_dismissed_at"),
   onboardedAt: integer("onboarded_at"),
   lastDailyDeliveredDate: text("last_daily_delivered_date"),
   lastPrefetchDate: text("last_prefetch_date"),

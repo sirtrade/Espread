@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../client.js";
-import { articles, bankItems, dailyActivity, knownWords, readingSessions, userStats } from "../schema.js";
+import { articles, bankItems, dailyActivity, knownWords, readingSessions, userStats, users } from "../schema.js";
 
 /** Wipes a user's reading/vocabulary progress: bank, articles (cascades sessions), and stats counters. */
 export async function resetUserProgress(userId: number): Promise<void> {
@@ -14,6 +14,15 @@ export async function resetUserProgress(userId: number): Promise<void> {
       .update(userStats)
       .set({ articlesRead: 0, itemsLearned: 0, lastLearnedDigestAt: null })
       .where(eq(userStats.userId, userId))
+      .run();
+    trx
+      .update(users)
+      .set({
+        levelSuggestionDirection: null,
+        levelSuggestionShownAt: null,
+        levelSuggestionDismissedAt: null,
+      })
+      .where(eq(users.id, userId))
       .run();
   });
 }
