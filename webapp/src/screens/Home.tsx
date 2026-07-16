@@ -9,6 +9,7 @@ import { BankChip } from "../components/BankChip.js";
 import { hapticImpact } from "../telegram/telegram.js";
 import { locale, useT } from "../lib/i18n.js";
 import { LevelSuggestionBanner } from "../components/LevelSuggestionBanner.js";
+import { TopicSuggestionBanner } from "../components/TopicSuggestionBanner.js";
 
 export function Home() {
   const { t, lang } = useT();
@@ -24,6 +25,7 @@ export function Home() {
   const [levelSuggestion, setLevelSuggestion] = useState<LevelSuggestion | null>(
     location.state?.levelSuggestion ?? null,
   );
+  const [topicSuggestion, setTopicSuggestion] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -37,6 +39,7 @@ export function Home() {
       const [s, b, p] = await Promise.all([api.getStats(), api.getBank("active"), api.getPracticeQueue(1)]);
       setStats(s);
       setLevelSuggestion((current) => current ?? s.levelSuggestion);
+      setTopicSuggestion(s.topicSuggestion?.topic ?? null);
       setBank(b.items);
       setPracticeDue(p.due);
     } catch (err) {
@@ -90,6 +93,10 @@ export function Home() {
 
       {levelSuggestion && (
         <LevelSuggestionBanner suggestion={levelSuggestion} onResolved={() => setLevelSuggestion(null)} />
+      )}
+
+      {topicSuggestion && (
+        <TopicSuggestionBanner topic={topicSuggestion} onResolved={() => setTopicSuggestion(null)} />
       )}
 
       {stats && (

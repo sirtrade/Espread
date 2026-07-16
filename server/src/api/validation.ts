@@ -40,6 +40,13 @@ export const patchMeSchema = z.object({
   practiceSize: z.number().int().min(PRACTICE_SIZE_MIN).max(PRACTICE_SIZE_MAX).optional(),
 });
 
+// "Keep the topic" for the remove-topic suggestion (F-19). Removal itself
+// goes through the ordinary PATCH /me topics flow, so only the dismissal
+// needs its own interaction endpoint.
+export const topicSuggestionInteractionSchema = z.object({
+  topic: z.string().trim().min(1).max(60),
+});
+
 export const levelSuggestionInteractionSchema = z.object({
   action: z.enum(["seen", "dismissed"]),
   direction: z.enum(["up", "down"]),
@@ -114,6 +121,16 @@ export const completeSessionSchema = z.object({
   // old client that sends no grammar decisions completes normally (F-12).
   grammarAccepted: z.array(z.string().min(1).max(80)).max(10).optional(),
 });
+
+// F-17 skip questionnaire: the reason is optional (closing the sheet without
+// answering still skips), the free-text comment is accepted only with "other"
+// (owner decision — the three preset reasons already encode the signal).
+export const skipSessionSchema = z
+  .object({
+    reason: z.enum(["repeat", "not_interested", "too_hard", "other"]).optional(),
+    comment: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine((d) => d.comment == null || d.reason === "other", "El comentario solo se admite con la razón 'other'");
 
 export const bankQuerySchema = z.object({
   status: z.enum(["active", "learned", "ignored", "queued"]).optional(),

@@ -92,6 +92,11 @@ export interface Dict {
   "levelSuggestion.keep": string;
   "levelSuggestion.error": string;
 
+  "topicSuggestion.title": (p: { topic: string }) => string;
+  "topicSuggestion.remove": string;
+  "topicSuggestion.keep": string;
+  "topicSuggestion.error": string;
+
   "vocabulary.title": string;
   "vocabulary.loading": string;
   "vocabulary.loadError": string;
@@ -121,6 +126,16 @@ export interface Dict {
   "reading.analyzing": string;
   "reading.loadError": string;
   "reading.analyzeError": string;
+  "reading.skip": string;
+  "reading.skipTitle": string;
+  "reading.skipReason.repeat": string;
+  "reading.skipReason.not_interested": string;
+  "reading.skipReason.too_hard": string;
+  "reading.skipReason.other": string;
+  "reading.skipCommentPlaceholder": string;
+  "reading.skipConfirm": string;
+  "reading.skipping": string;
+  "reading.skipError": string;
 
   "review.spinnerAnalyzing": string;
   "review.title": string;
@@ -343,6 +358,11 @@ const es: Dict = {
   "levelSuggestion.keep": "Mantener mi nivel",
   "levelSuggestion.error": "No se pudo guardar tu elección",
 
+  "topicSuggestion.title": ({ topic }) => `Sueles omitir artículos de «${topic}». ¿Quitar este tema de tus intereses?`,
+  "topicSuggestion.remove": "Quitar el tema",
+  "topicSuggestion.keep": "Mantenerlo",
+  "topicSuggestion.error": "No se pudo guardar tu elección",
+
   "vocabulary.title": "Vocabulario",
   "vocabulary.loading": "Cargando tu vocabulario...",
   "vocabulary.loadError": "No se pudo cargar tu vocabulario",
@@ -376,6 +396,16 @@ const es: Dict = {
   "reading.analyzing": "Analizando...",
   "reading.loadError": "No se pudo cargar la lectura",
   "reading.analyzeError": "No se pudo analizar la lectura",
+  "reading.skip": "Omitir",
+  "reading.skipTitle": "¿Por qué omites este artículo?",
+  "reading.skipReason.repeat": "Ya leí sobre esto",
+  "reading.skipReason.not_interested": "El tema no me interesa",
+  "reading.skipReason.too_hard": "Demasiado difícil",
+  "reading.skipReason.other": "Otro motivo",
+  "reading.skipCommentPlaceholder": "Cuéntanos por qué (opcional)",
+  "reading.skipConfirm": "Omitir artículo",
+  "reading.skipping": "Omitiendo...",
+  "reading.skipError": "No se pudo omitir el artículo",
 
   "review.spinnerAnalyzing": "Analizando tus palabras y frases...",
   "review.title": "Tu análisis",
@@ -606,6 +636,11 @@ const ru: Dict = {
   "levelSuggestion.keep": "Оставить мой уровень",
   "levelSuggestion.error": "Не удалось сохранить выбор",
 
+  "topicSuggestion.title": ({ topic }) => `Ты часто пропускаешь статьи по теме «${topic}». Убрать её из интересов?`,
+  "topicSuggestion.remove": "Убрать тему",
+  "topicSuggestion.keep": "Оставить",
+  "topicSuggestion.error": "Не удалось сохранить выбор",
+
   "vocabulary.title": "Словарный запас",
   "vocabulary.loading": "Загрузка словарного запаса...",
   "vocabulary.loadError": "Не удалось загрузить словарный запас",
@@ -639,6 +674,16 @@ const ru: Dict = {
   "reading.analyzing": "Анализ...",
   "reading.loadError": "Не удалось загрузить чтение",
   "reading.analyzeError": "Не удалось проанализировать чтение",
+  "reading.skip": "Пропустить",
+  "reading.skipTitle": "Почему пропускаешь?",
+  "reading.skipReason.repeat": "Уже читал(а) об этом",
+  "reading.skipReason.not_interested": "Тема не интересна",
+  "reading.skipReason.too_hard": "Слишком сложно",
+  "reading.skipReason.other": "Другое",
+  "reading.skipCommentPlaceholder": "Расскажи почему (необязательно)",
+  "reading.skipConfirm": "Пропустить статью",
+  "reading.skipping": "Пропускаем...",
+  "reading.skipError": "Не удалось пропустить статью",
 
   "review.spinnerAnalyzing": "Анализируем ваши слова и фразы...",
   "review.title": "Ваш разбор",
@@ -870,6 +915,11 @@ const en: Dict = {
   "levelSuggestion.keep": "Keep my level",
   "levelSuggestion.error": "Couldn't save your choice",
 
+  "topicSuggestion.title": ({ topic }) => `You often skip “${topic}” articles. Remove this topic from your interests?`,
+  "topicSuggestion.remove": "Remove topic",
+  "topicSuggestion.keep": "Keep it",
+  "topicSuggestion.error": "Couldn't save your choice",
+
   "vocabulary.title": "Vocabulary",
   "vocabulary.loading": "Loading your vocabulary...",
   "vocabulary.loadError": "Couldn't load your vocabulary",
@@ -903,6 +953,16 @@ const en: Dict = {
   "reading.analyzing": "Analyzing...",
   "reading.loadError": "Couldn't load the reading",
   "reading.analyzeError": "Couldn't analyze the reading",
+  "reading.skip": "Skip",
+  "reading.skipTitle": "Why are you skipping?",
+  "reading.skipReason.repeat": "I've already read about this",
+  "reading.skipReason.not_interested": "Not interested in the topic",
+  "reading.skipReason.too_hard": "Too difficult",
+  "reading.skipReason.other": "Other",
+  "reading.skipCommentPlaceholder": "Tell us why (optional)",
+  "reading.skipConfirm": "Skip article",
+  "reading.skipping": "Skipping...",
+  "reading.skipError": "Couldn't skip the article",
 
   "review.spinnerAnalyzing": "Analyzing your words and phrases...",
   "review.title": "Your review",

@@ -63,6 +63,27 @@ export const userTopics = sqliteTable("user_topics", {
   position: integer("position").notNull().default(0),
 });
 
+/**
+ * "Keep the topic" decisions for the remove-topic suggestion (F-19). A
+ * separate table (not a column on user_topics) because setUserTopics
+ * recreates topic rows on every settings edit and would wipe the stamp.
+ * Only skips AFTER dismissed_at count toward re-suggesting the topic.
+ */
+export const topicSuggestionDismissals = sqliteTable(
+  "topic_suggestion_dismissals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    topic: text("topic").notNull(),
+    dismissedAt: integer("dismissed_at").notNull(),
+  },
+  (t) => ({
+    userTopicIdx: uniqueIndex("topic_suggestion_dismissals_user_topic_idx").on(t.userId, t.topic),
+  }),
+);
+
 export const bankItems = sqliteTable(
   "bank_items",
   {
@@ -177,6 +198,12 @@ export const articles = sqliteTable(
     marks: text("marks").notNull().default("[]"),
     reviewResult: text("review_result"),
     readAt: integer("read_at"),
+    // Skip record (F-17): an article is read or skipped at most once, so the
+    // questionnaire answer lives here (no separate table). The reason/comment
+    // feed future topic selection (F-18/F-19). Comment only with "other".
+    skippedAt: integer("skipped_at"),
+    skipReason: text("skip_reason", { enum: ["repeat", "not_interested", "too_hard", "other"] }),
+    skipComment: text("skip_comment"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch('now') * 1000)`),

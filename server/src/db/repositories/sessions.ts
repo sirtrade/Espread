@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../client.js";
-import { readingSessions } from "../schema.js";
+import { articles, readingSessions } from "../schema.js";
 import type { Mark } from "../../domain/marks.js";
 
 export type SessionRow = typeof readingSessions.$inferSelect;
@@ -34,4 +34,26 @@ export async function setSessionReviewed(sessionId: number, reviewResult: unknow
 
 export async function deleteSession(userId: number): Promise<void> {
   await db.delete(readingSessions).where(eq(readingSessions.userId, userId));
+}
+
+/**
+ * Skips a reading (F-17): the skip stamp on the article and the session
+ * delete land together or not at all — a crash between them must not leave a
+ * skipped-but-still-active reading (or a silently dropped questionnaire).
+ */
+export async function applySkip(params: {
+  sessionId: number;
+  articleId: number;
+  reason: "repeat" | "not_interested" | "too_hard" | "other" | null;
+  comment: string | null;
+  skippedAt: number;
+}): Promise<void> {
+  db.transaction((trx) => {
+    trx
+      .update(articles)
+      .set({ skippedAt: params.skippedAt, skipReason: params.reason, skipComment: params.comment })
+      .where(eq(articles.id, params.articleId))
+      .run();
+    trx.delete(readingSessions).where(eq(readingSessions.id, params.sessionId)).run();
+  });
 }

@@ -18,6 +18,7 @@ import type {
   SentenceCheckResult,
   ReviewResult,
   Session,
+  SkipReason,
   Stats,
   KnownWord,
   LevelSuggestion,
@@ -123,11 +124,19 @@ export const api = {
   resetProgress: () => request<{ ok: true }>("/me/progress", { method: "DELETE" }),
   markLevelSuggestion: (interaction: LevelSuggestion & { action: "seen" | "dismissed" }) =>
     request<{ ok: true }>("/me/level-suggestion", { method: "PATCH", body: JSON.stringify(interaction) }),
+  // F-19: "keep the topic" on the remove-topic banner; removal itself goes
+  // through the ordinary patchMe({ topics }) flow.
+  dismissTopicSuggestion: (topic: string) =>
+    request<{ ok: true }>("/me/topic-suggestion", { method: "PATCH", body: JSON.stringify({ topic }) }),
   createArticle: () => request<{ article: Article; session: Session }>("/articles", { method: "POST" }),
   getSession: () => request<{ session: Session | null; article: Article | null }>("/session"),
   putSession: (marks: Mark[]) =>
     request<{ ok: true }>("/session", { method: "PUT", body: JSON.stringify({ marks }) }),
   deleteSession: () => request<{ ok: true }>("/session", { method: "DELETE" }),
+  // F-17: skip the active reading. The reason is optional; a comment is only
+  // sent (and only accepted by the server) with reason "other".
+  skipSession: (payload: { reason?: SkipReason; comment?: string } = {}) =>
+    request<{ ok: true }>("/session/skip", { method: "POST", body: JSON.stringify(payload) }),
   reviewSession: () => request<ReviewResult>("/session/review", { method: "POST" }),
   completeSession: (choices: { accepted?: string[]; rejected?: string[]; grammarAccepted?: string[] } = {}) =>
     request<CompleteResult>("/session/complete", { method: "POST", body: JSON.stringify(choices) }),

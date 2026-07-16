@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
-import type { Article, Session } from "../api/types.js";
+import type { Article, Session, SkipReason } from "../api/types.js";
 import { Spinner } from "../components/Spinner.js";
 import { ErrorState } from "../components/ErrorState.js";
 import { Button } from "../components/Button.js";
@@ -15,6 +15,9 @@ import { useT } from "../lib/i18n.js";
 const LONG_PRESS_MS = 450;
 const MOVE_CANCEL_PX = 10;
 
+const SKIP_REASONS = ["repeat", "not_interested", "too_hard", "other"] as const satisfies readonly SkipReason[];
+const SKIP_COMMENT_MAX = 200;
+
 export function Reading() {
   const { t } = useT();
   const navigate = useNavigate();
@@ -25,6 +28,14 @@ export function Reading() {
   const [marks, setMarks] = useState<MarkPos[]>([]);
   const [showHint, setShowHint] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  // Skip questionnaire (F-17): the sheet asks why, but answering is optional —
+  // the confirm button skips with or without a selected reason. Closing the
+  // sheet (backdrop / back) cancels and keeps the reading.
+  const [skipOpen, setSkipOpen] = useState(false);
+  const [skipReason, setSkipReason] = useState<SkipReason | null>(null);
+  const [skipComment, setSkipComment] = useState("");
+  const [skipping, setSkipping] = useState(false);
+  const [skipError, setSkipError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Long-press detection shared across all word tokens: a tap toggles the word,
@@ -168,6 +179,29 @@ export function Reading() {
     return marks.some((m) => m.kind === "sentence" && m.p === p && m.s === s);
   }
 
+  function closeSkipSheet() {
+    if (skipping) return;
+    setSkipOpen(false);
+    setSkipError(null);
+  }
+
+  async function confirmSkip() {
+    setSkipping(true);
+    setSkipError(null);
+    const comment = skipReason === "other" ? skipComment.trim().slice(0, SKIP_COMMENT_MAX) : "";
+    try {
+      await api.skipSession({
+        ...(skipReason ? { reason: skipReason } : {}),
+        ...(comment ? { comment } : {}),
+      });
+      // The session is gone; Home offers "Nueva lectura" (a normal startReading).
+      navigate("/", { replace: true });
+    } catch (err) {
+      setSkipError(err instanceof Error ? err.message : t("reading.skipError"));
+      setSkipping(false);
+    }
+  }
+
   async function finish() {
     setFinishing(true);
     setError(null);
@@ -251,6 +285,13 @@ export function Reading() {
 
       <div className="border-subtle-light fixed inset-x-0 bottom-0 border-t bg-bg px-5 py-4">
         <div className="mx-auto flex max-w-md items-center justify-between gap-4">
+          <button
+            onClick={() => setSkipOpen(true)}
+            disabled={finishing}
+            className="text-xs text-subtext underline decoration-dotted underline-offset-2 disabled:opacity-40"
+          >
+            {t("reading.skip")}
+          </button>
           <p className="text-xs text-subtext">{t("reading.marks", { count: marks.length })}</p>
           <Button onClick={finish} disabled={finishing}>
             {finishing ? t("reading.analyzing") : t("reading.finish")}
@@ -258,6 +299,51 @@ export function Reading() {
         </div>
         {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
       </div>
+
+      {skipOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={closeSkipSheet}>
+          <div
+            className="border-subtle-light w-full max-w-md rounded-t-2xl border-t bg-bg px-5 pb-8 pt-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-3 text-lg font-semibold">{t("reading.skipTitle")}</h2>
+            <div className="mb-3 space-y-2">
+              {SKIP_REASONS.map((reason) => (
+                <button
+                  key={reason}
+                  onClick={() => setSkipReason((prev) => (prev === reason ? null : reason))}
+                  disabled={skipping}
+                  className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+                    skipReason === reason ? "border-accent font-medium" : "border-subtle text-subtext"
+                  }`}
+                >
+                  {t(`reading.skipReason.${reason}`)}
+                </button>
+              ))}
+            </div>
+            {skipReason === "other" && (
+              <textarea
+                value={skipComment}
+                onChange={(e) => setSkipComment(e.target.value)}
+                maxLength={SKIP_COMMENT_MAX}
+                rows={2}
+                disabled={skipping}
+                placeholder={t("reading.skipCommentPlaceholder")}
+                className="border-subtle mb-3 w-full resize-none rounded-xl border bg-transparent px-4 py-3 text-sm"
+              />
+            )}
+            {skipError && <p className="mb-2 text-xs text-red-500">{skipError}</p>}
+            <div className="flex items-center justify-between gap-3">
+              <Button variant="ghost" onClick={closeSkipSheet} disabled={skipping}>
+                {t("common.back")}
+              </Button>
+              <Button variant="secondary" onClick={confirmSkip} disabled={skipping}>
+                {skipping ? t("reading.skipping") : t("reading.skipConfirm")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

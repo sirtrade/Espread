@@ -63,6 +63,10 @@ export interface Session {
   updatedAt: number;
 }
 
+/** Why the reader skipped an article (F-17). A free-text comment is only
+ *  accepted alongside "other". */
+export type SkipReason = "repeat" | "not_interested" | "too_hard" | "other";
+
 export type Pos = "verb" | "noun" | "adj" | "adv" | "phrase" | "other";
 export type FreqBand = "top1000" | "top3000" | "top5000" | "rare";
 
@@ -255,6 +259,8 @@ export interface Stats {
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
   levelSuggestion: LevelSuggestion | null;
+  /** soft "remove topic X from your interests?" suggestion (F-19) */
+  topicSuggestion: { topic: string } | null;
   currentStreak: number;
   weeklyProgress: Array<{
     /** Monday in the user's local calendar, YYYY-MM-DD */

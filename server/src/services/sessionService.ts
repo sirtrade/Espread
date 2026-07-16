@@ -22,7 +22,7 @@ import { countGrammarByStatus, getGrammarItemsByKeys, rebalanceGrammarPool } fro
 import { applyCompletion } from "../db/repositories/completion.js";
 import { countRecentCalls } from "../db/repositories/llmCalls.js";
 import { getUserStats } from "../db/repositories/stats.js";
-import { getActiveSession, setSessionReviewed } from "../db/repositories/sessions.js";
+import { applySkip, getActiveSession, setSessionReviewed } from "../db/repositories/sessions.js";
 import { localDayKey } from "../lib/timezone.js";
 import { evaluateLevelSuggestion } from "./levelSuggestionService.js";
 import type { LevelSuggestion } from "../domain/levelSuggestion.js";
@@ -108,6 +108,33 @@ export async function reviewSession(userId: number): Promise<ReviewView> {
 
     const bank = await getBankItemsMap(userId);
     return buildReviewView(article, rawMarks, result, bank);
+  });
+}
+
+export type SkipReason = NonNullable<ArticleRow["skipReason"]>;
+
+/**
+ * The reader declines the active article (F-17). The skip (with the optional
+ * questionnaire answer) is stamped on the article — its topic keeps counting
+ * in rotation, but the article never enters the reading history — and the
+ * session is dropped with NO credit of any kind: no bank/SRS writes, no
+ * known-words encounters, no daily_activity, no articlesRead, no streak; the
+ * session's marks are discarded. Only a session still in `reading` can be
+ * skipped: once the review is paid for, the flow finishes through
+ * review/complete (owner decision). The spent `generate` call is NOT
+ * refunded, so the next reading obeys DAILY_ARTICLE_LIMIT as usual.
+ */
+export async function skipSession(userId: number, input: { reason?: SkipReason; comment?: string } = {}): Promise<void> {
+  return withUserLock(`session:${userId}`, async () => {
+    const session = await getActiveSession(userId);
+    if (!session || session.state !== "reading") throw Errors.notFound("Sesión de lectura");
+    await applySkip({
+      sessionId: session.id,
+      articleId: session.articleId,
+      reason: input.reason ?? null,
+      comment: input.comment ?? null,
+      skippedAt: Date.now(),
+    });
   });
 }
 

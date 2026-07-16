@@ -1,6 +1,8 @@
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { articles } from "../schema.js";
+import type { RecentStoryCandidate } from "../../domain/recentStories.js";
+import type { TopicSkip } from "../../domain/topicPreferences.js";
 
 export type ArticleRow = typeof articles.$inferSelect;
 
@@ -41,6 +43,56 @@ export async function getRecentTopics(userId: number, limit = 2): Promise<string
     columns: { topic: true },
   });
   return rows.map((r) => r.topic);
+}
+
+/**
+ * Raw candidates for the story-avoidance list (F-18): titles of the reader's
+ * articles read or skipped since `sinceMs`, newest first. Windowing here
+ * bounds the result (≤ DAILY_ARTICLE_LIMIT per day over the window); the
+ * priority ordering and cap live in `buildStoryAvoidList`.
+ */
+export async function getRecentStoryCandidates(userId: number, sinceMs: number): Promise<RecentStoryCandidate[]> {
+  const finishedAt = sql<number>`coalesce(${articles.readAt}, ${articles.skippedAt})`;
+  return db
+    .select({
+      title: articles.title,
+      readAt: articles.readAt,
+      skippedAt: articles.skippedAt,
+      skipReason: articles.skipReason,
+    })
+    .from(articles)
+    .where(
+      and(
+        eq(articles.userId, userId),
+        or(isNotNull(articles.readAt), isNotNull(articles.skippedAt)),
+        sql`${finishedAt} >= ${sinceMs}`,
+      ),
+    )
+    .orderBy(desc(finishedAt));
+}
+
+/** Skips since `sinceMs` (F-19): raw material for rotation weights and the
+ *  remove-topic suggestion; reason filtering lives in the domain layer. */
+export async function getRecentSkips(userId: number, sinceMs: number): Promise<TopicSkip[]> {
+  const rows = await db
+    .select({ topic: articles.topic, skippedAt: articles.skippedAt, skipReason: articles.skipReason })
+    .from(articles)
+    .where(and(eq(articles.userId, userId), isNotNull(articles.skippedAt), sql`${articles.skippedAt} >= ${sinceMs}`));
+  return rows.map((r) => ({ topic: r.topic, skippedAt: r.skippedAt!, skipReason: r.skipReason }));
+}
+
+/** The reader's latest free-text skip notes (reason "other", F-19), newest
+ *  first — negative preferences for the search prompt. */
+export async function getRecentSkipComments(userId: number, sinceMs: number, limit: number): Promise<string[]> {
+  const rows = await db
+    .select({ comment: articles.skipComment })
+    .from(articles)
+    .where(
+      and(eq(articles.userId, userId), isNotNull(articles.skipComment), sql`${articles.skippedAt} >= ${sinceMs}`),
+    )
+    .orderBy(desc(articles.skippedAt))
+    .limit(limit);
+  return rows.map((r) => r.comment!);
 }
 
 export async function getUnconsumedPrefetchedArticle(userId: number): Promise<ArticleRow | undefined> {
