@@ -1,4 +1,5 @@
 import { pickTopic } from "../domain/topicRotation.js";
+import { buildStoryAvoidList, RECENT_STORIES_WINDOW_MS } from "../domain/recentStories.js";
 import { selectTargetTerms } from "../domain/bank.js";
 import { verifyWovenTerms } from "../domain/weaving.js";
 import { normalizeArticleLemmas } from "../domain/knownWords.js";
@@ -12,6 +13,7 @@ import { getUserTopics } from "../db/repositories/topics.js";
 import {
   createArticle,
   getArticleById,
+  getRecentStoryCandidates,
   getRecentTopics,
   getUnconsumedPrefetchedArticle,
   markArticleConsumed,
@@ -31,12 +33,18 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
   const recentTopics = await getRecentTopics(userId, 2);
   const topic = pickTopic(topics, recentTopics);
 
+  // F-18: ban the reader's recent stories in the search prompt so a fresh
+  // generation (and the prefetch, which shares this path) doesn't bring back
+  // the same headline from another source.
+  const now = Date.now();
+  const avoidStories = buildStoryAvoidList(await getRecentStoryCandidates(userId, now - RECENT_STORIES_WINDOW_MS), now);
+
   const activeItems = await getActiveItemsForSelection(userId);
   // Candidates we ASK the model to weave in (dosed). What it actually uses is
   // re-verified below, so a skipped candidate stays due for a later article.
-  const candidateTerms = selectTargetTerms(activeItems, Date.now());
+  const candidateTerms = selectTargetTerms(activeItems, now);
 
-  const generated = await generateArticle({ userId, level: user.level, topic, targetTerms: candidateTerms });
+  const generated = await generateArticle({ userId, level: user.level, topic, targetTerms: candidateTerms, avoidStories });
 
   const wovenTerms = verifyWovenTerms(candidateTerms, generated.body, generated.usedTerms);
   const lemmas = normalizeArticleLemmas(generated.lemmas, generated.body);

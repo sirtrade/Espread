@@ -22,6 +22,8 @@ export interface GenerateArticleParams {
   level: CefrLevel;
   topic: string;
   targetTerms: string[];
+  /** headlines of recently read/skipped stories the search must avoid (F-18) */
+  avoidStories?: string[];
 }
 
 export interface GeneratedArticle extends ArticleStepResult {
@@ -35,7 +37,7 @@ export interface ArticleFacts {
   sourceName: string;
 }
 
-async function runSearchStep(userId: number, topic: string) {
+async function runSearchStep(userId: number, topic: string, avoidStories: readonly string[] = []) {
   const system =
     "Eres un periodista que investiga noticias reales y recientes para lectores que aprenden español. " +
     "Usa la herramienta de búsqueda web para encontrar UNA noticia real, verificable y reciente sobre el tema dado. " +
@@ -43,9 +45,20 @@ async function runSearchStep(userId: number, topic: string) {
     "PROHIBIDO copiar o parafrasear muy de cerca las frases del artículo original: usa tus propias palabras. " +
     "Responde ÚNICAMENTE con JSON: {\"facts\": string, \"source_name\": string, \"source_url\": string}.";
 
+  // F-18: the reader keeps getting the week's loudest story from different
+  // sources. Ban their recent stories explicitly; the list is per-request
+  // data, so it goes in the user turn, and an empty history adds nothing.
+  const avoidBlock =
+    avoidStories.length > 0
+      ? `\n\nEl lector YA leyó u omitió noticias sobre las siguientes historias recientes. NO elijas una noticia ` +
+        `que cubra la misma historia o el mismo acontecimiento que cualquiera de ellas, aunque venga de otra ` +
+        `fuente o con otro titular; busca un suceso DISTINTO dentro del tema:\n` +
+        avoidStories.map((title) => `- ${title}`).join("\n")
+      : "";
+
   return callJsonLLM({
     system,
-    messages: [{ role: "user", content: `Tema: ${topic}` }],
+    messages: [{ role: "user", content: `Tema: ${topic}${avoidBlock}` }],
     schema: searchStepSchema,
     kind: "search",
     userId,
@@ -107,11 +120,11 @@ async function runWriteStep(params: {
 export async function generateArticle(params: GenerateArticleParams): Promise<GeneratedArticle> {
   let search: Awaited<ReturnType<typeof runSearchStep>> | null = null;
   try {
-    search = await runSearchStep(params.userId, params.topic);
+    search = await runSearchStep(params.userId, params.topic, params.avoidStories);
   } catch (err) {
     logger.warn({ err, topic: params.topic }, "Article search step failed, retrying once");
     try {
-      search = await runSearchStep(params.userId, params.topic);
+      search = await runSearchStep(params.userId, params.topic, params.avoidStories);
     } catch (err2) {
       logger.warn({ err: err2, topic: params.topic }, "Article search step failed twice, using fallback (no source)");
       search = null;

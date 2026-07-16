@@ -1,6 +1,7 @@
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "../client.js";
 import { articles } from "../schema.js";
+import type { RecentStoryCandidate } from "../../domain/recentStories.js";
 
 export type ArticleRow = typeof articles.$inferSelect;
 
@@ -41,6 +42,32 @@ export async function getRecentTopics(userId: number, limit = 2): Promise<string
     columns: { topic: true },
   });
   return rows.map((r) => r.topic);
+}
+
+/**
+ * Raw candidates for the story-avoidance list (F-18): titles of the reader's
+ * articles read or skipped since `sinceMs`, newest first. Windowing here
+ * bounds the result (≤ DAILY_ARTICLE_LIMIT per day over the window); the
+ * priority ordering and cap live in `buildStoryAvoidList`.
+ */
+export async function getRecentStoryCandidates(userId: number, sinceMs: number): Promise<RecentStoryCandidate[]> {
+  const finishedAt = sql<number>`coalesce(${articles.readAt}, ${articles.skippedAt})`;
+  return db
+    .select({
+      title: articles.title,
+      readAt: articles.readAt,
+      skippedAt: articles.skippedAt,
+      skipReason: articles.skipReason,
+    })
+    .from(articles)
+    .where(
+      and(
+        eq(articles.userId, userId),
+        or(isNotNull(articles.readAt), isNotNull(articles.skippedAt)),
+        sql`${finishedAt} >= ${sinceMs}`,
+      ),
+    )
+    .orderBy(desc(finishedAt));
 }
 
 export async function getUnconsumedPrefetchedArticle(userId: number): Promise<ArticleRow | undefined> {
