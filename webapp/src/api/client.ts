@@ -112,6 +112,18 @@ async function request<T>(path: string, opts: RequestInit = {}, isRetry = false)
   return body as T;
 }
 
+const REVIEW_POLL_INTERVAL_MS = 1_000;
+
+async function reviewSession(): Promise<ReviewResult> {
+  for (;;) {
+    const poll = await request<
+      { status: "processing" } | { status: "completed"; result: ReviewResult }
+    >("/session/review", { method: "POST" });
+    if (poll.status === "completed") return poll.result;
+    await new Promise((resolve) => setTimeout(resolve, REVIEW_POLL_INTERVAL_MS));
+  }
+}
+
 export const api = {
   authTelegram: (initData: string) =>
     request<{ token: string; profile: Profile }>("/auth/telegram", {
@@ -137,7 +149,7 @@ export const api = {
   // sent (and only accepted by the server) with reason "other".
   skipSession: (payload: { reason?: SkipReason; comment?: string } = {}) =>
     request<{ ok: true }>("/session/skip", { method: "POST", body: JSON.stringify(payload) }),
-  reviewSession: () => request<ReviewResult>("/session/review", { method: "POST" }),
+  reviewSession,
   completeSession: (choices: { accepted?: string[]; rejected?: string[]; grammarAccepted?: string[] } = {}) =>
     request<CompleteResult>("/session/complete", { method: "POST", body: JSON.stringify(choices) }),
   getBank: (status?: BankStatus) => request<{ items: BankItem[] }>(`/bank${status ? `?status=${status}` : ""}`),

@@ -6,7 +6,8 @@ import {
   updateSessionMarks,
 } from "../../db/repositories/sessions.js";
 import { getArticleById } from "../../db/repositories/articles.js";
-import { reviewSession, completeSession, skipSession } from "../../services/sessionService.js";
+import { completeSession, skipSession } from "../../services/sessionService.js";
+import { pollReviewSession } from "../../services/reviewJobService.js";
 import { Errors } from "../errors.js";
 import { serializeArticle, serializeSession } from "../serializers.js";
 import { completeSessionSchema, putSessionSchema, skipSessionSchema } from "../validation.js";
@@ -57,8 +58,9 @@ sessionRoutes.post("/skip", async (c) => {
 
 sessionRoutes.post("/review", async (c) => {
   const { userId } = c.get("session");
-  const result = await reviewSession(userId);
-  return c.json(result);
+  const poll = await pollReviewSession(userId);
+  if (poll.status === "processing") return c.json(poll, 202);
+  return c.json(poll);
 });
 
 sessionRoutes.post("/complete", async (c) => {

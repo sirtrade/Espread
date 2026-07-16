@@ -1,8 +1,16 @@
+import { z } from "zod";
 import { callJsonLLM } from "./callJson.js";
-import { grammarCategorySchema, reviewSchema, type ReviewResult } from "./schemas.js";
+import {
+  grammarCategorySchema,
+  reviewItemSchema,
+  type ReviewItem,
+  type ReviewResult,
+} from "./schemas.js";
 import { config } from "../lib/config.js";
 import type { Mark } from "../domain/marks.js";
 import { MAX_GRAMMAR_CANDIDATES_PER_REVIEW, parseGrammarCandidates } from "../domain/grammar.js";
+import { normalizeTerm } from "../domain/normalize.js";
+import { logger } from "../lib/logger.js";
 
 const EXPLAIN_LANG_NAME: Record<"ru" | "en" | "es", string> = {
   ru: "ruso",
@@ -23,6 +31,48 @@ export const REVIEW_DISTRACTOR_INSTRUCTION =
   `- "distractors": genera entre 5 y 8 opciones españolas semánticamente plausibles de la misma categoría ` +
   `gramatical, relacionadas con un tema cercano y de longitud y registro parecidos. No deben ser sinónimos, ` +
   `variantes flexionadas ni formas derivadas del lemma; deben funcionar como respuestas incorrectas creíbles en un quiz.\n`;
+
+export const REVIEW_BATCH_SIZE = 8;
+const REVIEW_CONCURRENCY = 2;
+
+const reviewLlmSchema = z.object({
+  items: z.array(z.unknown()).max(REVIEW_BATCH_SIZE * 2),
+  grammarCandidates: z
+    .array(z.unknown())
+    .max(20)
+    .nullish()
+    .transform((value) => value ?? []),
+});
+
+/** Repairs the common harmless format violation without letting explanatory
+ * text or the Spanish answer leak into the quiz translation. */
+function cleanTranslation(value: string): string {
+  return value
+    .split(/[（(—]/, 1)[0]!
+    .trim()
+    .slice(0, 60)
+    .trim();
+}
+
+export function parseReviewItems(raw: readonly unknown[]): ReviewItem[] {
+  const items: ReviewItem[] = [];
+  for (const value of raw) {
+    let parsed = reviewItemSchema.safeParse(value);
+    if (!parsed.success && value && typeof value === "object") {
+      const translation = (value as Record<string, unknown>).translation;
+      if (typeof translation === "string") {
+        const cleaned = cleanTranslation(translation);
+        if (cleaned) parsed = reviewItemSchema.safeParse({ ...value, translation: cleaned });
+      }
+    }
+    if (parsed.success) {
+      items.push(parsed.data);
+    } else {
+      logger.warn({ reason: parsed.error.message }, "Discarded invalid review item");
+    }
+  }
+  return items;
+}
 
 /**
  * Single LLM call implementing the "Terminé" review: turns the reader's
@@ -57,14 +107,10 @@ function grammarInstruction(lang: string): string {
   );
 }
 
-export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewResult> {
-  if (params.marks.length === 0) {
-    return { items: [], grammarCandidates: [] };
-  }
-
+async function reviewBatch(params: ReviewParams, marks: Mark[]) {
   // Grammar candidates may only come from sentence marks or multiword spans
   // (design §4); an all-single-words review doesn't even ask for them.
-  const hasConstructionMarks = params.marks.some((mark) => mark.kind !== "word");
+  const hasConstructionMarks = marks.some((mark) => mark.kind !== "word");
 
   const lang = EXPLAIN_LANG_NAME[params.explainLang];
   const system =
@@ -99,7 +145,7 @@ export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewRes
     `- No dupliques fichas: si dos marcas llevan al mismo lemma, devuelve una sola ficha.` +
     (hasConstructionMarks ? grammarInstruction(lang) : "");
 
-  const marksPayload = params.marks.map((m) => ({ text: m.text, sentence: m.sentence, kind: m.kind }));
+  const marksPayload = marks.map((m) => ({ text: m.text, sentence: m.sentence, kind: m.kind }));
   const userContent =
     `Artículo:\nTítulo: ${params.articleTitle}\n${params.articleBody}\n\n` +
     `Marcas del estudiante: ${JSON.stringify(marksPayload)}`;
@@ -107,19 +153,57 @@ export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewRes
   const result = await callJsonLLM({
     system,
     messages: [{ role: "user", content: userContent }],
-    schema: reviewSchema,
+    schema: reviewLlmSchema,
     kind: "review",
     userId: params.userId,
     model: config.MODEL,
     maxTokens: 4096,
   });
 
-  // Server-side validation is the source of truth: whatever the model claims,
-  // only verifiable candidates survive, and never from single-word reviews.
   return {
-    ...result,
-    grammarCandidates: hasConstructionMarks
-      ? parseGrammarCandidates(result.grammarCandidates, params.articleBody)
-      : [],
+    items: parseReviewItems(result.items),
+    grammarCandidates: hasConstructionMarks ? result.grammarCandidates : [],
+  };
+}
+
+export async function reviewMarkedItems(params: ReviewParams): Promise<ReviewResult> {
+  if (params.marks.length === 0) return { items: [], grammarCandidates: [] };
+
+  const batches: Mark[][] = [];
+  for (let start = 0; start < params.marks.length; start += REVIEW_BATCH_SIZE) {
+    batches.push(params.marks.slice(start, start + REVIEW_BATCH_SIZE));
+  }
+
+  const results = new Array<Awaited<ReturnType<typeof reviewBatch>>>(batches.length);
+  let nextBatch = 0;
+  const workers = Array.from(
+    { length: Math.min(REVIEW_CONCURRENCY, batches.length) },
+    async () => {
+      for (;;) {
+        const index = nextBatch++;
+        const batch = batches[index];
+        if (!batch) return;
+        results[index] = await reviewBatch(params, batch);
+      }
+    },
+  );
+  await Promise.all(workers);
+
+  // Adjacent marks can land in different batches. Collapse any duplicate lemma
+  // the model produced, preserving the first card's stable display order.
+  const itemsByLemma = new Map<string, ReviewItem>();
+  for (const item of results.flatMap((result) => result.items)) {
+    const key = normalizeTerm(item.lemma);
+    if (key && !itemsByLemma.has(key)) itemsByLemma.set(key, item);
+  }
+
+  // Server-side validation remains the source of truth, and also applies the
+  // global grammar cap after candidates from all batches are combined.
+  return {
+    items: [...itemsByLemma.values()],
+    grammarCandidates: parseGrammarCandidates(
+      results.flatMap((result) => result.grammarCandidates),
+      params.articleBody,
+    ),
   };
 }

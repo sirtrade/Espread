@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { reviewItemSchema, reviewSchema, shortTranslationSchema } from "../src/llm/schemas.js";
 import { frequencyInstruction, LEVEL_FREQ_CAP } from "../src/llm/articleGeneration.js";
-import { REVIEW_DISTRACTOR_INSTRUCTION } from "../src/llm/review.js";
+import { parseReviewItems, REVIEW_DISTRACTOR_INSTRUCTION } from "../src/llm/review.js";
 import { ENRICHMENT_DISTRACTOR_INSTRUCTION } from "../src/llm/enrichBank.js";
 
 function validItem(overrides: Record<string, unknown> = {}) {
@@ -60,6 +60,17 @@ describe("review schema: translation must be a plain short translation", () => {
     delete (item as Record<string, unknown>).contextTranslation;
     const parsed = reviewSchema.parse({ items: [item] });
     expect(parsed.items[0]).toMatchObject({ gender: null, note: null, contextTranslation: null });
+  });
+
+  it("salvages a translation with explanatory parentheses without leaking them", () => {
+    const [item] = parseReviewItems([validItem({ translation: "ранний (acceso anticipado — ранний доступ)" })]);
+    expect(item?.translation).toBe("ранний");
+  });
+
+  it("drops one malformed item without discarding valid siblings", () => {
+    const parsed = parseReviewItems([validItem(), { translation: "сломано" }]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.lemma).toBe("perfilarse");
   });
 });
 
