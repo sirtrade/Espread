@@ -19,6 +19,34 @@ export const RECENT_STORIES_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 export const RECENT_STORIES_LIMIT = 15;
 export const STORY_TITLE_MAX_CHARS = 80;
 
+/**
+ * Reader notes for the search prompt (F-19): free-text comments left with
+ * skip reason "other" (owner decision 2026-07-15: include them right away).
+ *
+ * - READER_NOTES_LIMIT = 3 — a handful of recent notes is preference signal;
+ *   more is prompt noise and stale opinions.
+ * - READER_NOTES_WINDOW_MS = 30 days — matches the topic-preference window
+ *   (domain/topicPreferences.ts): tastes drift, old notes expire.
+ * - READER_NOTE_MAX_CHARS = 200 — mirrors the API cap on skip comments.
+ */
+export const READER_NOTES_LIMIT = 3;
+export const READER_NOTES_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+export const READER_NOTE_MAX_CHARS = 200;
+
+/**
+ * Sanitizes free-text skip comments before they enter the search prompt:
+ * user text is DATA, not instructions — collapse newlines/whitespace (so a
+ * note can't fake new prompt lines or a fresh "- " list entry), strip quotes
+ * (each note is rendered inside its own quotes), cap length, drop empties.
+ * The prompt additionally tells the model to ignore instructions inside.
+ */
+export function sanitizeReaderNotes(comments: readonly string[]): string[] {
+  return comments
+    .map((c) => c.replace(/\s+/g, " ").replace(/["«»]/g, "'").trim().slice(0, READER_NOTE_MAX_CHARS).trim())
+    .filter((c) => c.length > 0)
+    .slice(0, READER_NOTES_LIMIT);
+}
+
 export interface RecentStoryCandidate {
   title: string;
   /** when the reader finished the article (null if it was skipped) */

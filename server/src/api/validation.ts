@@ -40,6 +40,13 @@ export const patchMeSchema = z.object({
   practiceSize: z.number().int().min(PRACTICE_SIZE_MIN).max(PRACTICE_SIZE_MAX).optional(),
 });
 
+// "Keep the topic" for the remove-topic suggestion (F-19). Removal itself
+// goes through the ordinary PATCH /me topics flow, so only the dismissal
+// needs its own interaction endpoint.
+export const topicSuggestionInteractionSchema = z.object({
+  topic: z.string().trim().min(1).max(60),
+});
+
 export const levelSuggestionInteractionSchema = z.object({
   action: z.enum(["seen", "dismissed"]),
   direction: z.enum(["up", "down"]),

@@ -1,5 +1,12 @@
 import { pickTopic } from "../domain/topicRotation.js";
-import { buildStoryAvoidList, RECENT_STORIES_WINDOW_MS } from "../domain/recentStories.js";
+import {
+  buildStoryAvoidList,
+  READER_NOTES_LIMIT,
+  READER_NOTES_WINDOW_MS,
+  RECENT_STORIES_WINDOW_MS,
+  sanitizeReaderNotes,
+} from "../domain/recentStories.js";
+import { notInterestedSkipCounts, TOPIC_SKIP_WINDOW_MS } from "../domain/topicPreferences.js";
 import { selectTargetTerms } from "../domain/bank.js";
 import { verifyWovenTerms } from "../domain/weaving.js";
 import { normalizeArticleLemmas } from "../domain/knownWords.js";
@@ -13,6 +20,8 @@ import { getUserTopics } from "../db/repositories/topics.js";
 import {
   createArticle,
   getArticleById,
+  getRecentSkipComments,
+  getRecentSkips,
   getRecentStoryCandidates,
   getRecentTopics,
   getUnconsumedPrefetchedArticle,
@@ -30,21 +39,35 @@ export async function generateFreshArticle(userId: number, prefetched = false): 
   const topics = await getUserTopics(userId);
   if (topics.length === 0) throw Errors.badRequest("No hay temas configurados en tu perfil");
 
+  const now = Date.now();
+  // F-19: topics recently skipped as "not interested" are picked less often
+  // (weight 1/(1+skips)); the avoid-last-two rule stays intact.
+  const recentSkips = await getRecentSkips(userId, now - TOPIC_SKIP_WINDOW_MS);
   const recentTopics = await getRecentTopics(userId, 2);
-  const topic = pickTopic(topics, recentTopics);
+  const topic = pickTopic(topics, recentTopics, Math.random, notInterestedSkipCounts(recentSkips, now));
 
   // F-18: ban the reader's recent stories in the search prompt so a fresh
   // generation (and the prefetch, which shares this path) doesn't bring back
-  // the same headline from another source.
-  const now = Date.now();
+  // the same headline from another source. F-19 adds the reader's free-text
+  // skip notes as negative preferences.
   const avoidStories = buildStoryAvoidList(await getRecentStoryCandidates(userId, now - RECENT_STORIES_WINDOW_MS), now);
+  const readerNotes = sanitizeReaderNotes(
+    await getRecentSkipComments(userId, now - READER_NOTES_WINDOW_MS, READER_NOTES_LIMIT),
+  );
 
   const activeItems = await getActiveItemsForSelection(userId);
   // Candidates we ASK the model to weave in (dosed). What it actually uses is
   // re-verified below, so a skipped candidate stays due for a later article.
   const candidateTerms = selectTargetTerms(activeItems, now);
 
-  const generated = await generateArticle({ userId, level: user.level, topic, targetTerms: candidateTerms, avoidStories });
+  const generated = await generateArticle({
+    userId,
+    level: user.level,
+    topic,
+    targetTerms: candidateTerms,
+    avoidStories,
+    readerNotes,
+  });
 
   const wovenTerms = verifyWovenTerms(candidateTerms, generated.body, generated.usedTerms);
   const lemmas = normalizeArticleLemmas(generated.lemmas, generated.body);

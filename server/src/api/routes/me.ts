@@ -6,9 +6,10 @@ import { rebalanceGrammarPool } from "../../db/repositories/grammar.js";
 import { getUserTopics, setUserTopics } from "../../db/repositories/topics.js";
 import { resetUserProgress } from "../../db/repositories/reset.js";
 import { markLevelSuggestion } from "../../services/levelSuggestionService.js";
+import { markTopicSuggestionDismissed } from "../../services/topicSuggestionService.js";
 import { Errors } from "../errors.js";
 import { serializeProfile } from "../serializers.js";
-import { levelSuggestionInteractionSchema, patchMeSchema } from "../validation.js";
+import { levelSuggestionInteractionSchema, patchMeSchema, topicSuggestionInteractionSchema } from "../validation.js";
 import type { AppEnv } from "../context.js";
 
 export const meRoutes = new Hono<AppEnv>();
@@ -28,6 +29,16 @@ meRoutes.patch("/level-suggestion", async (c) => {
   const body = levelSuggestionInteractionSchema.safeParse(await c.req.json().catch(() => null));
   if (!body.success) throw Errors.badRequest(body.error.issues[0]?.message ?? "Datos inválidos");
   await markLevelSuggestion(userId, body.data, body.data.action);
+  return c.json({ ok: true });
+});
+
+// F-19: the reader chose "keep it" on the remove-topic banner. Idempotent —
+// re-dismissing just refreshes the stamp; only later skips count again.
+meRoutes.patch("/topic-suggestion", async (c) => {
+  const { userId } = c.get("session");
+  const body = topicSuggestionInteractionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw Errors.badRequest(body.error.issues[0]?.message ?? "Datos inválidos");
+  await markTopicSuggestionDismissed(userId, body.data.topic);
   return c.json({ ok: true });
 });
 

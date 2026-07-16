@@ -92,6 +92,11 @@ export interface Dict {
   "levelSuggestion.keep": string;
   "levelSuggestion.error": string;
 
+  "topicSuggestion.title": (p: { topic: string }) => string;
+  "topicSuggestion.remove": string;
+  "topicSuggestion.keep": string;
+  "topicSuggestion.error": string;
+
   "vocabulary.title": string;
   "vocabulary.loading": string;
   "vocabulary.loadError": string;
@@ -352,6 +357,11 @@ const es: Dict = {
   "levelSuggestion.change": ({ level }) => `Cambiar a ${level}`,
   "levelSuggestion.keep": "Mantener mi nivel",
   "levelSuggestion.error": "No se pudo guardar tu elección",
+
+  "topicSuggestion.title": ({ topic }) => `Sueles omitir artículos de «${topic}». ¿Quitar este tema de tus intereses?`,
+  "topicSuggestion.remove": "Quitar el tema",
+  "topicSuggestion.keep": "Mantenerlo",
+  "topicSuggestion.error": "No se pudo guardar tu elección",
 
   "vocabulary.title": "Vocabulario",
   "vocabulary.loading": "Cargando tu vocabulario...",
@@ -626,6 +636,11 @@ const ru: Dict = {
   "levelSuggestion.keep": "Оставить мой уровень",
   "levelSuggestion.error": "Не удалось сохранить выбор",
 
+  "topicSuggestion.title": ({ topic }) => `Ты часто пропускаешь статьи по теме «${topic}». Убрать её из интересов?`,
+  "topicSuggestion.remove": "Убрать тему",
+  "topicSuggestion.keep": "Оставить",
+  "topicSuggestion.error": "Не удалось сохранить выбор",
+
   "vocabulary.title": "Словарный запас",
   "vocabulary.loading": "Загрузка словарного запаса...",
   "vocabulary.loadError": "Не удалось загрузить словарный запас",
@@ -899,6 +914,11 @@ const en: Dict = {
   "levelSuggestion.change": ({ level }) => `Change to ${level}`,
   "levelSuggestion.keep": "Keep my level",
   "levelSuggestion.error": "Couldn't save your choice",
+
+  "topicSuggestion.title": ({ topic }) => `You often skip “${topic}” articles. Remove this topic from your interests?`,
+  "topicSuggestion.remove": "Remove topic",
+  "topicSuggestion.keep": "Keep it",
+  "topicSuggestion.error": "Couldn't save your choice",
 
   "vocabulary.title": "Vocabulary",
   "vocabulary.loading": "Loading your vocabulary...",

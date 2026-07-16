@@ -259,6 +259,8 @@ export interface Stats {
   /** cap on words in study at once (0 = no limit) */
   activePoolLimit: number;
   levelSuggestion: LevelSuggestion | null;
+  /** soft "remove topic X from your interests?" suggestion (F-19) */
+  topicSuggestion: { topic: string } | null;
   currentStreak: number;
   weeklyProgress: Array<{
     /** Monday in the user's local calendar, YYYY-MM-DD */

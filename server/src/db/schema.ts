@@ -63,6 +63,27 @@ export const userTopics = sqliteTable("user_topics", {
   position: integer("position").notNull().default(0),
 });
 
+/**
+ * "Keep the topic" decisions for the remove-topic suggestion (F-19). A
+ * separate table (not a column on user_topics) because setUserTopics
+ * recreates topic rows on every settings edit and would wipe the stamp.
+ * Only skips AFTER dismissed_at count toward re-suggesting the topic.
+ */
+export const topicSuggestionDismissals = sqliteTable(
+  "topic_suggestion_dismissals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    topic: text("topic").notNull(),
+    dismissedAt: integer("dismissed_at").notNull(),
+  },
+  (t) => ({
+    userTopicIdx: uniqueIndex("topic_suggestion_dismissals_user_topic_idx").on(t.userId, t.topic),
+  }),
+);
+
 export const bankItems = sqliteTable(
   "bank_items",
   {
