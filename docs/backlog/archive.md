@@ -4,6 +4,37 @@
 > `- **Выполнено:** <дата>, <ветка или PR #N>` в начало карточки и удали её из
 > исходного списка (в том же PR, что и реализация). Порядок — новые сверху.
 
+## B-4. Тестовый прогон делает реальный вызов Anthropic
+- **Выполнено:** 2026-07-16, ветка `claude/f-17-skip-article-i0o5ki`
+- **Приоритет:** P2 — тесты остаются зелёными, но прогон зависит от сети и
+  может тратить реальные деньги при валидном ключе в окружении.
+- **Проблема/мотивация:** В каждом полном `npm test` виден warn
+  `AuthenticationError: invalid x-api-key` / `Article lemmatization failed`
+  с настоящим `request_id` от Anthropic. Первоначальный диагноз в карточке
+  (не замокан `integration.grammarLifecycle.test.ts`) оказался неверным —
+  тот файл вообще не доходит до LLM. Настоящий источник:
+  `tests/integration.levelSuggestion.test.ts` вставляет статью «Nueva
+  lectura» с дефолтными `lemmas: "[]"` и завершает её через
+  `/api/session/complete` без мока клиента → `completeSession` →
+  `ensureArticleLemmas` → `extractArticleLemmas` уходит в реальную сеть
+  (тест зелёный только благодаря graceful degradation этого пути).
+- **Что сделать / сделано:**
+  1. Статье в `integration.levelSuggestion.test.ts` даны непустые
+     `lemmas: '["tres"]'` — ленивый путь долемматизации не срабатывает.
+  2. Системный предохранитель: `tests/setup.ts` принудительно (`=`, не
+     `??=` — окружение может пресетить реальный URL, как в CI-контейнере)
+     ставит `ANTHROPIC_BASE_URL=http://127.0.0.1:9`; SDK читает переменную
+     нативно, и любой будущий незамоканный вызов падает локально и быстро,
+     а не уходит на api.anthropic.com.
+- **Критерии приёмки (выполнены):** `npm test` в `server/` не делает сетевых
+  вызовов (в двух полных прогонах — ноль `AuthenticationError`); warn про
+  lemmatization из этого файла исчез; 365 тестов зелёные.
+- **Детали/ссылки:** `server/tests/integration.levelSuggestion.test.ts`,
+  `server/tests/setup.ts`, `server/src/services/sessionService.ts`
+  (`ensureArticleLemmas`); реестр §18.1.
+
+---
+
 ## F-19. Учёт причин пропуска при выборе следующих тем
 - **Выполнено:** 2026-07-16, ветка `claude/f-17-skip-article-i0o5ki`
 - **Приоритет:** P2 — полезная надстройка над F-17/F-18: превращает разовые

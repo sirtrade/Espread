@@ -99,6 +99,9 @@ describe("level suggestion integration", () => {
         title: "Nueva lectura",
         body: "Uno dos tres cuatro cinco seis siete ocho nueve diez.",
         topic: "Ciencia",
+        // Non-empty lemmas keep completion off the lazy re-lemmatization
+        // path, which would call the real (unmocked in this file) LLM (B-4).
+        lemmas: '["tres"]',
       })
       .returning();
     await db.insert(schema.readingSessions).values({
