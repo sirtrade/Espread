@@ -6,6 +6,7 @@ import { startBot } from "./bot/bot.js";
 import { startScheduler } from "./scheduler/scheduler.js";
 import { config } from "./lib/config.js";
 import { logger } from "./lib/logger.js";
+import { startMemoryLogging } from "./lib/memoryLog.js";
 
 migrate(db, { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
 logger.info("Migrations applied");
@@ -18,3 +19,4 @@ serve({ fetch: app.fetch, port: config.PORT }, (info) => {
 
 startBot();
 startScheduler();
+startMemoryLogging();
